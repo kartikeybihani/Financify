@@ -50,7 +50,7 @@ export function OnboardingProgressBox({
             </View>
             <View style={styles.rightSection}>
               <Text style={styles.percentage}>{status.percentage}%</Text>
-              <TouchableOpacity
+              {/* <TouchableOpacity
                 onPress={(e) => {
                   e.stopPropagation();
                   onDismiss();
@@ -63,7 +63,7 @@ export function OnboardingProgressBox({
                   size={18}
                   color="rgba(255, 255, 255, 0.7)"
                 />
-              </TouchableOpacity>
+              </TouchableOpacity> */}
             </View>
           </View>
           <View style={styles.progressBarContainer}>
@@ -139,7 +139,7 @@ const styles = StyleSheet.create({
     fontSize: 22,
     fontWeight: "800",
     color: "#4A90E2",
-    fontFamily: "Manrope",
+    // fontFamily: "Manrope",
     letterSpacing: 0.5,
   },
   closeButton: {

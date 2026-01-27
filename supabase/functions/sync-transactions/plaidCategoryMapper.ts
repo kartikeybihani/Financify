@@ -85,9 +85,9 @@ const DETAILED_CATEGORY_MAP: Record<string, CategoryMapping> = {
   "GENERAL_SERVICES_CABLE": { top: "Housing", sub: "Cable" },
   
   // GENERAL_SERVICES - Other
-  "GENERAL_SERVICES_ACCOUNTING": { top: "Other", sub: "Services" },
-  "GENERAL_SERVICES_LEGAL": { top: "Other", sub: "Services" },
-  "GENERAL_SERVICES_PROFESSIONAL_SERVICES": { top: "Other", sub: "Services" },
+  "GENERAL_SERVICES_ACCOUNTING": { top: "Services", sub: "Accounting" },
+  "GENERAL_SERVICES_LEGAL": { top: "Services", sub: "Legal" },
+  "GENERAL_SERVICES_PROFESSIONAL_SERVICES": { top: "Services", sub: "Professional Services" },
   
   // HOME_IMPROVEMENT - Housing
   "HOME_IMPROVEMENT": { top: "Housing", sub: "Home Improvement" },
@@ -131,10 +131,10 @@ const DETAILED_CATEGORY_MAP: Record<string, CategoryMapping> = {
   "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT": { top: "INTERNAL_TRANSFER", sub: "INTERNAL_TRANSFER" },
   
   // LOAN_PAYMENTS - Other
-  "LOAN_PAYMENTS_AUTO_LOAN": { top: "Other", sub: "Loan Payment" },
-  "LOAN_PAYMENTS_STUDENT_LOAN": { top: "Other", sub: "Loan Payment" },
-  "LOAN_PAYMENTS_PERSONAL_LOAN": { top: "Other", sub: "Loan Payment" },
-  "LOAN_PAYMENTS_MORTGAGE": { top: "Housing", sub: "Mortgage" },
+  "LOAN_PAYMENTS_AUTO_LOAN": { top: "Loans", sub: "Loan Payments" },
+  "LOAN_PAYMENTS_STUDENT_LOAN": { top: "Loans", sub: "Loan Payments" },
+  "LOAN_PAYMENTS_PERSONAL_LOAN": { top: "Loans", sub: "Loan Payments" },
+  "LOAN_PAYMENTS_MORTGAGE": { top: "Loans", sub: "Mortgage" },
   
   // TRANSFER categories that are internal transfers (not savings)
   "TRANSFER_IN_INTERNAL": { top: "INTERNAL_TRANSFER", sub: "INTERNAL_TRANSFER" },
@@ -165,7 +165,7 @@ const PRIMARY_CATEGORY_MAP: Record<string, CategoryMapping> = {
   "TRANSFER_IN": { top: "Income", sub: "Transfer" },
   "TRANSFER_OUT": { top: "Other", sub: "Transfer" },
   "BANK_TRANSFERS": { top: "Other", sub: "Transfer" },
-  "LOAN_PAYMENTS": { top: "Other", sub: "Loan Payment" },
+  "LOAN_PAYMENTS": { top: "Loans", sub: "Loan Payments" },
   "EDUCATION": { top: "Other", sub: "Education" },
 };
 

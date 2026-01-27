@@ -458,6 +458,51 @@ async function syncItemTransactions(item_id, user_id) {
       });
     }
 
+    // Fetch active merchant rules (category_rules) for priority matching
+    const { data: merchantRules, error: rulesError } = await supabase
+      .from("category_rules")
+      .select("merchant_name, transaction_name, top_category_id, match_field")
+      .eq("user_id", user_id)
+      .eq("active", true);
+
+    if (rulesError) {
+      console.error("Error fetching merchant rules:", rulesError);
+    }
+
+    // Build merchant rules lookup map
+    const merchantRulesMap = new Map();
+    const transactionNameRulesMap = new Map();
+    if (merchantRules) {
+      merchantRules.forEach((rule) => {
+        // top_category_id is actually the category_id (despite the confusing name)
+        const categoryId = rule.top_category_id;
+        const matchField = rule.match_field || "merchant_name";
+
+        if (matchField === "merchant_name" && rule.merchant_name) {
+          // Normalize merchant name for matching (case-insensitive)
+          const key = rule.merchant_name.toLowerCase().trim();
+          merchantRulesMap.set(key, categoryId);
+        } else if (
+          (matchField === "transaction_name" || !rule.merchant_name) &&
+          rule.transaction_name
+        ) {
+          // Normalize transaction name for matching (case-insensitive)
+          const key = rule.transaction_name.toLowerCase().trim();
+          transactionNameRulesMap.set(key, categoryId);
+        }
+      });
+    }
+
+    // Get "Other" category ID for fallback
+    const { data: otherCategory } = await supabase
+      .from("categories")
+      .select("id")
+      .eq("user_id", user_id)
+      .eq("name", "Other")
+      .maybeSingle();
+
+    const otherCategoryId = otherCategory?.id || null;
+
     // Get existing recurring streams (is_active column exists in recurring_streams table)
     const { data: recurringStreams, error: streamsError } = await supabase
       .from("recurring_streams")
@@ -565,16 +610,52 @@ async function syncItemTransactions(item_id, user_id) {
         }
 
         // Look up category_id from categories table
-        // Priority: newCategory (if set and not INTERNAL_TRANSFER) > top_category
+        // Priority: Merchant Rules > Internal Transfer > Stream Category > Plaid Category > Fallback to "Other"
         let categoryId = null;
-        if (newCategory && newCategory !== "INTERNAL_TRANSFER") {
+
+        // Priority 1: Check merchant rules (highest priority for new transactions)
+        if (!detectedAsInternalTransfer) {
+          const merchantName = txn.merchant_name || null;
+          const transactionName = txn.name || null;
+
+          // Check merchant_name rules first
+          if (merchantName) {
+            const merchantKey = merchantName.toLowerCase().trim();
+            const ruleCategoryId = merchantRulesMap.get(merchantKey);
+            if (ruleCategoryId) {
+              categoryId = ruleCategoryId;
+            }
+          }
+
+          // If no merchant rule match, check transaction_name rules
+          if (!categoryId && transactionName) {
+            const transactionKey = transactionName.toLowerCase().trim();
+            const ruleCategoryId = transactionNameRulesMap.get(transactionKey);
+            if (ruleCategoryId) {
+              categoryId = ruleCategoryId;
+            }
+          }
+        }
+
+        // Priority 2: Internal transfers don't get category_id (skip all other checks)
+        if (detectedAsInternalTransfer) {
+          categoryId = null; // Explicitly null for internal transfers
+        }
+        // Priority 3: Stream-based category (if no merchant rule matched)
+        else if (!categoryId && newCategory && newCategory !== "INTERNAL_TRANSFER") {
           // Look up category_id for user-set category (from stream or override)
           categoryId = categoryIdMap.get(newCategory) || categoryIdMap.get(newCategory.toLowerCase()) || null;
-        } else if (!newCategory && mappedCategory.top && mappedCategory.top !== "INTERNAL_TRANSFER") {
+        }
+        // Priority 4: Plaid mapped category (if no merchant rule or stream match)
+        else if (!categoryId && !newCategory && mappedCategory.top && mappedCategory.top !== "INTERNAL_TRANSFER") {
           // Look up category_id for top_category (Plaid mapped category)
           categoryId = categoryIdMap.get(mappedCategory.top) || categoryIdMap.get(mappedCategory.top.toLowerCase()) || null;
         }
-        // For INTERNAL_TRANSFER, categoryId stays null (not a real category)
+
+        // Priority 5: Fallback to "Other" if no match found (and not internal transfer)
+        if (!categoryId && !detectedAsInternalTransfer && otherCategoryId) {
+          categoryId = otherCategoryId;
+        }
 
         return {
           user_id: user_id,

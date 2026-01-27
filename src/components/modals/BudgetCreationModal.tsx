@@ -18,6 +18,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 import logger from "@/src/utils/core/logger";
+import CategoryMappingModal from "./CategoryMappingModal";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -48,6 +49,8 @@ export default function BudgetCreationModal({
   >([]);
   const [headerHeight, setHeaderHeight] = useState(0);
   const [scrollContentHeight, setScrollContentHeight] = useState(0);
+  const [showMappingModal, setShowMappingModal] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const insets = useSafeAreaInsets();
   const sheetHeightAnim = useRef(new Animated.Value(0)).current;
   const didInitSheetHeightRef = useRef(false);
@@ -234,8 +237,13 @@ export default function BudgetCreationModal({
       }
 
       logger.info("[BUDGET] Budget created successfully with Finny");
-      onBudgetCreated();
-      handleClose();
+      
+      // Show mapping modal
+      setCurrentUserId(user.id);
+      setShowMappingModal(true);
+      
+      // Don't close the main modal yet - let mapping modal handle it
+      // onBudgetCreated will be called after mapping completes
     } catch (err) {
       logger.error("[BUDGET] Error saving budget:", err);
       setError(
@@ -833,6 +841,20 @@ export default function BudgetCreationModal({
           </LinearGradient>
         </Animated.View>
       </View>
+      
+      {/* Category Mapping Modal */}
+      {currentUserId && (
+        <CategoryMappingModal
+          visible={showMappingModal}
+          userId={currentUserId}
+          onComplete={() => {
+            setShowMappingModal(false);
+            setCurrentUserId(null);
+            onBudgetCreated();
+            handleClose();
+          }}
+        />
+      )}
     </Modal>
   );
 }

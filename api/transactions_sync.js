@@ -22,7 +22,10 @@ import {
   selectTopTwoPatternsForLLM,
   formatDate,
 } from "../lib/early_insights.js";
-import { buildBudgetGenerationPrompt } from "../lib/prompt_engine.js";
+import {
+  buildBudgetGenerationPrompt,
+  buildCategoryMappingPrompt,
+} from "../lib/prompt_engine.js";
 import crypto from "crypto";
 
 // Budget creation helper functions
@@ -161,6 +164,64 @@ async function upsertBudgetEntry(budgetPeriodId, entry) {
   }
 }
 
+/**
+ * Ensures "Other" category exists for the user and adds it to budget entries
+ * @param {string} userId - User ID
+ * @param {string} budgetPeriodId - Budget period ID
+ * @returns {Promise<string|null>} - Category ID of "Other" category, or null if error
+ */
+async function ensureOtherCategoryExists(userId, budgetPeriodId) {
+  try {
+    // Check if "Other" category exists
+    const { data: existingOther, error: fetchError } = await supabase
+      .from("categories")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("name", "Other")
+      .maybeSingle();
+
+    let otherCategoryId = existingOther?.id;
+
+    if (!otherCategoryId) {
+      // Create "Other" category
+      const newCategoryId = generateUUID();
+      const { error: categoryError } = await supabase
+        .from("categories")
+        .insert({
+          id: newCategoryId,
+          user_id: userId,
+          name: "Other",
+          slug: "other",
+          icon: "📦",
+          color: "#607D8B",
+          rank: 999,
+          is_active: true,
+        });
+
+      if (categoryError) {
+        console.error("Error creating 'Other' category:", categoryError);
+        return null;
+      }
+
+      otherCategoryId = newCategoryId;
+      console.log("✅ Created 'Other' category for user:", userId);
+    }
+
+    // Ensure "Other" has a budget entry (even if limit is null/unlimited)
+    await upsertBudgetEntry(budgetPeriodId, {
+      scope_type: "category",
+      category_id: otherCategoryId,
+      label: "Other",
+      limit_amount: null, // User can set limit later or leave unlimited
+    });
+
+    return otherCategoryId;
+  } catch (error) {
+    console.error("Error ensuring 'Other' category exists:", error);
+    return null;
+  }
+}
+
 async function callLLM(prompt) {
   const apiKey = getOpenRouterKey();
   if (!apiKey) {
@@ -233,6 +294,393 @@ async function callLLM(prompt) {
   }
 
   throw new Error("All LLM models failed");
+}
+
+/**
+ * Calls LLM for category mapping (different response format than budget generation)
+ * @param {string} prompt - Category mapping prompt
+ * @returns {Promise<{mappings: Object}>} - Mappings object with transaction keys -> budget category names
+ */
+async function callLLMForMapping(prompt) {
+  const apiKey = getOpenRouterKey();
+  if (!apiKey) {
+    throw new Error("OPENROUTER_API_KEY not configured");
+  }
+
+  const models = [REASONING_MODEL_PAID_SCOUT, STANDARD_MODEL];
+
+  for (const model of models) {
+    try {
+      const resp = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            model,
+            temperature: 0.3, // Lower temperature for more consistent mapping
+            max_tokens: 2000,
+            messages: [
+              {
+                role: "system",
+                content:
+                  "You are a financial coach assistant. Always return valid JSON only, no other text.",
+              },
+              {
+                role: "user",
+                content: prompt,
+              },
+            ],
+          }),
+        },
+      );
+
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        console.error(`OpenRouter error ${resp.status}: ${errorText}`);
+        if (model === models[models.length - 1]) {
+          throw new Error(`OpenRouter error: ${errorText}`);
+        }
+        continue; // Try next model
+      }
+
+      const data = await resp.json();
+      const rawContent =
+        data.choices?.[0]?.message?.content || data.choices?.[0]?.text || "";
+
+      // Extract JSON from response (handle cases where LLM adds extra text)
+      const jsonMatch = rawContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const parsedJson = JSON.parse(jsonMatch[0]);
+        return {
+          mappings: parsedJson.mappings || {},
+          rawResponse: rawContent,
+        };
+      }
+
+      throw new Error("No valid JSON found in LLM response");
+    } catch (error) {
+      console.error(`Error with model ${model}:`, error);
+      if (model === models[models.length - 1]) {
+        throw error;
+      }
+      // Try next model
+    }
+  }
+
+  throw new Error("All LLM models failed");
+}
+
+/**
+ * Remaps existing transactions to budget categories using AI
+ * Runs in background after budget creation
+ * @param {string} userId - User ID
+ * @returns {Promise<void>}
+ */
+async function remapTransactionsToBudgetCategories(userId) {
+  try {
+    console.log(
+      `[CATEGORY_MAPPING] Starting remapping for user: ${userId.substring(0, 8)}`,
+    );
+
+    // Update budget period status to indicate mapping is in progress
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = today.getMonth();
+    const periodStartStr = formatLocalDate(
+      new Date(year, month, 1),
+    );
+    const periodEndStr = formatLocalDate(
+      new Date(year, month + 1, 0),
+    );
+
+    // Find active budget period
+    const { data: activePeriod } = await supabase
+      .from("budget_periods")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("period_start", periodStartStr)
+      .eq("period_end", periodEndStr)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (!activePeriod) {
+      console.log(
+        "[CATEGORY_MAPPING] No active budget period found, skipping remapping",
+      );
+      return;
+    }
+
+    // Update status to indicate mapping is in progress
+    await supabase
+      .from("budget_periods")
+      .update({ category_mapping_status: "in_progress" })
+      .eq("id", activePeriod.id);
+
+    // 1. Collect transaction categories (last 4 months, exclude income and internal transfers)
+    const fourMonthsAgo = new Date();
+    fourMonthsAgo.setMonth(fourMonthsAgo.getMonth() - 4);
+    const startDate = fourMonthsAgo.toISOString().split("T")[0];
+
+    const { data: transactions, error: txError } = await supabase
+      .from("transactions")
+      .select("top_category, sub_category")
+      .eq("user_id", userId)
+      .is("category_id", null) // Only unmapped transactions
+      .gte("date", startDate)
+      .gt("amount", 0) // Only expenses (exclude income where amount < 0)
+      .neq("top_category", "INTERNAL_TRANSFER") // Exclude internal transfers
+      .neq("top_category", "Income") // Exclude income
+      .order("top_category, sub_category");
+
+    if (txError) {
+      console.error(
+        "[CATEGORY_MAPPING] Error fetching transactions:",
+        txError,
+      );
+      await supabase
+        .from("budget_periods")
+        .update({ category_mapping_status: "failed" })
+        .eq("id", activePeriod.id);
+      return;
+    }
+
+    if (!transactions || transactions.length === 0) {
+      console.log(
+        "[CATEGORY_MAPPING] No unmapped transactions found, skipping",
+      );
+      await supabase
+        .from("budget_periods")
+        .update({ category_mapping_status: "completed" })
+        .eq("id", activePeriod.id);
+      return;
+    }
+
+    // Get unique transaction categories
+    const categorySet = new Set();
+    transactions.forEach((tx) => {
+      const key = `${tx.top_category}|${tx.sub_category || ""}`;
+      categorySet.add(key);
+    });
+
+    const transactionCategories = Array.from(categorySet).map((key) => {
+      const [top, sub] = key.split("|");
+      return { top_category: top, sub_category: sub || null };
+    });
+
+    console.log(
+      `[CATEGORY_MAPPING] Found ${transactionCategories.length} unique transaction categories`,
+    );
+
+    // 2. Collect budget categories
+    // First get category IDs from budget entries
+    const { data: budgetEntries, error: entriesError } = await supabase
+      .from("budget_entries")
+      .select("category_id")
+      .eq("budget_period_id", activePeriod.id)
+      .not("category_id", "is", null);
+
+    if (entriesError) {
+      console.error(
+        "[CATEGORY_MAPPING] Error fetching budget entries:",
+        entriesError,
+      );
+      await supabase
+        .from("budget_periods")
+        .update({ category_mapping_status: "failed" })
+        .eq("id", activePeriod.id);
+      return;
+    }
+
+    const categoryIds = budgetEntries
+      .map((entry) => entry.category_id)
+      .filter(Boolean);
+
+    if (categoryIds.length === 0) {
+      console.log(
+        "[CATEGORY_MAPPING] No budget categories found, skipping",
+      );
+      await supabase
+        .from("budget_periods")
+        .update({ category_mapping_status: "completed" })
+        .eq("id", activePeriod.id);
+      return;
+    }
+
+    const { data: budgetCategories, error: budgetError } = await supabase
+      .from("categories")
+      .select("id, name")
+      .in("id", categoryIds)
+      .eq("is_active", true)
+      .order("name");
+
+    if (budgetError) {
+      console.error(
+        "[CATEGORY_MAPPING] Error fetching budget categories:",
+        budgetError,
+      );
+      await supabase
+        .from("budget_periods")
+        .update({ category_mapping_status: "failed" })
+        .eq("id", activePeriod.id);
+      return;
+    }
+
+    if (!budgetCategories || budgetCategories.length === 0) {
+      console.log(
+        "[CATEGORY_MAPPING] No budget categories found, skipping",
+      );
+      await supabase
+        .from("budget_periods")
+        .update({ category_mapping_status: "completed" })
+        .eq("id", activePeriod.id);
+      return;
+    }
+
+    console.log(
+      `[CATEGORY_MAPPING] Found ${budgetCategories.length} budget categories`,
+    );
+
+    // 3. Create AI mapping prompt
+    const prompt = buildCategoryMappingPrompt(
+      transactionCategories,
+      budgetCategories,
+    );
+
+    // 4. Call AI for mapping
+    console.log("[CATEGORY_MAPPING] Calling LLM for category mapping...");
+    const llmResponse = await callLLMForMapping(prompt);
+
+    if (!llmResponse.mappings || typeof llmResponse.mappings !== "object") {
+      console.error(
+        "[CATEGORY_MAPPING] Invalid LLM response format:",
+        llmResponse,
+      );
+      await supabase
+        .from("budget_periods")
+        .update({ category_mapping_status: "failed" })
+        .eq("id", activePeriod.id);
+      return;
+    }
+
+    const mappings = llmResponse.mappings;
+    console.log(
+      `[CATEGORY_MAPPING] Received ${Object.keys(mappings).length} mappings from LLM`,
+    );
+
+    // 5. Get "Other" category ID
+    const { data: otherCategory } = await supabase
+      .from("categories")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("name", "Other")
+      .maybeSingle();
+
+    const otherCategoryId = otherCategory?.id || null;
+
+    // 6. Bulk update transactions
+    let updatedCount = 0;
+    for (const [transactionKey, budgetCategoryName] of Object.entries(
+      mappings,
+    )) {
+      const [top, sub] = transactionKey.split("|");
+
+      let targetCategoryId = null;
+
+      if (budgetCategoryName === null) {
+        // Assign to "Other"
+        targetCategoryId = otherCategoryId;
+      } else {
+        // Find budget category ID
+        const budgetCategory = budgetCategories.find(
+          (c) => c.name === budgetCategoryName,
+        );
+        if (budgetCategory) {
+          targetCategoryId = budgetCategory.id;
+        } else {
+          // Category not found, assign to "Other"
+          console.warn(
+            `[CATEGORY_MAPPING] Budget category "${budgetCategoryName}" not found, assigning to "Other"`,
+          );
+          targetCategoryId = otherCategoryId;
+        }
+      }
+
+      if (targetCategoryId) {
+        // Build update query
+        let updateQuery = supabase
+          .from("transactions")
+          .update({ category_id: targetCategoryId })
+          .eq("user_id", userId)
+          .eq("top_category", top)
+          .is("category_id", null);
+
+        if (sub) {
+          updateQuery = updateQuery.eq("sub_category", sub);
+        } else {
+          updateQuery = updateQuery.is("sub_category", null);
+        }
+
+        const { error: updateError } = await updateQuery;
+
+        if (updateError) {
+          console.error(
+            `[CATEGORY_MAPPING] Error updating transactions for ${transactionKey}:`,
+            updateError,
+          );
+        } else {
+          updatedCount++;
+        }
+      }
+    }
+
+    console.log(
+      `[CATEGORY_MAPPING] Successfully updated ${updatedCount} transaction category groups`,
+    );
+
+    // Update status to completed
+    await supabase
+      .from("budget_periods")
+      .update({ category_mapping_status: "completed" })
+      .eq("id", activePeriod.id);
+
+    console.log(`[CATEGORY_MAPPING] Remapping completed for user: ${userId.substring(0, 8)}`);
+  } catch (error) {
+    console.error("[CATEGORY_MAPPING] Error during remapping:", error);
+
+    // Update status to failed
+    try {
+      const today = new Date();
+      const year = today.getFullYear();
+      const month = today.getMonth();
+      const periodStartStr = formatLocalDate(new Date(year, month, 1));
+      const periodEndStr = formatLocalDate(new Date(year, month + 1, 0));
+
+      const { data: activePeriod } = await supabase
+        .from("budget_periods")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("period_start", periodStartStr)
+        .eq("period_end", periodEndStr)
+        .eq("status", "active")
+        .maybeSingle();
+
+      if (activePeriod) {
+        await supabase
+          .from("budget_periods")
+          .update({ category_mapping_status: "failed" })
+          .eq("id", activePeriod.id);
+      }
+    } catch (statusError) {
+      console.error(
+        "[CATEGORY_MAPPING] Error updating status to failed:",
+        statusError,
+      );
+    }
+  }
 }
 
 async function handleBudgetCreation(req, res, userId) {
@@ -344,6 +792,17 @@ async function handleBudgetCreation(req, res, userId) {
 
           createdCategories.push({ name: cat.name, limit: cat.limit });
         }
+
+        // Ensure "Other" category exists and is added to budget entries
+        await ensureOtherCategoryExists(userId, period.id);
+
+        // Start category mapping in background (fire-and-forget)
+        remapTransactionsToBudgetCategories(userId).catch((error) => {
+          console.error(
+            "[BUDGET_CREATION] Error in background category mapping:",
+            error,
+          );
+        });
 
         // Update onboarding progress - mark budget_setup as complete
         const { error: onboardingError } = await supabase
@@ -575,6 +1034,11 @@ async function handleBudgetCreation(req, res, userId) {
                 limit_amount: cat.limit,
               });
             }
+          }
+
+          // Ensure "Other" category exists and is added to budget entries (even for drafts)
+          if (period) {
+            await ensureOtherCategoryExists(userId, period.id);
           }
         }
       } catch (draftError) {
@@ -852,6 +1316,51 @@ export default async function handler(req, res) {
       });
     }
 
+    // 4.5) Fetch active merchant rules (category_rules) for priority matching
+    const { data: merchantRules, error: rulesError } = await supabase
+      .from("category_rules")
+      .select("merchant_name, transaction_name, top_category_id, match_field")
+      .eq("user_id", userId)
+      .eq("active", true);
+
+    if (rulesError) {
+      console.error("Error fetching merchant rules:", rulesError);
+    }
+
+    // Build merchant rules lookup map
+    const merchantRulesMap = new Map();
+    const transactionNameRulesMap = new Map();
+    if (merchantRules) {
+      merchantRules.forEach((rule) => {
+        // top_category_id is actually the category_id (despite the confusing name)
+        const categoryId = rule.top_category_id;
+        const matchField = rule.match_field || "merchant_name";
+
+        if (matchField === "merchant_name" && rule.merchant_name) {
+          // Normalize merchant name for matching (case-insensitive)
+          const key = rule.merchant_name.toLowerCase().trim();
+          merchantRulesMap.set(key, categoryId);
+        } else if (
+          (matchField === "transaction_name" || !rule.merchant_name) &&
+          rule.transaction_name
+        ) {
+          // Normalize transaction name for matching (case-insensitive)
+          const key = rule.transaction_name.toLowerCase().trim();
+          transactionNameRulesMap.set(key, categoryId);
+        }
+      });
+    }
+
+    // Get "Other" category ID for fallback
+    const { data: otherCategory } = await supabase
+      .from("categories")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("name", "Other")
+      .maybeSingle();
+
+    const otherCategoryId = otherCategory?.id || null;
+
     // 5) Get existing recurring streams for this account to check if transactions are recurring
     const { data: recurringStreams, error: streamsError } = await supabase
       .from("recurring_streams")
@@ -1005,15 +1514,48 @@ export default async function handler(req, res) {
         }
 
         // Look up category_id from categories table
-        // Priority: newCategory (if set and not INTERNAL_TRANSFER) > top_category
+        // Priority: Merchant Rules > Internal Transfer > Stream Category > Plaid Category > Fallback to "Other"
         let categoryId = null;
-        if (newCategory && newCategory !== "INTERNAL_TRANSFER") {
+
+        // Priority 1: Check merchant rules (highest priority for new transactions)
+        if (!detectedAsInternalTransfer) {
+          const merchantName = txn.merchant_name || null;
+          const transactionName = txn.name || null;
+
+          // Check merchant_name rules first
+          if (merchantName) {
+            const merchantKey = merchantName.toLowerCase().trim();
+            const ruleCategoryId = merchantRulesMap.get(merchantKey);
+            if (ruleCategoryId) {
+              categoryId = ruleCategoryId;
+            }
+          }
+
+          // If no merchant rule match, check transaction_name rules
+          if (!categoryId && transactionName) {
+            const transactionKey = transactionName.toLowerCase().trim();
+            const ruleCategoryId = transactionNameRulesMap.get(transactionKey);
+            if (ruleCategoryId) {
+              categoryId = ruleCategoryId;
+            }
+          }
+        }
+
+        // Priority 2: Internal transfers don't get category_id (skip all other checks)
+        if (detectedAsInternalTransfer) {
+          categoryId = null; // Explicitly null for internal transfers
+        }
+        // Priority 3: Stream-based category (if no merchant rule matched)
+        else if (!categoryId && newCategory && newCategory !== "INTERNAL_TRANSFER") {
           // Look up category_id for user-set category (from stream or override)
           categoryId =
             categoryIdMap.get(newCategory) ||
             categoryIdMap.get(newCategory.toLowerCase()) ||
             null;
-        } else if (
+        }
+        // Priority 4: Plaid mapped category (if no merchant rule or stream match)
+        else if (
+          !categoryId &&
           !newCategory &&
           mappedCategory.top &&
           mappedCategory.top !== "INTERNAL_TRANSFER"
@@ -1024,7 +1566,11 @@ export default async function handler(req, res) {
             categoryIdMap.get(mappedCategory.top.toLowerCase()) ||
             null;
         }
-        // For INTERNAL_TRANSFER, categoryId stays null (not a real category)
+
+        // Priority 5: Fallback to "Other" if no match found (and not internal transfer)
+        if (!categoryId && !detectedAsInternalTransfer && otherCategoryId) {
+          categoryId = otherCategoryId;
+        }
 
         // Debug log for first few transactions with enhanced info
         if (added.length <= 3 || modified.length <= 3) {
