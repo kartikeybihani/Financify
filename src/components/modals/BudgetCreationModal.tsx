@@ -237,11 +237,11 @@ export default function BudgetCreationModal({
       }
 
       logger.info("[BUDGET] Budget created successfully with Finny");
-      
+
       // Show mapping modal
       setCurrentUserId(user.id);
       setShowMappingModal(true);
-      
+
       // Don't close the main modal yet - let mapping modal handle it
       // onBudgetCreated will be called after mapping completes
     } catch (err) {
@@ -711,6 +711,9 @@ export default function BudgetCreationModal({
                     <Text style={styles.reviewSubtitle}>
                       Review and adjust if needed, then create your budget
                     </Text>
+                    <Text style={styles.reviewSubtitle}>
+                      You can always adjust your budget later.
+                    </Text>
                   </View>
 
                   <View style={styles.totalRow}>
@@ -841,7 +844,7 @@ export default function BudgetCreationModal({
           </LinearGradient>
         </Animated.View>
       </View>
-      
+
       {/* Category Mapping Modal */}
       {currentUserId && (
         <CategoryMappingModal
@@ -1135,6 +1138,7 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     alignSelf: "stretch",
     textAlign: "left",
+    paddingLeft: 4,
   },
   categoriesList: {
     flexDirection: "row",
