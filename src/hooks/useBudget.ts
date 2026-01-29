@@ -132,14 +132,15 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
       // Show cached data immediately (already set in state initialization)
       hasInitiallyLoadedRef.current = true;
       
-      // Refresh in background without blocking UI
+      // Refresh in background without blocking UI (no loading state)
       loadBudgetFromDB().catch((err) =>
         logger.error("Background budget refresh failed:", err)
       );
       return;
     }
 
-    // No cache or manual refresh - load from database
+    // No cache or manual refresh - show loading, then load from database
+    setLoading(true);
     await loadBudgetFromDB();
   }, [initialCachedBudget, loadBudgetFromDB]);
 

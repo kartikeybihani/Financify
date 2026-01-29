@@ -18,11 +18,13 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
+import PaywallModal from "./paywall";
 
 const { width } = Dimensions.get("window");
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  const [showPaywall, setShowPaywall] = useState(false);
 
   const imageSlideAnim = useRef(new Animated.Value(40)).current;
   const titleSlideAnim = useRef(new Animated.Value(30)).current;
@@ -151,6 +153,10 @@ export default function WelcomeScreen() {
 
   return (
     <View style={styles.container}>
+      <PaywallModal
+        visible={showPaywall}
+        onClose={() => setShowPaywall(false)}
+      />
       <StatusBar barStyle="light-content" />
       <LinearGradient
         colors={[
@@ -263,7 +269,7 @@ export default function WelcomeScreen() {
                 </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.paywallLink}
-                  onPress={() => router.push("/(auth)/paywall")}
+                  onPress={() => setShowPaywall(true)}
                 >
                   <Text style={styles.paywallLinkText}>View plans</Text>
                 </TouchableOpacity>

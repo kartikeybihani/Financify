@@ -6,6 +6,7 @@ import BudgetEmptyState from "./BudgetEmptyState";
 import ManualBudgetCreationModal from "@/src/components/modals/ManualBudgetCreationModal";
 import BudgetCreationModal from "@/src/components/modals/BudgetCreationModal";
 import { useBudget } from "@/src/hooks/useBudget";
+import { LoadingIndicator } from "@/src/shared/components/LoadingStates";
 import logger from "@/src/utils/core/logger";
 
 interface Props {
@@ -127,8 +128,13 @@ export default function BudgetSection({
     <View style={styles.container}>
       {/* <Text style={titleStyle}>Budget Overview</Text> */}
 
-      {/* Show empty state if no active budget exists */}
-      {!hasActiveBudget && !budgetLoading ? (
+      {/* Show loading when fetching with no cache; empty state when loaded but no budget; otherwise BudgetView */}
+      {budgetLoading ? (
+        <LoadingIndicator
+          message="Loading your budget..."
+          style={styles.loadingIndicator}
+        />
+      ) : !hasActiveBudget ? (
         <BudgetEmptyState
           onCreateWithFinny={handleCreateWithFinny}
           onCreateManually={handleCreateManually}
@@ -190,5 +196,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     marginTop: 16,
     marginBottom: 65,
+  },
+  loadingIndicator: {
+    marginTop: 24,
   },
 });

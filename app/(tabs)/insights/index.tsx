@@ -106,7 +106,6 @@ import {
   clearSpendingCache,
   CachedSpendingData,
 } from "@/src/shared/utils/spendingCache";
-import { clearBudgetCache } from "@/src/shared/utils/budgetCache";
 import {
   LoadingIndicator,
   ErrorState,
@@ -434,12 +433,8 @@ export default function InsightsScreen() {
     const subscription = DeviceEventEmitter.addListener(
       "transactionCategoryUpdated",
       async (data) => {
-        // Clear caches since categories have changed
-        await Promise.all([
-          clearTransactionsCache(),
-          clearSpendingCache(),
-          clearBudgetCache(),
-        ]);
+        // Clear transactions/spending caches; keep budget cache so Budget shows stale then updates
+        await Promise.all([clearTransactionsCache(), clearSpendingCache()]);
 
         if (data.affectedTransactions && data.affectedTransactions.length > 0) {
           // Apply optimistic updates to filtered transactions
@@ -558,11 +553,12 @@ export default function InsightsScreen() {
       if (!currentUserId) return;
 
       // Check caches before registering preloaders
-      const [hasTransactionsCache, hasRecurringCache, hasInvestmentCache] = await Promise.all([
-        hasValidTransactionsCache(currentUserId),
-        hasValidRecurringCache(currentUserId),
-        hasValidInvestmentCache(currentUserId),
-      ]);
+      const [hasTransactionsCache, hasRecurringCache, hasInvestmentCache] =
+        await Promise.all([
+          hasValidTransactionsCache(currentUserId),
+          hasValidRecurringCache(currentUserId),
+          hasValidInvestmentCache(currentUserId),
+        ]);
 
       // Register preload tasks for each section
       // Only register if cache doesn't exist (to avoid unnecessary work)
@@ -579,7 +575,9 @@ export default function InsightsScreen() {
           },
         });
       } else {
-        logger.info("⏭️ [PRELOADER] Skipping transactions preload - cache exists");
+        logger.info(
+          "⏭️ [PRELOADER] Skipping transactions preload - cache exists",
+        );
       }
 
       if (!hasRecurringCache) {
@@ -610,7 +608,9 @@ export default function InsightsScreen() {
           },
         });
       } else {
-        logger.info("⏭️ [PRELOADER] Skipping investments preload - cache exists");
+        logger.info(
+          "⏭️ [PRELOADER] Skipping investments preload - cache exists",
+        );
       }
 
       // Accounts preload - always register (no cache check needed, uses unified cache)
@@ -1481,12 +1481,11 @@ export default function InsightsScreen() {
           // Use updated filter options (with deleted account removed if applicable)
           await loadFilteredTransactions(updatedFilterOptions, true);
 
-          // Clear caches since financial data has changed
+          // Reload from DB; don't clear budget cache so Budget section keeps showing stale until refresh
           await clearRecurringCache();
           await clearInvestmentCache();
           await clearTransactionsCache();
           await clearSpendingCache();
-          await clearBudgetCache();
           // Also reload recurring transactions from database when data changes
           await loadRecurringTransactions();
           // Also reload investment data if financial data changes
@@ -1710,16 +1709,19 @@ export default function InsightsScreen() {
     if (!hasData.current) return;
     setRefreshing(true);
     try {
-      // Clear cache when refreshing
+      // Don't clear section caches - show stale cache and update in background (same as Home)
       clearCache();
-      await clearTransactionsCache();
-      await clearSpendingCache();
-      await clearBudgetCache();
       await fetchFreshData();
 
-      // Refresh budget data if on budget section
+      // Refresh budget in background; useBudget will update state + cache when done
       if (activeSectionKey === "budget" && refreshBudgetRef.current) {
         await refreshBudgetRef.current();
+      } else if (refreshBudgetRef.current) {
+        refreshBudgetRef
+          .current()
+          .catch((err) =>
+            logger.error("Background budget refresh failed:", err),
+          );
       }
 
       // Only reload filtered transactions if on Transactions section

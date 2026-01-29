@@ -8,121 +8,227 @@ import {
   Platform,
   Dimensions,
   Animated,
+  Easing,
+  LayoutAnimation,
+  UIManager,
   ScrollView,
+  TouchableWithoutFeedback,
+  Modal,
 } from "react-native";
-import { useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useState, useRef, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
-const FEATURE_CARD_WIDTH = SCREEN_WIDTH - 48;
-const FEATURE_ROTATION_INTERVAL = 4000; // 4 seconds per feature
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+const FEATURE_CARD_WIDTH = SCREEN_WIDTH - 56;
+
+// Enable LayoutAnimation on Android
+if (
+  Platform.OS === "android" &&
+  UIManager.setLayoutAnimationEnabledExperimental
+) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
+const featureTransitionAnimation = {
+  duration: 260,
+  create: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+    property: LayoutAnimation.Properties.opacity,
+  },
+  update: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+    property: LayoutAnimation.Properties.scaleXY,
+    springDamping: 0.78,
+  },
+  delete: {
+    type: LayoutAnimation.Types.easeInEaseOut,
+    property: LayoutAnimation.Properties.opacity,
+  },
+};
+
+// Premium Dark Palette
+const COLORS = {
+  sapphire: "#0F52BA",
+  sapphireDeep: "#0B3E8A",
+  skyBlue: "#4A90E2",
+  cyanBlue: "#2EA8E5",
+  powderBlue: "#B0E0E6",
+  deepNavy: "#0A1929",
+  iceBlue: "#E0F7FA",
+  darkBackground: "#0D1117",
+};
+
+// Contextual Background Components
+const TimelineBackground = () => (
+  <View style={styles.contextualBackground}>
+    {[0, 1, 2, 3].map((i) => (
+      <View key={i} style={styles.timelineItem}>
+        <View
+          style={[
+            styles.timelineDot,
+            { opacity: 0.05 + i * 0.015, left: `${20 + i * 20}%` },
+          ]}
+        />
+        <View
+          style={[
+            styles.timelineLine,
+            {
+              opacity: 0.03,
+              left: `${20 + i * 20}%`,
+              width: i < 3 ? "20%" : 0,
+            },
+          ]}
+        />
+      </View>
+    ))}
+  </View>
+);
+
+const DashboardBackground = () => (
+  <View style={styles.contextualBackground}>
+    <View style={styles.dashboardGrid}>
+      {[0, 1, 2, 3, 4, 5].map((i) => (
+        <View
+          key={i}
+          style={[
+            styles.dashboardCard,
+            {
+              opacity: 0.04,
+              left: `${(i % 3) * 33}%`,
+              top: `${Math.floor(i / 3) * 50}%`,
+            },
+          ]}
+        />
+      ))}
+    </View>
+  </View>
+);
+
+const AIBackground = () => (
+  <View style={styles.contextualBackground}>
+    {[0, 1, 2, 3, 4].map((i) => (
+      <View
+        key={i}
+        style={[
+          styles.aiBubble,
+          {
+            opacity: 0.05,
+            left: `${15 + i * 18}%`,
+            top: `${20 + (i % 2) * 40}%`,
+            width: 28 + i * 4,
+            height: 28 + i * 4,
+          },
+        ]}
+      />
+    ))}
+  </View>
+);
 
 interface Feature {
   id: string;
   title: string;
-  subtitle: string;
-  description: string;
+  headline: string;
+  benefits: string[];
   icon: keyof typeof Ionicons.glyphMap;
-  gradient: [string, string];
+  iconGradient: [string, string];
+  cardGradient: [string, string];
+  backgroundType: "timeline" | "dashboard" | "ai";
 }
 
 const FEATURES: Feature[] = [
   {
-    id: "ai-planning",
-    title: "AI-Powered Financial Planning",
-    subtitle: "Your personal finance coach",
-    description:
-      "Finny sets up your budget automatically and answers any question about your finances. Build wealth with AI that teaches you how to build wealth.",
-    icon: "sparkles",
-    gradient: ["rgba(74, 144, 226, 0.2)", "rgba(93, 160, 242, 0.1)"],
+    id: "track-everything",
+    title: "Track Everything",
+    headline: "All your money in one place",
+    benefits: [
+      "Track all accounts automatically",
+      "See spending across categories",
+      "Real-time subscription tracking",
+    ],
+    icon: "wallet",
+    iconGradient: [COLORS.sapphireDeep, COLORS.skyBlue],
+    cardGradient: ["rgba(15, 82, 186, 0.15)", "rgba(176, 224, 230, 0.08)"],
+    backgroundType: "dashboard",
   },
   {
-    id: "goals-timeline",
-    title: "Goals & Golden Timeline",
-    subtitle: "Visualize your financial future",
-    description:
-      "Set and track your financial goals with a beautiful timeline. See your progress toward emergency funds, vacations, homes, and retirement.",
+    id: "ai-budget",
+    title: "Unlimited AI",
+    headline: "Unlimited Finny Assistant",
+    benefits: [
+      "Set budget alerts and get notified",
+      "Personalized recommendations",
+      "Answer any financial question",
+      "Write guidance and insights for you",
+    ],
+    icon: "bulb",
+    iconGradient: [COLORS.skyBlue, COLORS.cyanBlue],
+    cardGradient: ["rgba(176, 224, 230, 0.15)", "rgba(224, 247, 250, 0.08)"],
+    backgroundType: "ai",
+  },
+  {
+    id: "financial-goals",
+    title: "Financial Goals",
+    headline: "Plan your financial future",
+    benefits: [
+      "Set goals with visual timeline",
+      "Track progress automatically",
+      "Get personalized recommendations",
+    ],
     icon: "trophy",
-    gradient: ["rgba(255, 193, 7, 0.2)", "rgba(255, 152, 0, 0.1)"],
-  },
-  {
-    id: "money-advisor",
-    title: "Your Money Advisor",
-    subtitle: "Coaching that actually helps",
-    description:
-      "Get personalized advice on building wealth and managing money. No overwhelming dashboards—just clear guidance when you need it.",
-    icon: "person",
-    gradient: ["rgba(156, 39, 176, 0.2)", "rgba(123, 31, 162, 0.1)"],
-  },
-  {
-    id: "clean-interface",
-    title: "Clean & Simple",
-    subtitle: "No more financial overwhelm",
-    description:
-      "A clean manager that focuses on what matters. Manage your money without drowning in charts and complex dashboards.",
-    icon: "layers",
-    gradient: ["rgba(76, 175, 80, 0.2)", "rgba(56, 142, 60, 0.1)"],
+    iconGradient: [COLORS.sapphireDeep, COLORS.cyanBlue],
+    cardGradient: ["rgba(15, 82, 186, 0.15)", "rgba(224, 247, 250, 0.08)"],
+    backgroundType: "timeline",
   },
 ];
 
-export default function PaywallScreen() {
-  const router = useRouter();
+export interface PaywallModalProps {
+  visible: boolean;
+  onClose: () => void;
+}
+
+export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
   const insets = useSafeAreaInsets();
   const [selectedPlan, setSelectedPlan] = useState<"annual" | "monthly">(
     "annual",
   );
-  const [currentFeatureIndex, setCurrentFeatureIndex] = useState(0);
+  const [expandedFeatureId, setExpandedFeatureId] = useState<string | null>(
+    null,
+  );
   const [toggleWidth, setToggleWidth] = useState(0);
+  const [scrollContentHeight, setScrollContentHeight] = useState(0);
 
-  // Animation refs
-  const scrollX = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(50)).current;
-  const featureScaleAnim = useRef(new Animated.Value(0.95)).current;
+  const SHEET_HANDLE_HEIGHT = 10 + 2 + 3; // sheetHandleContainer padding + handle
+  const maxSheetHeight =
+    SCREEN_HEIGHT - Math.max(insets.top, 12) - 12 - Math.max(insets.bottom, 0);
+  const sheetHeight = Math.min(
+    Math.max(scrollContentHeight + SHEET_HANDLE_HEIGHT + 16, 320),
+    maxSheetHeight,
+  );
+
   const toggleAnim = useRef(new Animated.Value(1)).current;
+  const benefitsAppear = useRef(new Animated.Value(0)).current;
 
-  // Auto-rotate features
   useEffect(() => {
-    const interval = setInterval(() => {
-      setCurrentFeatureIndex((prev) => (prev + 1) % FEATURES.length);
-    }, FEATURE_ROTATION_INTERVAL);
-    return () => clearInterval(interval);
-  }, []);
+    if (!expandedFeatureId) return;
 
-  // Animate feature change
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(featureScaleAnim, {
-        toValue: 1,
-        duration: 300,
-        useNativeDriver: true,
-      }),
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 400,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-    ]).start();
+    benefitsAppear.setValue(0);
+    Animated.timing(benefitsAppear, {
+      toValue: 1,
+      duration: 240,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [expandedFeatureId, benefitsAppear]);
 
-    // Reset for next animation
-    const timer = setTimeout(() => {
-      featureScaleAnim.setValue(0.95);
-      fadeAnim.setValue(0);
-      slideAnim.setValue(50);
-    }, FEATURE_ROTATION_INTERVAL - 300);
-
-    return () => clearTimeout(timer);
-  }, [currentFeatureIndex]);
+  const handleFeaturePress = (featureId: string) => {
+    LayoutAnimation.configureNext(featureTransitionAnimation);
+    setExpandedFeatureId((current) =>
+      current === featureId ? null : featureId,
+    );
+  };
 
   useEffect(() => {
     Animated.spring(toggleAnim, {
@@ -138,292 +244,453 @@ export default function PaywallScreen() {
     console.log(`Subscribing to ${selectedPlan} plan`);
   };
 
-  const currentFeature = FEATURES[currentFeatureIndex];
   const toggleTranslateX = toggleAnim.interpolate({
     inputRange: [0, 1],
     outputRange: [0, Math.max(toggleWidth - 8, 0) / 2],
   });
 
-  return (
-    <View style={styles.container}>
-      <LinearGradient
-        colors={[
-          "rgba(10, 14, 20, 0.98)",
-          "rgba(22, 33, 62, 0.92)",
-          "rgba(10, 14, 20, 0.98)",
-        ]}
-        locations={[0, 0.5, 1]}
-        style={styles.gradient}
-      >
-        <ScrollView
-          style={styles.scrollView}
-          contentContainerStyle={[
-            styles.scrollContent,
-            {
-              paddingTop: 30,
-              paddingBottom: insets.bottom + 20,
-            },
-          ]}
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Header */}
-          <View style={styles.header}>
-            <View style={styles.headerLeft}>
-              <Text style={styles.headerBrand}>Finny</Text>
-              <View style={styles.proBadge}>
-                <Text style={styles.proBadgeText}>PRO</Text>
-              </View>
-            </View>
-            <TouchableOpacity
-              style={styles.closeButton}
-              onPress={() => router.back()}
-              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
-            >
-              <Ionicons
-                name="close"
-                size={21}
-                color="rgba(255, 255, 255, 0.8)"
-              />
-            </TouchableOpacity>
-          </View>
+  const featuresToShow = expandedFeatureId
+    ? FEATURES.filter((feature) => feature.id === expandedFeatureId)
+    : FEATURES;
 
-          {/* Feature Showcase Section */}
-          <View style={styles.featureSection}>
-            <Animated.View
+  const handleClose = onClose;
+
+  if (!visible) return null;
+
+  return (
+    <Modal
+      visible
+      transparent
+      animationType="slide"
+      onRequestClose={handleClose}
+    >
+      <TouchableWithoutFeedback onPress={handleClose}>
+        <BlurView intensity={60} tint="dark" style={styles.overlay}>
+          <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
+            <View
               style={[
-                styles.featureCard,
+                styles.sheet,
                 {
-                  opacity: fadeAnim,
-                  transform: [
-                    { translateX: slideAnim },
-                    { scale: featureScaleAnim },
-                  ],
+                  height: sheetHeight,
+                  maxHeight: maxSheetHeight,
                 },
               ]}
             >
               <LinearGradient
-                colors={currentFeature.gradient}
-                style={styles.featureGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+                colors={[
+                  COLORS.darkBackground,
+                  COLORS.deepNavy,
+                  COLORS.darkBackground,
+                ]}
+                locations={[0, 0.5, 1]}
+                style={styles.sheetGradient}
               >
-                <BlurView intensity={20} style={styles.featureBlur}>
-                  <View style={styles.featureIconContainer}>
-                    <LinearGradient
-                      colors={["#4A90E2", "#5DA0F2"]}
-                      style={styles.featureIconGradient}
-                    >
-                      <Ionicons
-                        name={currentFeature.icon}
-                        size={28}
-                        color="#fff"
-                      />
-                    </LinearGradient>
-                  </View>
-                  <Text style={styles.featureTitle}>
-                    {currentFeature.title}
-                  </Text>
-                  <Text style={styles.featureSubtitle}>
-                    {currentFeature.subtitle}
-                  </Text>
-                  <Text style={styles.featureDescription}>
-                    {currentFeature.description}
-                  </Text>
-                </BlurView>
-              </LinearGradient>
-            </Animated.View>
-          </View>
-
-          {/* Pricing Section */}
-          <View style={styles.pricingSection}>
-            <Text style={styles.pricingTitle}>Choose Your Plan</Text>
-            <Text style={styles.pricingSubtitle}>
-              Start your 30 days free trial
-            </Text>
-
-            <View style={styles.planToggle}>
-              <BlurView intensity={24} style={styles.planToggleBlur}>
-                <View
-                  style={styles.planToggleInner}
-                  onLayout={(event) =>
-                    setToggleWidth(event.nativeEvent.layout.width)
+                <View style={styles.sheetHandleContainer}>
+                  <View style={styles.sheetHandle} />
+                </View>
+                <ScrollView
+                  style={styles.scrollView}
+                  contentContainerStyle={[
+                    styles.scrollContent,
+                    {
+                      paddingTop: 16,
+                      paddingBottom: insets.bottom + 20,
+                    },
+                  ]}
+                  showsVerticalScrollIndicator={false}
+                  bounces={false}
+                  onContentSizeChange={(_, h) =>
+                    setScrollContentHeight(Math.ceil(h))
                   }
                 >
-                  {toggleWidth > 0 && (
-                    <Animated.View
-                      style={[
-                        styles.togglePill,
-                        {
-                          width: (toggleWidth - 8) / 2,
-                          transform: [{ translateX: toggleTranslateX }],
-                        },
-                      ]}
+                  {/* Header */}
+                  <View style={styles.header}>
+                    <View style={styles.headerLeft}>
+                      <Text style={styles.headerBrand}>Finny</Text>
+                      <View style={styles.proBadge}>
+                        <Text style={styles.proBadgeText}>PRO</Text>
+                      </View>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.closeButton}
+                      onPress={handleClose}
+                      hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                    >
+                      <Ionicons
+                        name="close"
+                        size={21}
+                        color="rgba(255, 255, 255, 0.8)"
+                      />
+                    </TouchableOpacity>
+                  </View>
+
+                  {/* Feature Showcase Section - Accordion Style (hidden for compact modal) */}
+                  {/* <View style={styles.featureSection}>
+            <Text style={styles.featureSectionSubtitle}>
+              {expandedFeatureId
+                ? "Tap the chevron to collapse"
+                : "Tap a card to see details"}
+            </Text>
+
+            {featuresToShow.map((feature, index) => {
+              const isExpanded = expandedFeatureId === feature.id;
+
+              return (
+                <View
+                  key={feature.id}
+                  style={[
+                    styles.featureCard,
+                    isExpanded && styles.featureCardFocused,
+                    {
+                      marginBottom: index < featuresToShow.length - 1 ? 12 : 0,
+                    },
+                  ]}
+                >
+                  <TouchableOpacity
+                    activeOpacity={0.9}
+                    onPress={() => handleFeaturePress(feature.id)}
+                  >
+                    <LinearGradient
+                      colors={feature.cardGradient}
+                      style={styles.featureGradient}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 1 }}
+                    >
+                      {feature.backgroundType === "timeline" && (
+                        <TimelineBackground />
+                      )}
+                      {feature.backgroundType === "dashboard" && (
+                        <DashboardBackground />
+                      )}
+                      {feature.backgroundType === "ai" && <AIBackground />}
+
+                      <BlurView intensity={20} style={styles.featureBlur}>
+                        <View style={styles.featureHeader}>
+                          <View style={styles.featureHeaderLeft}>
+                            <LinearGradient
+                              colors={feature.iconGradient}
+                              style={styles.featureIconGradient}
+                            >
+                              <Ionicons
+                                name={feature.icon}
+                                size={22}
+                                color="#fff"
+                              />
+                            </LinearGradient>
+                            <View style={styles.featureHeaderText}>
+                              <Text style={styles.featureTitle}>
+                                {feature.title}
+                              </Text>
+                              <Text style={styles.featureHeadlineCollapsed}>
+                                {feature.headline}
+                              </Text>
+                            </View>
+                          </View>
+                          <TouchableOpacity
+                            onPress={() => handleFeaturePress(feature.id)}
+                            hitSlop={{
+                              top: 10,
+                              bottom: 10,
+                              left: 10,
+                              right: 10,
+                            }}
+                            style={styles.featureChevronButton}
+                          >
+                            <Ionicons
+                              name={
+                                isExpanded ? "chevron-up" : "chevron-forward"
+                              }
+                              size={20}
+                              color="rgba(255, 255, 255, 0.5)"
+                            />
+                          </TouchableOpacity>
+                        </View>
+
+                        {isExpanded && (
+                          <Animated.View
+                            style={[
+                              styles.expandedContent,
+                              {
+                                opacity: benefitsAppear,
+                                transform: [
+                                  {
+                                    translateY: benefitsAppear.interpolate({
+                                      inputRange: [0, 1],
+                                      outputRange: [-6, 0],
+                                    }),
+                                  },
+                                ],
+                              },
+                            ]}
+                          >
+                            <View style={styles.expandedContentInner}>
+                              <View style={styles.benefitsContainer}>
+                                {feature.benefits.map(
+                                  (benefit, benefitIndex) => (
+                                    <View
+                                      key={benefitIndex}
+                                      style={styles.benefitRow}
+                                    >
+                                      <View
+                                        style={[
+                                          styles.bulletDot,
+                                          {
+                                            backgroundColor:
+                                              feature.iconGradient[0],
+                                          },
+                                        ]}
+                                      />
+                                      <Text style={styles.benefitText}>
+                                        {benefit}
+                                      </Text>
+                                    </View>
+                                  ),
+                                )}
+                              </View>
+                            </View>
+                          </Animated.View>
+                        )}
+                      </BlurView>
+                    </LinearGradient>
+                  </TouchableOpacity>
+                </View>
+              );
+            })}
+          </View> */}
+
+                  {/* Pricing Section */}
+                  <View style={styles.pricingSection}>
+                    <Text style={styles.pricingTitle}>Choose Your Plan</Text>
+                    <Text style={styles.pricingSubtitle}>
+                      Start your 1 month Free trial
+                    </Text>
+
+                    <View style={styles.planToggle}>
+                      <BlurView intensity={24} style={styles.planToggleBlur}>
+                        <View
+                          style={styles.planToggleInner}
+                          onLayout={(event) =>
+                            setToggleWidth(event.nativeEvent.layout.width)
+                          }
+                        >
+                          {toggleWidth > 0 && (
+                            <Animated.View
+                              style={[
+                                styles.togglePill,
+                                {
+                                  width: (toggleWidth - 8) / 2,
+                                  transform: [{ translateX: toggleTranslateX }],
+                                },
+                              ]}
+                            >
+                              <LinearGradient
+                                colors={["#4A90E2", "#5DA0F2"]}
+                                start={{ x: 0, y: 0 }}
+                                end={{ x: 1, y: 1 }}
+                                style={styles.togglePillGradient}
+                              />
+                            </Animated.View>
+                          )}
+                          <TouchableOpacity
+                            style={styles.toggleOption}
+                            onPress={() => setSelectedPlan("monthly")}
+                            activeOpacity={0.9}
+                          >
+                            <Text
+                              style={[
+                                styles.toggleText,
+                                selectedPlan === "monthly" &&
+                                  styles.toggleTextActive,
+                              ]}
+                            >
+                              Monthly
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            style={styles.toggleOption}
+                            onPress={() => setSelectedPlan("annual")}
+                            activeOpacity={0.9}
+                          >
+                            <Text
+                              style={[
+                                styles.toggleText,
+                                selectedPlan === "annual" &&
+                                  styles.toggleTextActive,
+                              ]}
+                            >
+                              Yearly
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      </BlurView>
+                    </View>
+
+                    <View style={styles.pricingCards}>
+                      {selectedPlan === "annual" ? (
+                        <TouchableOpacity
+                          style={[
+                            styles.pricingCard,
+                            styles.pricingCardAnnual,
+                            styles.pricingCardSelected,
+                          ]}
+                          onPress={() => setSelectedPlan("annual")}
+                          activeOpacity={0.9}
+                        >
+                          <LinearGradient
+                            colors={[
+                              "rgba(74, 144, 226, 0.2)",
+                              "rgba(93, 160, 242, 0.15)",
+                            ]}
+                            style={styles.selectedGradient}
+                          />
+                          <View style={styles.pricingCardContent}>
+                            <View style={styles.planBadgesRow}>
+                              <View style={styles.proBadge}>
+                                <Text style={styles.proBadgeText}>
+                                  Best Value. Full Access.
+                                </Text>
+                              </View>
+                            </View>
+                            <Text style={styles.pricingCardTitle}>Annual</Text>
+                            <View style={styles.pricingAmountRow}>
+                              <Text style={styles.pricingAmount}>$99.99</Text>
+                              <Text style={styles.pricingPeriod}>/year</Text>
+                            </View>
+                            <Text style={styles.pricingEquivalent}>
+                              ${(99.99 / 12).toFixed(2)}/month
+                            </Text>
+                          </View>
+                          <LinearGradient
+                            colors={["#0099FF", "#0066FF"]}
+                            start={{ x: 0, y: 0 }}
+                            end={{ x: 1, y: 1 }}
+                            style={styles.savingsChip}
+                          >
+                            <BlurView
+                              intensity={12}
+                              style={styles.savingsChipBlur}
+                            >
+                              <Text style={styles.savingsText}>
+                                Save{" "}
+                                {Math.round(
+                                  ((11.99 - 99.99 / 12) / 11.99) * 100,
+                                )}
+                                %
+                              </Text>
+                            </BlurView>
+                          </LinearGradient>
+                        </TouchableOpacity>
+                      ) : (
+                        <TouchableOpacity
+                          style={[
+                            styles.pricingCard,
+                            styles.pricingCardMonthly,
+                            styles.pricingCardSelected,
+                          ]}
+                          onPress={() => setSelectedPlan("monthly")}
+                          activeOpacity={0.9}
+                        >
+                          <LinearGradient
+                            colors={[
+                              "rgba(74, 144, 226, 0.15)",
+                              "rgba(93, 160, 242, 0.1)",
+                            ]}
+                            style={styles.selectedGradient}
+                          />
+                          <View style={styles.pricingCardContent}>
+                            <View style={styles.planBadgesRow}>
+                              <View style={styles.proBadge}>
+                                <Text style={styles.proBadgeText}>
+                                  Try the Essentials
+                                </Text>
+                              </View>
+                            </View>
+                            <Text style={styles.pricingCardTitle}>Monthly</Text>
+                            <View style={styles.pricingAmountRow}>
+                              <Text style={styles.pricingAmount}>$11.99</Text>
+                              <Text style={styles.pricingPeriod}>/month</Text>
+                            </View>
+                            {/* <Text style={styles.pricingEquivalent}>
+                      ${(11.99 * 12).toFixed(2)}/year
+                    </Text> */}
+                          </View>
+                        </TouchableOpacity>
+                      )}
+                    </View>
+
+                    {/* CTA Button */}
+                    <TouchableOpacity
+                      style={styles.ctaButton}
+                      onPress={handleSubscribe}
+                      activeOpacity={0.9}
                     >
                       <LinearGradient
                         colors={["#4A90E2", "#5DA0F2"]}
                         start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.togglePillGradient}
-                      />
-                    </Animated.View>
-                  )}
-                  <TouchableOpacity
-                    style={styles.toggleOption}
-                    onPress={() => setSelectedPlan("monthly")}
-                    activeOpacity={0.9}
-                  >
-                    <Text
-                      style={[
-                        styles.toggleText,
-                        selectedPlan === "monthly" && styles.toggleTextActive,
-                      ]}
-                    >
-                      Monthly
-                    </Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={styles.toggleOption}
-                    onPress={() => setSelectedPlan("annual")}
-                    activeOpacity={0.9}
-                  >
-                    <Text
-                      style={[
-                        styles.toggleText,
-                        selectedPlan === "annual" && styles.toggleTextActive,
-                      ]}
-                    >
-                      Yearly
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-              </BlurView>
-            </View>
-
-            <View style={styles.pricingCards}>
-              {selectedPlan === "annual" ? (
-                <TouchableOpacity
-                  style={[
-                    styles.pricingCard,
-                    styles.pricingCardAnnual,
-                    styles.pricingCardSelected,
-                  ]}
-                  onPress={() => setSelectedPlan("annual")}
-                  activeOpacity={0.9}
-                >
-                  <LinearGradient
-                    colors={[
-                      "rgba(74, 144, 226, 0.2)",
-                      "rgba(93, 160, 242, 0.15)",
-                    ]}
-                    style={styles.selectedGradient}
-                  />
-                  <View style={styles.pricingCardContent}>
-                    <View style={styles.planBadgesRow}>
-                      <View style={styles.proBadge}>
-                        <Text style={styles.proBadgeText}>
-                          Best Value. Full Access.
+                        end={{ x: 1, y: 0 }}
+                        style={styles.ctaGradient}
+                      >
+                        <Text style={styles.ctaText}>
+                          Start 1-Month Free Trial
                         </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.pricingCardTitle}>Annual</Text>
-                    <View style={styles.pricingAmountRow}>
-                      <Text style={styles.pricingAmount}>$99.99</Text>
-                      <Text style={styles.pricingPeriod}>/year</Text>
-                    </View>
-                    <Text style={styles.pricingEquivalent}>
-                      ${(99.99 / 12).toFixed(2)}/month
-                    </Text>
-                  </View>
-                  <LinearGradient
-                    colors={["#0099FF", "#0066FF"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.savingsChip}
-                  >
-                    <BlurView intensity={12} style={styles.savingsChipBlur}>
-                      <Text style={styles.savingsText}>
-                        Save {Math.round(((11.99 - 99.99 / 12) / 11.99) * 100)}%
-                      </Text>
-                    </BlurView>
-                  </LinearGradient>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity
-                  style={[
-                    styles.pricingCard,
-                    styles.pricingCardMonthly,
-                    styles.pricingCardSelected,
-                  ]}
-                  onPress={() => setSelectedPlan("monthly")}
-                  activeOpacity={0.9}
-                >
-                  <LinearGradient
-                    colors={[
-                      "rgba(74, 144, 226, 0.15)",
-                      "rgba(93, 160, 242, 0.1)",
-                    ]}
-                    style={styles.selectedGradient}
-                  />
-                  <View style={styles.pricingCardContent}>
-                    <View style={styles.planBadgesRow}>
-                      <View style={styles.proBadge}>
-                        <Text style={styles.proBadgeText}>
-                          Try the Essentials
+                        <Text style={styles.ctaSubtext}>
+                          Cancel anytime • 1 month free
                         </Text>
-                      </View>
-                    </View>
-                    <Text style={styles.pricingCardTitle}>Monthly</Text>
-                    <View style={styles.pricingAmountRow}>
-                      <Text style={styles.pricingAmount}>$11.99</Text>
-                      <Text style={styles.pricingPeriod}>/month</Text>
-                    </View>
-                    {/* <Text style={styles.pricingEquivalent}>
-                      ${(11.99 * 12).toFixed(2)}/year
-                    </Text> */}
+                      </LinearGradient>
+                    </TouchableOpacity>
                   </View>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            {/* CTA Button */}
-            <TouchableOpacity
-              style={styles.ctaButton}
-              onPress={handleSubscribe}
-              activeOpacity={0.9}
-            >
-              <LinearGradient
-                colors={["#4A90E2", "#5DA0F2"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.ctaGradient}
-              >
-                <Text style={styles.ctaText}>Start Free Trial</Text>
-                <Text style={styles.ctaSubtext}>
-                  Cancel anytime • 1 month free
-                </Text>
+                </ScrollView>
               </LinearGradient>
-            </TouchableOpacity>
-          </View>
-        </ScrollView>
-      </LinearGradient>
-    </View>
+            </View>
+          </TouchableWithoutFeedback>
+        </BlurView>
+      </TouchableWithoutFeedback>
+    </Modal>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  overlay: {
     flex: 1,
-    backgroundColor: "#121212",
+    justifyContent: "flex-end",
   },
-  gradient: {
+  sheet: {
+    width: SCREEN_WIDTH,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.35,
+    shadowRadius: 24,
+    elevation: 24,
+  },
+  sheetGradient: {
     flex: 1,
+    minHeight: 0,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    overflow: "hidden",
+  },
+  sheetHandleContainer: {
+    paddingTop: 10,
+    paddingBottom: 2,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  sheetHandle: {
+    width: 44,
+    height: 3,
+    borderRadius: 3,
+    backgroundColor: "rgba(255,255,255,0.18)",
   },
   scrollView: {
     flex: 1,
+    minHeight: 0,
   },
   scrollContent: {
     paddingHorizontal: 24,
-    flexGrow: 1,
+    flexGrow: 0,
   },
   header: {
     flexDirection: "row",
@@ -474,60 +741,195 @@ const styles = StyleSheet.create({
   featureSection: {
     marginBottom: 20,
     alignItems: "center",
-    paddingHorizontal: 24,
+  },
+  featureSectionTitle: {
+    width: FEATURE_CARD_WIDTH,
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#fff",
+    letterSpacing: -0.2,
+    marginBottom: 4,
+  },
+  featureSectionSubtitle: {
+    width: FEATURE_CARD_WIDTH,
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.6)",
+    letterSpacing: 0.1,
+    marginBottom: 12,
   },
   featureCard: {
     width: FEATURE_CARD_WIDTH,
-    borderRadius: 20,
-    overflow: "hidden",
-    marginBottom: 16,
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.16,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  featureCardFocused: {
+    borderWidth: 1,
+    borderColor: "rgba(93, 160, 242, 0.34)",
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    elevation: 8,
   },
   featureGradient: {
-    borderRadius: 20,
+    borderRadius: 14,
+    position: "relative",
+    overflow: "hidden",
+  },
+  contextualBackground: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 14,
+  },
+  timelineItem: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+  },
+  timelineDot: {
+    position: "absolute",
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#fff",
+    top: "50%",
+    transform: [{ translateY: -3 }],
+  },
+  timelineLine: {
+    position: "absolute",
+    height: 1.5,
+    backgroundColor: "#fff",
+    top: "50%",
+    transform: [{ translateY: -0.75 }],
+  },
+  dashboardGrid: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+  },
+  dashboardCard: {
+    position: "absolute",
+    width: "28%",
+    height: "40%",
+    borderRadius: 6,
+    backgroundColor: "#fff",
+    borderWidth: 0.5,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  aiBubble: {
+    position: "absolute",
+    borderRadius: 999,
+    backgroundColor: "#fff",
   },
   featureBlur: {
-    padding: 24,
-    borderRadius: 20,
+    borderRadius: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderColor: "rgba(74, 144, 226, 0.22)",
+    backgroundColor: "rgba(10, 25, 41, 0.6)",
+    position: "relative",
+    zIndex: 1,
+    overflow: "hidden",
   },
-  featureIconContainer: {
+  featureHeader: {
+    flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
+    justifyContent: "space-between",
+    padding: 14,
+  },
+  featureHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
   },
   featureIconGradient: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
+    width: 42,
+    height: 42,
+    borderRadius: 21,
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#4A90E2",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
+    marginRight: 12,
+    shadowColor: COLORS.sapphire,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.35,
+    shadowRadius: 8,
     elevation: 4,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.14)",
+  },
+  featureCloseButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+  },
+  featureChevronButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  featureHeaderText: {
+    flex: 1,
   },
   featureTitle: {
-    fontSize: 22,
-    fontWeight: "700",
+    fontSize: 10,
+    fontWeight: "600",
+    color: "rgba(176, 224, 230, 0.7)",
+    marginBottom: 2,
+    letterSpacing: 1.2,
+    textTransform: "uppercase",
+    // textAlign: "center",
+  },
+  featureHeadlineCollapsed: {
+    fontSize: 15,
+    fontWeight: "600",
     color: "#fff",
-    textAlign: "center",
-    marginBottom: 6,
-    letterSpacing: 0.3,
+    letterSpacing: -0.2,
+    lineHeight: 19,
+    // textAlign: "center",
   },
-  featureSubtitle: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.65)",
-    textAlign: "center",
-    marginBottom: 12,
-    fontWeight: "500",
+  expandedContent: {
+    overflow: "hidden",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.07)",
   },
-  featureDescription: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.75)",
-    textAlign: "center",
-    lineHeight: 20,
+  expandedContentInner: {
+    paddingHorizontal: 14,
+    paddingTop: 10,
+    paddingBottom: 14,
+  },
+  benefitsContainer: {
+    gap: 10,
+    alignItems: "flex-start",
+  },
+  benefitRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    width: "100%",
+  },
+  bulletDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 999,
+    marginRight: 8,
+    marginTop: 6,
+    opacity: 0.95,
+  },
+  benefitText: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.8)",
+    flex: 1,
+    lineHeight: 19,
+    fontWeight: "400",
+    letterSpacing: 0.1,
   },
   pricingSection: {
     marginTop: "auto",
@@ -538,7 +940,7 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#fff",
     textAlign: "center",
-    marginBottom: 4,
+    marginBottom: 10,
     paddingHorizontal: 24,
   },
   pricingSubtitle: {

@@ -41,9 +41,10 @@ yarn-error.*
 app-example
 .vercel
 
-# Environment variables
+# Environment variables (commit .env.example as template)
 .env
 .env.*
+!.env.example
 **/.env
 **/.env.*
 
