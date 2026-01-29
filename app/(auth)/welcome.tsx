@@ -62,7 +62,7 @@ export default function WelcomeScreen() {
             duration: 1600,
             useNativeDriver: true,
           }),
-        ])
+        ]),
       ),
     ]).start();
 
@@ -210,7 +210,7 @@ export default function WelcomeScreen() {
               </View>
               <Text style={styles.titleHighlight}>
                 <Text style={styles.titleMain}>
-                  A money coach that gets you!
+                  A Money advisor that gets you!
                 </Text>
               </Text>
             </Animated.View>
@@ -260,6 +260,12 @@ export default function WelcomeScreen() {
                     Already have an account?{" "}
                     <Text style={styles.loginTextBold}>Login</Text>
                   </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.paywallLink}
+                  onPress={() => router.push("/(auth)/paywall")}
+                >
+                  <Text style={styles.paywallLinkText}>View plans</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -527,6 +533,14 @@ const styles = StyleSheet.create({
   loginTextBold: {
     color: "#4A90E2",
     fontWeight: "600",
+  },
+  paywallLink: {
+    marginTop: 12,
+    alignItems: "center",
+  },
+  paywallLinkText: {
+    color: "rgba(255, 255, 255, 0.4)",
+    fontSize: 13,
   },
   cardCaption: {
     color: "rgba(255, 255, 255, 0.6)",
