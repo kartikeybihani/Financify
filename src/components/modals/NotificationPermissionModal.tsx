@@ -31,8 +31,8 @@ export default function NotificationPermissionModal({
           <Text style={styles.title}>Stay in the loop!</Text>
 
           <Text style={styles.message}>
-            Get helpful reminders and insights about your finances. We'll only
-            send you the most important updates.
+            Get helpful reminders and insights about your money. We'll only send
+            you the most important updates.
           </Text>
 
           <View style={styles.buttonContainer}>

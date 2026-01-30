@@ -23,6 +23,8 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import logger from "@/src/utils/core/logger";
 import AppStorage from "@/src/utils/storage/storage";
+import NotificationPermissionModal from "@/src/components/modals/NotificationPermissionModal";
+import { notificationService } from "@/src/utils/core/notificationService";
 
 const REFERRAL_OPTIONS = [
   {
@@ -91,6 +93,7 @@ export default function AboutYouScreen() {
   const [saving, setSaving] = useState(false);
   const [showAgeModal, setShowAgeModal] = useState(false);
   const [showReferralModal, setShowReferralModal] = useState(false);
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
 
   const canContinue =
     age.trim().length > 0 &&
@@ -227,14 +230,33 @@ export default function AboutYouScreen() {
         throw profileError;
       }
 
-      // Navigate to intent questions
-      router.replace("/onboarding-intent1" as any);
       logOnboardingEvent({ stage: "q2", action: "complete" });
+      // Show notification setup (non-blocking); navigate on either choice
+      setShowNotificationModal(true);
     } catch (error) {
       logger.error("❌ AboutYouScreen: Error saving user data:", error);
     } finally {
       setSaving(false);
     }
+  };
+
+  const goToIntent = () => {
+    setShowNotificationModal(false);
+    router.replace("/onboarding-intent1" as any);
+  };
+
+  const handleNotificationAllow = async () => {
+    try {
+      const granted = await notificationService.requestPermissions();
+      if (granted) logger.info("✅ Notification permissions granted");
+    } catch (error) {
+      logger.error("Error requesting notification permissions:", error);
+    }
+    goToIntent();
+  };
+
+  const handleNotificationDontAllow = () => {
+    goToIntent();
   };
 
   return (
@@ -530,6 +552,12 @@ export default function AboutYouScreen() {
           </View>
         </TouchableWithoutFeedback>
       </Modal>
+
+      <NotificationPermissionModal
+        visible={showNotificationModal}
+        onAllow={handleNotificationAllow}
+        onDontAllow={handleNotificationDontAllow}
+      />
     </LinearGradient>
   );
 }
