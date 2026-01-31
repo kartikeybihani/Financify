@@ -537,12 +537,15 @@ async function recalculatePortfolioMetricsFromDatabase(
     });
 
     // Update investment_balances with recalculated totals but preserve previously computed day_change metrics
+    // CRITICAL: Don't overwrite day_change/day_change_percent - they're calculated from account totals, not holdings
     const { error: updateError } = await supabase
       .from("investment_balances")
       .update({
         total_value: totalPortfolioValue,
         total_change: totalUnrealizedPL,
         total_change_percent: totalChangePercent,
+        // NOTE: day_change and day_change_percent are NOT updated here - they're calculated from account totals
+        // and should only be updated during balance sync, not recalculation
         last_updated: new Date().toISOString(),
       })
       .eq("user_id", userId)
@@ -848,10 +851,11 @@ async function handleSnapTradeSync(res, userId, accountId) {
         const accountTotalValue = accountTotalFromHoldings || accountTotalFromBalance;
 
         // Get existing balance to read previous_total_value before updating
+        // CRITICAL: Also fetch cash and buying_power to reconstruct full previous_total_value if needed
         const { data: existingBalance } = await supabase
           .from("investment_balances")
           .select(
-            "day_change, day_change_percent, total_change, total_change_percent, previous_total_value, total_value, last_updated"
+            "day_change, day_change_percent, total_change, total_change_percent, previous_total_value, total_value, last_updated, cash, buying_power"
           )
           .eq("user_id", connection.user_id)
           .eq("snaptrade_user_id", connection.snaptrade_user_id)
@@ -948,26 +952,77 @@ async function handleSnapTradeSync(res, userId, accountId) {
           );
         }
 
-        // Calculate day_change using TOTAL account value (not just holdings)
-        // This correctly handles sales: when stocks are sold, cash increases, holdings decrease,
-        // but total account value only changes by market movements, not by the sale itself
+        // Calculate day_change using TOTAL account value (holdings + cash + buying_power)
+        // CRITICAL: previous_total_value must also include cash + buying_power from start of day
+        // This ensures sales don't affect day_change - when stocks are sold, cash increases but total stays same
         let computedDayChange = null;
         let dayChangePercent = null;
         
+        // CRITICAL: previous_total_value MUST include cash + buying_power (total account value)
+        // If previous_total_value exists but seems incomplete (holdings-only), reconstruct it
+        // by adding the cash + buying_power from the previous balance record
+        let adjustedPreviousTotalValue = previousTotalValue;
+        if (previousTotalValue !== null && existingBalance) {
+          const previousCash = existingBalance.cash || 0;
+          const previousBuyingPower = existingBalance.buying_power || 0;
+          const previousCashTotal = previousCash + previousBuyingPower;
+          
+          // Reconstruct: previous_total_value should be total account value (holdings + cash + buying_power)
+          // If previous_total_value + previousCashTotal is closer to current totalValue, it was incomplete
+          const reconstructedPrevious = previousTotalValue + previousCashTotal;
+          const diffOriginal = Math.abs(previousTotalValue - totalValue);
+          const diffReconstructed = Math.abs(reconstructedPrevious - totalValue);
+          
+          // Use reconstructed value if:
+          // 1. There's significant cash/buying_power (> $1)
+          // 2. Reconstructed is closer to current total (or original is way off)
+          // 3. Reconstructed makes sense (not negative, reasonable)
+          if (
+            previousCashTotal > 1 &&
+            (diffReconstructed < diffOriginal * 0.9 || diffOriginal > totalValue * 0.1) &&
+            reconstructedPrevious > 0 &&
+            reconstructedPrevious <= totalValue * 1.5 // Sanity check: not way too high
+          ) {
+            adjustedPreviousTotalValue = reconstructedPrevious;
+            console.log("🔧 Reconstructed previous_total_value to include cash + buying_power:", {
+              original_previous_total_value: previousTotalValue.toFixed(2),
+              previous_cash: previousCash.toFixed(2),
+              previous_buying_power: previousBuyingPower.toFixed(2),
+              reconstructed_previous_total_value: adjustedPreviousTotalValue.toFixed(2),
+              current_total_value: totalValue.toFixed(2),
+              reason: "previous_total_value was missing cash + buying_power",
+            });
+          } else if (previousCashTotal > 1) {
+            console.log("⚠️ previous_total_value reconstruction check:", {
+              original: previousTotalValue.toFixed(2),
+              previous_cash: previousCash.toFixed(2),
+              previous_buying_power: previousBuyingPower.toFixed(2),
+              reconstructed: reconstructedPrevious.toFixed(2),
+              current_total: totalValue.toFixed(2),
+              diff_original: diffOriginal.toFixed(2),
+              diff_reconstructed: diffReconstructed.toFixed(2),
+              reason: "reconstruction didn't improve accuracy or failed sanity checks",
+            });
+          }
+        }
+        
         console.log("🔍 Day change calculation:", {
           previousTotalValue: previousTotalValue,
+          adjustedPreviousTotalValue: adjustedPreviousTotalValue,
           totalValue: totalValue,
           sameDay: sameDay,
           existingLastUpdated: existingLastUpdated,
           existingBalancePrevious: existingBalance?.previous_total_value,
           existingBalanceTotal: existingBalance?.total_value,
+          existingCash: existingBalance?.cash,
+          existingBuyingPower: existingBalance?.buying_power,
         });
         
-        if (previousTotalValue !== null && previousTotalValue !== undefined && totalValue > 0) {
-          computedDayChange = totalValue - previousTotalValue;
+        if (adjustedPreviousTotalValue !== null && adjustedPreviousTotalValue !== undefined && totalValue > 0) {
+          computedDayChange = totalValue - adjustedPreviousTotalValue;
           dayChangePercent =
-            previousTotalValue !== 0
-              ? (computedDayChange / previousTotalValue) * 100
+            adjustedPreviousTotalValue !== 0
+              ? (computedDayChange / adjustedPreviousTotalValue) * 100
               : 0;
           console.log(
             `✅ Calculated day_change: $${computedDayChange.toFixed(2)} (${dayChangePercent.toFixed(2)}%)`
@@ -1020,7 +1075,9 @@ async function handleSnapTradeSync(res, userId, accountId) {
           total_change: totalUnrealizedPL,
           total_change_percent: totalChangePercent,
           total_value: totalValue,
+          // CRITICAL: previous_total_value must include cash + buying_power, not just holdings
           // Only update previous_total_value when rolling to a new day (same logic as holdings)
+          // When a new day starts, set previous_total_value to current total (which includes cash + buying_power)
           previous_total_value:
             !existingBalance || !sameDay ? totalValue : existingBalance.previous_total_value ?? totalValue,
           is_current: true,
@@ -1028,20 +1085,71 @@ async function handleSnapTradeSync(res, userId, accountId) {
           provider: "snaptrade",
         }));
 
-        // Upsert so we INSERT on first connect and UPDATE on subsequent syncs
-        const { error: balanceErr } = await supabase
-          .from("investment_balances")
-          .upsert(balanceRows, {
-            onConflict: "user_id,snaptrade_user_id,account_id,currency_code",
-            ignoreDuplicates: false,
+        // Upsert: Check if row exists first, then update or insert
+        // (Partial unique indexes can't be used directly in onConflict)
+        const balanceRow = balanceRows[0];
+        if (!balanceRow) {
+          console.error("❌ No balance row to upsert");
+        } else {
+          console.log("🔍 Checking for existing balance row...", {
+            user_id: connection.user_id,
+            snaptrade_user_id: connection.snaptrade_user_id,
+            account_id: accountId,
+            currency_code: balanceRow.currency_code,
+            provider: "snaptrade",
           });
 
-        if (balanceErr) {
-          console.error("❌ Balance upsert error:", balanceErr);
-        } else {
-          console.log(
-            "✅ Balance upserted successfully (insert or update) with new performance metrics"
-          );
+          const { data: existingBalanceRow, error: checkError } = await supabase
+            .from("investment_balances")
+            .select("id, day_change, day_change_percent")
+            .eq("user_id", connection.user_id)
+            .eq("snaptrade_user_id", connection.snaptrade_user_id)
+            .eq("account_id", accountId)
+            .eq("currency_code", balanceRow.currency_code)
+            .eq("provider", "snaptrade")
+            .eq("is_current", true)
+            .maybeSingle();
+
+          if (checkError) {
+            console.error("❌ Error checking for existing balance:", checkError);
+          }
+
+          let balanceErr = null;
+          if (existingBalanceRow?.id) {
+            // Update existing row
+            console.log("📝 Updating existing balance row:", {
+              id: existingBalanceRow.id,
+              new_day_change: balanceRow.day_change,
+              new_day_change_percent: balanceRow.day_change_percent,
+              new_total_value: balanceRow.total_value,
+            });
+            const { error: updateErr } = await supabase
+              .from("investment_balances")
+              .update(balanceRow)
+              .eq("id", existingBalanceRow.id);
+            balanceErr = updateErr;
+          } else {
+            // Insert new row
+            console.log("➕ Inserting new balance row:", {
+              day_change: balanceRow.day_change,
+              day_change_percent: balanceRow.day_change_percent,
+              total_value: balanceRow.total_value,
+            });
+            const { error: insertErr } = await supabase
+              .from("investment_balances")
+              .insert(balanceRow);
+            balanceErr = insertErr;
+          }
+
+          if (balanceErr) {
+            console.error("❌ Balance upsert error:", balanceErr);
+          } else {
+            console.log(
+              "✅ Balance upserted successfully (insert or update) with day_change:",
+              balanceRow.day_change,
+              `(${balanceRow.day_change_percent}%)`
+            );
+          }
         }
 
         // After updating balances, recalculate from database holdings to ensure accuracy
