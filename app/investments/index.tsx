@@ -73,6 +73,11 @@ interface BalanceRow {
   total_change_percent?: number | null;
   total_value?: number | null;
   last_updated?: string | null;
+  provider?: string | null;
+  snaptrade_user_id?: string | null;
+  account_id?: string;
+  item_id?: string | null;
+  plaid_account_id?: string | null;
 }
 
 interface ConnectionRow {
@@ -83,6 +88,9 @@ interface ConnectionRow {
   connection_status?: string | null;
   connection_id?: string | null;
   is_active?: boolean;
+  provider?: string | null;
+  snaptrade_user_id?: string | null;
+  item_id?: string | null;
 }
 
 // Helper function to get company logo URL
@@ -160,7 +168,7 @@ export default function InvestmentsScreen({
         getSnaptradeHoldingsFromDB(),
         getSnaptradeOptionsFromDB(),
         getSnaptradeBalancesFromDB(),
-        getSnaptradeConnectionsFromDB(),
+        getAllInvestmentConnectionsFromDB(), // Gets ALL connections (both Plaid and SnapTrade)
       ]);
 
       const hasAnyData =
@@ -368,7 +376,7 @@ export default function InvestmentsScreen({
                 );
                 // Reload connections to get updated status
                 const updatedConnections =
-                  await getSnaptradeConnectionsFromDB();
+                  await getAllInvestmentConnectionsFromDB();
                 if (updatedConnections && updatedConnections.length > 0) {
                   const updated = updatedConnections[0] as any;
                   const updatedIsDisabled =
@@ -546,7 +554,7 @@ export default function InvestmentsScreen({
           if (!user) return;
 
           // Reload connections from database to check for status updates
-          const updatedConnections = await getSnaptradeConnectionsFromDB();
+          const updatedConnections = await getAllInvestmentConnectionsFromDB();
           if (updatedConnections && updatedConnections.length > 0) {
             const connection = updatedConnections[0] as any;
             const isDisabled =
@@ -671,32 +679,84 @@ export default function InvestmentsScreen({
         return;
       }
 
-      const first = connections[0];
-      logger.info("🔄 Starting investment refresh (paid endpoint)...");
+      // Filter to only SnapTrade connections (Plaid syncs via webhooks)
+      const snaptradeConnections = connections.filter(
+        (conn: ConnectionRow) => !conn.provider || conn.provider === "snaptrade"
+      );
 
-      // Step 1: Call paid refresh endpoint to trigger SnapTrade to update their cache
-      await refreshSnaptradeInvestments(user.id, first.account_id);
+      if (snaptradeConnections.length === 0) {
+        logger.info("ℹ️ No SnapTrade connections to sync (Plaid accounts sync via webhooks)");
+        // Still reload data in case Plaid data was updated
+        await loadFromDbWithoutAutoSync();
+        return;
+      }
 
-      // Clear cache to ensure fresh data
+      logger.info(
+        `🔄 Starting investment refresh for ${snaptradeConnections.length} SnapTrade account(s)...`
+      );
+
+      // Sync all SnapTrade accounts sequentially
+      const syncErrors: string[] = [];
+      for (let i = 0; i < snaptradeConnections.length; i++) {
+        const conn = snaptradeConnections[i];
+        try {
+          logger.info(
+            `🔄 Syncing account ${i + 1}/${snaptradeConnections.length}: ${conn.brokerage_name || conn.account_name || conn.account_id}`
+          );
+
+          // Step 1: Call paid refresh endpoint to trigger SnapTrade to update their cache
+          await refreshSnaptradeInvestments(user.id, conn.account_id);
+
+          // Step 2: Wait for SnapTrade to process the refresh (they need time to update their cache)
+          logger.info("⏳ Waiting for SnapTrade to process refresh (5 seconds)...");
+          await new Promise((resolve) => setTimeout(resolve, 5000));
+
+          // Step 3: Now sync the fresh data from SnapTrade API to our database
+          logger.info("🔄 Syncing fresh data from SnapTrade API...");
+          await syncSnaptradeInvestments(user.id, conn.account_id);
+
+          // Step 3.5: Ensure balances are recalculated from active holdings
+          logger.info("🔄 Recalculating balances from active holdings...");
+          try {
+            await recalculateInvestmentBalances(user.id, conn.account_id);
+            logger.info("✅ Balances recalculated successfully");
+          } catch (recalcError) {
+            logger.warn(
+              "⚠️ Failed to recalculate balances (continuing anyway):",
+              recalcError
+            );
+          }
+
+          logger.info(
+            `✅ Successfully synced account ${i + 1}/${snaptradeConnections.length}`
+          );
+        } catch (err: any) {
+          const errorMsg = `Failed to sync ${conn.brokerage_name || conn.account_name || conn.account_id}: ${err.message || "Unknown error"}`;
+          logger.error(`❌ ${errorMsg}`, err);
+          syncErrors.push(errorMsg);
+
+          // Check if this is a disabled connection error - if so, stop syncing others
+          if (
+            err.statusCode === 402 ||
+            err.code === "CONNECTION_DISABLED" ||
+            err.requiresReconnect
+          ) {
+            logger.error("🔴 Connection disabled detected, stopping sync...", err);
+            throw err; // Re-throw to trigger the disabled connection handler below
+          }
+        }
+      }
+
+      // Clear cache to ensure fresh data (after all syncs)
       await clearInvestmentCache(user.id);
 
-      // Step 2: Wait for SnapTrade to process the refresh (they need time to update their cache)
-      logger.info("⏳ Waiting for SnapTrade to process refresh (5 seconds)...");
-      await new Promise((resolve) => setTimeout(resolve, 5000));
-
-      // Step 3: Now sync the fresh data from SnapTrade API to our database
-      logger.info("🔄 Syncing fresh data from SnapTrade API...");
-      await syncSnaptradeInvestments(user.id, first.account_id);
-
-      // Step 3.5: Ensure balances are recalculated from active holdings
-      logger.info("🔄 Recalculating balances from active holdings...");
-      try {
-        await recalculateInvestmentBalances(user.id, first.account_id);
-        logger.info("✅ Balances recalculated successfully");
-      } catch (recalcError) {
+      if (syncErrors.length > 0 && syncErrors.length === snaptradeConnections.length) {
+        // All syncs failed
+        throw new Error(syncErrors.join("; "));
+      } else if (syncErrors.length > 0) {
+        // Some syncs failed but not all
         logger.warn(
-          "⚠️ Failed to recalculate balances (continuing anyway):",
-          recalcError
+          `⚠️ Some accounts failed to sync: ${syncErrors.join("; ")}`
         );
       }
 
@@ -727,7 +787,7 @@ export default function InvestmentsScreen({
         logger.error("🔴 Connection disabled detected, updating state...", err);
 
         // Reload connections from DB to get updated status
-        const updatedConnections = await getSnaptradeConnectionsFromDB();
+        const updatedConnections = await getAllInvestmentConnectionsFromDB();
         setConnections(updatedConnections || []);
 
         // Get connection_id from error, or from connections
@@ -837,7 +897,7 @@ export default function InvestmentsScreen({
             getSnaptradeHoldingsFromDB(),
             getSnaptradeOptionsFromDB(),
             getSnaptradeBalancesFromDB(),
-            getSnaptradeConnectionsFromDB(),
+            getAllInvestmentConnectionsFromDB(),
           ]);
 
           if (b && b.length > 0) {
@@ -1071,7 +1131,7 @@ export default function InvestmentsScreen({
               });
 
               // Reload connections from database to get updated status
-              const updatedConnections = await getSnaptradeConnectionsFromDB();
+              const updatedConnections = await getAllInvestmentConnectionsFromDB();
               setConnections(updatedConnections || []);
 
               // Reload all investment data (without triggering auto-sync)
@@ -1127,7 +1187,7 @@ export default function InvestmentsScreen({
               });
 
               // Reload connections
-              const updatedConnections = await getSnaptradeConnectionsFromDB();
+              const updatedConnections = await getAllInvestmentConnectionsFromDB();
               setConnections(updatedConnections || []);
 
               setSyncError(
@@ -1159,7 +1219,7 @@ export default function InvestmentsScreen({
               });
 
               // Reload connections optimistically
-              const updatedConnections = await getSnaptradeConnectionsFromDB();
+              const updatedConnections = await getAllInvestmentConnectionsFromDB();
               setConnections(updatedConnections || []);
 
               setSyncError(
@@ -1214,7 +1274,11 @@ export default function InvestmentsScreen({
     0
   );
 
-  const totalCash = balances.reduce((sum, b) => sum + (b.cash || 0), 0);
+  // Available cash = cash + buying_power (includes proceeds from stock sales)
+  const totalCash = balances.reduce(
+    (sum, b) => sum + (b.cash || 0) + (b.buying_power || 0),
+    0
+  );
 
   // Calculate total unrealized P&L using new investment_balances columns first, then fallback to holdings
   const calculateTotalUnrealizedPL = () => {
@@ -1484,13 +1548,6 @@ export default function InvestmentsScreen({
   };
 
   const renderPortfolioSummary = () => {
-    const lastConnection = connections.length > 0 ? connections[0] : null;
-
-    // Use last_updated from investment_balances as it reflects when the portfolio data was last refreshed
-    const lastBalance = balances.length > 0 ? balances[0] : null;
-    const lastUpdatedTimestamp =
-      lastBalance?.last_updated || lastConnection?.last_synced_at;
-
     // Format date and time in user's local timezone
     const formatLastUpdated = (
       timestamp: string | null | undefined
@@ -1498,7 +1555,7 @@ export default function InvestmentsScreen({
       if (!timestamp) return "Never";
       try {
         const date = new Date(timestamp);
-        // Format as "MM/DD/YYYY, HH:MM AM/PM" in user's local timezone
+        // Format as "MMM DD, YYYY HH:MM AM/PM" in user's local timezone
         return date.toLocaleString("en-US", {
           month: "short",
           day: "numeric",
@@ -1512,9 +1569,41 @@ export default function InvestmentsScreen({
       }
     };
 
-    const lastUpdatedText = formatLastUpdated(lastUpdatedTimestamp);
-    const brokerageName =
-      lastConnection?.brokerage_name || "Investment Account";
+    // Create account info array: match each connection to its balance's last_updated
+    const accountInfoList = connections.map((conn) => {
+      // Find matching balance for this connection
+      const matchingBalance = balances.find(
+        (b) =>
+          (conn.provider === "snaptrade" &&
+            b.snaptrade_user_id === conn.snaptrade_user_id &&
+            b.account_id === conn.account_id) ||
+          (conn.provider === "plaid" &&
+            b.item_id === conn.item_id &&
+            b.plaid_account_id === conn.account_id)
+      );
+
+      const lastUpdatedTimestamp =
+        matchingBalance?.last_updated || conn.last_synced_at;
+      const lastUpdatedText = formatLastUpdated(lastUpdatedTimestamp);
+
+      return {
+        brokerageName: conn.brokerage_name || "Investment Account",
+        accountName: conn.account_name || conn.brokerage_name || "Account",
+        lastUpdated: lastUpdatedText,
+        lastUpdatedTimestamp: lastUpdatedTimestamp,
+      };
+    });
+
+    // Sort by last updated (most recent first)
+    accountInfoList.sort((a, b) => {
+      const aTime = a.lastUpdatedTimestamp
+        ? new Date(a.lastUpdatedTimestamp).getTime()
+        : 0;
+      const bTime = b.lastUpdatedTimestamp
+        ? new Date(b.lastUpdatedTimestamp).getTime()
+        : 0;
+      return bTime - aTime;
+    });
 
     return (
       <View style={styles.portfolioSummaryContainer}>
@@ -1617,17 +1706,50 @@ export default function InvestmentsScreen({
           </View>
           <View style={styles.accountInfo}>
             <View style={styles.brokerageInfo}>
-              <Image
-                source={{ uri: getBrokerageLogoUrl(brokerageName) }}
-                style={styles.brokerageLogo}
-                defaultSource={require("../../assets/images/icon.png")}
-              />
-              <View style={styles.brokerageDetails}>
-                <Text style={styles.accountName}>{brokerageName}</Text>
-                <Text style={styles.lastSyncText}>
-                  Last updated: {lastUpdatedText}
-                </Text>
-              </View>
+              {accountInfoList.length > 0 ? (
+                <View style={{ flex: 1 }}>
+                  {accountInfoList.map((account, idx) => (
+                    <View
+                      key={`${account.brokerageName}-${idx}`}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        marginBottom: idx < accountInfoList.length - 1 ? 8 : 0,
+                      }}
+                    >
+                      <Image
+                        source={{
+                          uri: getBrokerageLogoUrl(account.brokerageName),
+                        }}
+                        style={styles.brokerageLogo}
+                        defaultSource={require("../../assets/images/icon.png")}
+                      />
+                      <View style={styles.brokerageDetails}>
+                        <Text style={styles.accountName}>
+                          {account.accountName}
+                        </Text>
+                        <Text style={styles.lastSyncText}>
+                          Last updated: {account.lastUpdated}
+                        </Text>
+                      </View>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <View style={styles.brokerageInfo}>
+                  <Image
+                    source={{
+                      uri: getBrokerageLogoUrl("Investment Account"),
+                    }}
+                    style={styles.brokerageLogo}
+                    defaultSource={require("../../assets/images/icon.png")}
+                  />
+                  <View style={styles.brokerageDetails}>
+                    <Text style={styles.accountName}>Investment Account</Text>
+                    <Text style={styles.lastSyncText}>Last updated: Never</Text>
+                  </View>
+                </View>
+              )}
             </View>
             {/* Button Group with Spacing */}
             <View style={styles.buttonGroup}>

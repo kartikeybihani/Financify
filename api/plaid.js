@@ -813,15 +813,21 @@ async function handleSnapTradeSync(res, userId, accountId) {
           });
 
         const holdingsData = holdingsResponse?.data || [];
+        const holdingsResponseFull = holdingsResponse?.data || holdingsResponse;
+        
         console.log(
           `📊 Got ${
             holdingsData ? holdingsData.length : 0
           } holdings for performance calculation`
         );
 
-        // Extract total_value from holdings response if available
-        const apiTotalValue =
-          holdingsData?.total_value?.value || holdingsData?.total_value;
+        // CRITICAL: Use TOTAL account value (holdings + cash), not just holdings value
+        // This correctly handles stock sales (cash increases, holdings decrease, total stays same)
+        // Check for account.balance.total.amount in holdings response (full account info)
+        const accountTotalValue =
+          holdingsResponseFull?.account?.balance?.total?.amount ||
+          holdingsResponseFull?.account?.balance?.total?.value ||
+          null;
 
         // Get existing balance to read previous_total_value before updating
         const { data: existingBalance } = await supabase
@@ -843,7 +849,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
 
         // Calculate portfolio performance metrics
         let totalUnrealizedPL = existingBalance?.total_change || 0;
-        let totalPortfolioValue = 0;
+        let totalHoldingsValue = 0;
 
         if (
           holdingsData &&
@@ -851,34 +857,44 @@ async function handleSnapTradeSync(res, userId, accountId) {
           holdingsData.length > 0
         ) {
           totalUnrealizedPL = 0;
-          totalPortfolioValue = 0;
+          totalHoldingsValue = 0;
 
           holdingsData.forEach((holding) => {
-            const marketValue = holding.market_value || 0;
-            const unrealizedPL = holding.unrealized_pl || 0;
+            // Calculate market_value from units * price if not provided directly
+            const marketValue =
+              holding.market_value ||
+              (holding.units && holding.price ? holding.units * holding.price : 0);
+            const unrealizedPL = holding.open_pnl || holding.unrealized_pl || 0;
             totalUnrealizedPL += unrealizedPL;
-            totalPortfolioValue += marketValue;
+            totalHoldingsValue += marketValue;
           });
         }
 
-        // Calculate total portfolio value - prioritize API total_value, then fallback to calculations
+        // Calculate total account value (holdings + cash + buying_power)
+        // This is the TRUE portfolio value that accounts for sales
         let totalValue = 0;
 
-        // First priority: Use total_value from holdings API response
-        if (apiTotalValue && apiTotalValue > 0) {
-          totalValue = apiTotalValue;
-          console.log(`✅ Using API total_value: $${totalValue.toFixed(2)}`);
-        } else {
-          // Fallback to sum of all stocks' market_value
-          totalValue = totalPortfolioValue;
+        // First priority: Use account.balance.total.amount (total account value including cash)
+        if (accountTotalValue && accountTotalValue > 0) {
+          totalValue = accountTotalValue;
           console.log(
-            `⚠️ Fallback calculation: sum of all stocks' market_value = $${totalValue.toFixed(
-              2
-            )}`
+            `✅ Using account total value (holdings + cash): $${totalValue.toFixed(2)}`
+          );
+        } else {
+          // Fallback: Calculate from holdings + cash + buying_power
+          const totalCash = balanceData.reduce(
+            (sum, b) => sum + (b.cash || 0) + (b.buying_power || 0),
+            0
+          );
+          totalValue = totalHoldingsValue + totalCash;
+          console.log(
+            `⚠️ Fallback: holdings ($${totalHoldingsValue.toFixed(2)}) + cash+buying_power ($${totalCash.toFixed(2)}) = $${totalValue.toFixed(2)}`
           );
         }
 
-        // Calculate day_change using previous_total_value
+        // Calculate day_change using TOTAL account value (not just holdings)
+        // This correctly handles sales: when stocks are sold, cash increases, holdings decrease,
+        // but total account value only changes by market movements, not by the sale itself
         let computedDayChange = null;
         let dayChangePercent = null;
         if (previousTotalValue !== null && previousTotalValue !== undefined) {
@@ -894,8 +910,8 @@ async function handleSnapTradeSync(res, userId, accountId) {
         }
         const totalChangePercent =
           holdingsData && Array.isArray(holdingsData) && holdingsData.length > 0
-            ? totalPortfolioValue > 0
-              ? (totalUnrealizedPL / totalPortfolioValue) * 100
+            ? totalHoldingsValue > 0
+              ? (totalUnrealizedPL / totalHoldingsValue) * 100
               : 0
             : existingBalance?.total_change_percent || 0;
 
@@ -911,8 +927,8 @@ async function handleSnapTradeSync(res, userId, accountId) {
           }:`,
           {
             holdingsCount: holdingsData?.length || 0,
-            totalPortfolioValue: safe(totalPortfolioValue),
-            totalValue: safe(totalValue),
+            totalHoldingsValue: safe(totalHoldingsValue),
+            totalAccountValue: safe(totalValue),
             totalDayChange: safe(computedDayChange),
             dayChangePercent: safe(dayChangePercent),
             totalUnrealizedPL: safe(totalUnrealizedPL),
@@ -927,32 +943,30 @@ async function handleSnapTradeSync(res, userId, accountId) {
           currency_code: balance.currency?.code || "USD",
           cash: balance.cash || 0,
           buying_power: balance.buying_power || 0,
-          // New performance columns
           day_change: computedDayChange,
           day_change_percent: dayChangePercent,
           total_change: totalUnrealizedPL,
           total_change_percent: totalChangePercent,
-          // New total value column
           total_value: totalValue,
-          previous_total_value: totalValue, // Set for next sync
+          previous_total_value: totalValue,
           is_current: true,
           last_updated: new Date().toISOString(),
+          provider: "snaptrade",
         }));
 
-        // Update existing current balance row instead of creating new ones
+        // Upsert so we INSERT on first connect and UPDATE on subsequent syncs
         const { error: balanceErr } = await supabase
           .from("investment_balances")
-          .update(balanceRows[0]) // Update with the first (and only) balance row
-          .eq("user_id", connection.user_id)
-          .eq("snaptrade_user_id", connection.snaptrade_user_id)
-          .eq("account_id", accountId)
-          .eq("is_current", true);
+          .upsert(balanceRows, {
+            onConflict: "user_id,snaptrade_user_id,account_id,currency_code",
+            ignoreDuplicates: false,
+          });
 
         if (balanceErr) {
-          console.error("❌ Balance update error:", balanceErr);
+          console.error("❌ Balance upsert error:", balanceErr);
         } else {
           console.log(
-            "✅ Balance updated successfully with new performance metrics"
+            "✅ Balance upserted successfully (insert or update) with new performance metrics"
           );
         }
 
