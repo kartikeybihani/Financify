@@ -397,6 +397,22 @@ export default function CategorySelectorModal({
         }
       }
 
+      // Auto-mark transaction as reviewed when category is changed
+      try {
+        const { error: reviewError } = await supabase
+          .from("transactions")
+          .update({ is_reviewed: true })
+          .eq("id", transactionId);
+
+        if (reviewError) {
+          console.error("Error auto-marking transaction as reviewed:", reviewError);
+          // Don't fail the whole operation if review update fails
+        }
+      } catch (reviewErr) {
+        console.error("Exception auto-marking transaction as reviewed:", reviewErr);
+        // Don't fail the whole operation
+      }
+
       // Emit enhanced global event with affected transaction data
       const eventData = {
         transactionId: transactionId,

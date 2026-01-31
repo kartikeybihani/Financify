@@ -307,6 +307,9 @@ export async function resetOnboardingDismissal(
         logger.error("Error resetting dismissal:", error);
         return false;
       }
+
+      // Invalidate cache so it refreshes with reset dismissal status
+      clearOnboardingCache(userId);
     }
 
     return true;

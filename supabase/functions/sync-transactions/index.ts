@@ -456,6 +456,7 @@ serve(async (req: Request) => {
           recurring_stream_id: recurringStreamId, // Link to recurring stream if applicable
           if_recurring: ifRecurring, // Set recurring flag based on internal transfer detection and category
           category_id: categoryId, // Set category_id for ID-based linking (preferred method)
+          is_reviewed: false, // New transactions default to unreviewed
         };
       });
 
@@ -489,11 +490,11 @@ serve(async (req: Request) => {
         }
       }
 
-      // First, get existing transactions to check which ones already have new_category, category_id, and if_recurring
+      // First, get existing transactions to check which ones already have new_category, category_id, if_recurring, and is_reviewed
       const plaidTxIds = rows.map((r) => r.plaid_transaction_id);
       const { data: existingTxs, error: fetchErr } = await supabase
         .from("transactions")
-        .select("plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id, amount, account_id, pending")
+        .select("plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id, amount, account_id, pending, is_reviewed")
         .eq("user_id", user_id)
         .in("plaid_transaction_id", plaidTxIds);
 
@@ -512,12 +513,13 @@ serve(async (req: Request) => {
         );
       }
 
-      // Create maps of existing transactions with new_category, category_id, and if_recurring
+      // Create maps of existing transactions with new_category, category_id, if_recurring, and is_reviewed
       const existingCategoryMap = new Map<string, string>();
       const existingCategoryIdMap = new Map<string, string>();
       const existingRecurringMap = new Map<string, string>();
+      const existingReviewedMap = new Map<string, boolean>();
       if (canSafelySetCategories) {
-        existingTxs.forEach((tx: { plaid_transaction_id: string; new_category: string | null; category_id: string | null; if_recurring: string | null; recurring_stream_id: string | null }) => {
+        existingTxs.forEach((tx: { plaid_transaction_id: string; new_category: string | null; category_id: string | null; if_recurring: string | null; recurring_stream_id: string | null; is_reviewed: boolean | null }) => {
           if (tx.new_category) {
             existingCategoryMap.set(tx.plaid_transaction_id, tx.new_category);
           }
@@ -528,6 +530,10 @@ serve(async (req: Request) => {
           // Track if_recurring for transactions NOT in streams (user might have manually set it)
           if (!tx.recurring_stream_id && tx.if_recurring === "yes") {
             existingRecurringMap.set(tx.plaid_transaction_id, tx.if_recurring);
+          }
+          // Preserve existing is_reviewed status
+          if (tx.is_reviewed !== null && tx.is_reviewed !== undefined) {
+            existingReviewedMap.set(tx.plaid_transaction_id, tx.is_reviewed);
           }
         });
       }
@@ -563,6 +569,8 @@ serve(async (req: Request) => {
         if (isNewTransaction) {
           // New transaction - keep all fields including new_category from internal transfer detection
           // No existing user choices to protect
+          // Set is_reviewed to false for new transactions
+          updatedRow.is_reviewed = false;
           return updatedRow;
         }
 
@@ -620,6 +628,12 @@ serve(async (req: Request) => {
           updatedRow.new_category !== "INTERNAL_TRANSFER"
         ) {
           updatedRow.if_recurring = "yes";
+        }
+
+        // Preserve existing is_reviewed status for existing transactions
+        const existingReviewed = existingReviewedMap.get(row.plaid_transaction_id);
+        if (existingReviewed !== undefined) {
+          updatedRow.is_reviewed = existingReviewed;
         }
 
         return updatedRow;

@@ -150,7 +150,7 @@ export default function OnboardingTimelineModal({
       (progress.finny_asked ? 1 : 0) +
       (progress.goal_created ? 1 : 0)) /
       4) *
-      100,
+      100
   );
 
   const screenHeight = Dimensions.get("window").height;
@@ -183,13 +183,6 @@ export default function OnboardingTimelineModal({
               >
                 <View style={styles.sheetHandleContainer}>
                   <View style={styles.sheetHandle} />
-                </View>
-
-                <View style={styles.header}>
-                  <View style={styles.headerLeft}>
-                    <Text style={styles.title}>Complete Your Setup</Text>
-                    <Text style={styles.subtitle}>{percentage}% Complete</Text>
-                  </View>
                 </View>
 
                 <ScrollView
@@ -269,7 +262,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-start",
-    padding: 20,
+    paddingHorizontal: 20,
+    paddingTop: 10,
     paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255, 255, 255, 0.1)",

@@ -49,6 +49,8 @@ export interface Transaction {
     icon?: string | null;
     color?: string | null;
   } | null;
+  is_reviewed?: boolean; // Whether the transaction has been reviewed by the user
+  inserted_at?: string; // When the transaction was inserted into the database
 }
 
 // RecurringStream interface - shared across all components

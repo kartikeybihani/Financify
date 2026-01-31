@@ -21,69 +21,61 @@ export function OnboardingProgressBox({
 
   return (
     <View style={styles.container}>
-      <TouchableOpacity
-        onPress={onPress}
-        activeOpacity={0.9}
-        style={styles.touchable}
-      >
-        <LinearGradient
-          colors={[
-            "#1f1f1f", // Dark gray/black
-            "#252525", // Slightly lighter gray
-            "#2a2a2a", // Medium gray
-            "#1f1f1f", // Back to dark
-          ]}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.gradientBox}
+      <View style={styles.touchable}>
+        <TouchableOpacity
+          onPress={onPress}
+          activeOpacity={0.9}
+          style={styles.mainTouchable}
         >
-          <View style={styles.content}>
-            <View style={styles.leftSection}>
-              <View style={styles.labelContainer}>
-                <View style={styles.iconWrapper}>
-                  <Ionicons
-                    name="checkmark-circle-outline"
-                    size={22}
-                    color="#4A90E2"
-                    style={styles.icon}
-                  />
+          <LinearGradient
+            colors={[
+              "#1a3a5c", // Brighter blue-gray
+              "#2a4a7c", // Medium blue
+              "#3a5a9c", // Lighter blue
+              "#2a4a7c", // Back to medium
+            ]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 1 }}
+            style={styles.gradientBox}
+          >
+            <View style={styles.content}>
+              <View style={styles.leftSection}>
+                <View style={styles.labelContainer}>
+                  <View style={styles.textContainer}>
+                    <Text style={styles.label}>Onboarding</Text>
+                    <View style={styles.chip}>
+                      <Text style={styles.chipText}>Complete your setup</Text>
+                    </View>
+                  </View>
                 </View>
-                <Text style={styles.label}>Onboarding</Text>
+              </View>
+              <View style={styles.rightSection}>
+                <Text style={styles.percentage}>{status.percentage}%</Text>
               </View>
             </View>
-            <View style={styles.rightSection}>
-              <Text style={styles.percentage}>{status.percentage}%</Text>
-              {/* <TouchableOpacity
-                onPress={(e) => {
-                  e.stopPropagation();
-                  onDismiss();
-                }}
-                style={styles.closeButton}
-                hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-              >
-                <Ionicons
-                  name="close"
-                  size={18}
-                  color="rgba(255, 255, 255, 0.7)"
+            <View style={styles.progressBarContainer}>
+              <View style={styles.progressBarBackground}>
+                <LinearGradient
+                  colors={["#5BA3FF", "#4A90E2", "#3A7FD0"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[
+                    styles.progressBarFill,
+                    { width: `${status.percentage}%` },
+                  ]}
                 />
-              </TouchableOpacity> */}
+              </View>
             </View>
-          </View>
-          <View style={styles.progressBarContainer}>
-            <View style={styles.progressBarBackground}>
-              <LinearGradient
-                colors={["#4A90E2", "#357ABD", "#2E6BA8"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={[
-                  styles.progressBarFill,
-                  { width: `${status.percentage}%` },
-                ]}
-              />
-            </View>
-          </View>
-        </LinearGradient>
-      </TouchableOpacity>
+          </LinearGradient>
+        </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.closeButton}
+          onPress={onDismiss}
+          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+        >
+          <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -94,96 +86,109 @@ const styles = StyleSheet.create({
     marginBottom: 25,
   },
   touchable: {
-    borderRadius: 16,
+    borderRadius: 20,
+    overflow: "visible",
+    position: "relative",
+  },
+  mainTouchable: {
+    borderRadius: 20,
     overflow: "hidden",
   },
   gradientBox: {
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
-    paddingVertical: 20,
-    paddingHorizontal: 20,
-    shadowColor: "#000",
+    borderRadius: 20,
+    borderWidth: 1.5,
+    borderColor: "rgba(91, 163, 255, 0.4)",
+    paddingVertical: 14,
+    paddingHorizontal: 24,
+    shadowColor: "#5BA3FF",
     shadowOffset: {
       width: 0,
-      height: 4,
+      height: 6,
     },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 4,
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 8,
   },
   content: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 12,
+    marginBottom: 16,
   },
   leftSection: {
     flex: 1,
   },
   labelContainer: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+    alignItems: "flex-start",
   },
-  iconWrapper: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(74, 144, 226, 0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
-  },
-  icon: {
-    marginRight: 0,
+  textContainer: {
+    flex: 1,
+    gap: 8,
   },
   label: {
-    fontSize: 19,
+    fontSize: 22,
     fontWeight: "700",
     color: "#fff",
-    // fontFamily: "Manrope",
     letterSpacing: 0.5,
+  },
+  chip: {
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(91, 163, 255, 0.3)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  chipText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.8)",
+    letterSpacing: 0.2,
+    // textTransform: "uppercase",
   },
   rightSection: {
     flexDirection: "row",
     alignItems: "center",
     gap: 14,
+    marginRight: 15,
   },
   percentage: {
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: "800",
-    color: "#4A90E2",
-    // fontFamily: "Manrope",
+    color: "#fff",
     letterSpacing: 0.5,
   },
   closeButton: {
+    position: "absolute",
+    top: 8,
+    right: 8,
     width: 28,
     height: 28,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
+    // backgroundColor: "rgba(0, 0, 0, 0.2)",
+    zIndex: 10,
   },
   progressBarContainer: {
-    marginTop: 4,
+    marginTop: 6,
   },
   progressBarBackground: {
-    height: 4,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    borderRadius: 2,
+    height: 6,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    borderRadius: 3,
     overflow: "hidden",
   },
   progressBarFill: {
     height: "100%",
-    borderRadius: 2,
-    shadowColor: "#4A90E2",
+    borderRadius: 3,
+    shadowColor: "#5BA3FF",
     shadowOffset: {
       width: 0,
       height: 0,
     },
-    shadowOpacity: 0.6,
-    shadowRadius: 4,
-    elevation: 2,
+    shadowOpacity: 0.8,
+    shadowRadius: 6,
+    elevation: 3,
   },
 });

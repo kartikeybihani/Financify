@@ -121,7 +121,7 @@ const styles = StyleSheet.create({
     gap: 18,
   },
   finnyButtonWrapper: {
-    borderRadius: 20,
+    borderRadius: 90,
     overflow: "hidden",
     alignSelf: "stretch",
     shadowColor: "#4A90E2",
@@ -151,7 +151,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   finnyButtonText: {
-    fontSize: 17,
+    fontSize: 16,
     fontWeight: "700",
     color: "#fff",
     fontFamily: "Manrope",

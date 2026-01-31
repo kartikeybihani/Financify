@@ -12,10 +12,11 @@ import { styles } from "@/src/styles/homeStyles";
 interface HomeHeaderProps {
   userName?: string;
   onAddAccount?: () => void;
+  unreviewedCount?: number;
 }
 
 export const HomeHeader: React.FC<HomeHeaderProps> = React.memo(
-  ({ userName, onAddAccount }) => {
+  ({ userName, onAddAccount, unreviewedCount = 0 }) => {
     const router = useRouter();
     const insets = useSafeAreaInsets();
 
@@ -65,6 +66,34 @@ export const HomeHeader: React.FC<HomeHeaderProps> = React.memo(
                 size={28}
                 color="#4A90E2"
               />
+              {unreviewedCount > 0 && (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: -4,
+                    right: -4,
+                    backgroundColor: "#FF6B6B",
+                    borderRadius: 10,
+                    minWidth: 20,
+                    height: 20,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    paddingHorizontal: 6,
+                    borderWidth: 2,
+                    borderColor: "#1a1a1a",
+                  }}
+                >
+                  <Text
+                    style={{
+                      color: "#fff",
+                      fontSize: 11,
+                      fontWeight: "700",
+                    }}
+                  >
+                    {unreviewedCount > 99 ? "99+" : unreviewedCount}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
           )}
         </View>

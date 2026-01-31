@@ -1697,6 +1697,7 @@ export default async function handler(req, res) {
           amount: txn.amount,
           iso_currency_code: txn.iso_currency_code || null,
           name: txn.name || null,
+          is_reviewed: false, // New transactions default to unreviewed
           merchant_name: txn.merchant_name || null,
           category: category, // Keep original Plaid category (detailed or primary)
           top_category: mappedCategory.top, // Mapped top category
@@ -1708,6 +1709,7 @@ export default async function handler(req, res) {
           if_recurring: ifRecurring, // Set recurring flag based on stream membership
           new_category: newCategory, // Only set for INTERNAL_TRANSFER or stream categories (legacy support)
           category_id: categoryId, // Set category_id for ID-based linking (preferred method)
+          is_reviewed: false, // New transactions default to unreviewed
         };
       });
 
@@ -1862,7 +1864,7 @@ export default async function handler(req, res) {
           const { data, error } = await supabase
             .from("transactions")
             .select(
-              "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id",
+              "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id, is_reviewed",
             )
             .eq("user_id", userId)
             .in("plaid_transaction_id", batch);
@@ -1907,10 +1909,11 @@ export default async function handler(req, res) {
         );
       }
 
-      // Create maps of existing transactions with new_category, category_id, and if_recurring
+      // Create maps of existing transactions with new_category, category_id, if_recurring, and is_reviewed
       const existingCategoryMap = new Map();
       const existingCategoryIdMap = new Map();
       const existingRecurringMap = new Map();
+      const existingReviewedMap = new Map();
       const existingTxIdSet = new Set();
       if (canSafelySetCategories) {
         existingTxs.forEach((tx) => {
@@ -1925,6 +1928,10 @@ export default async function handler(req, res) {
           // Track if_recurring for transactions NOT in streams (user might have manually set it)
           if (!tx.recurring_stream_id && tx.if_recurring === "yes") {
             existingRecurringMap.set(tx.plaid_transaction_id, tx.if_recurring);
+          }
+          // Preserve existing is_reviewed status
+          if (tx.is_reviewed !== null && tx.is_reviewed !== undefined) {
+            existingReviewedMap.set(tx.plaid_transaction_id, tx.is_reviewed);
           }
         });
       }
@@ -1962,6 +1969,8 @@ export default async function handler(req, res) {
         if (isNewTransaction) {
           // New transaction - keep all fields including new_category and if_recurring from stream
           // No existing user choices to protect
+          // Set is_reviewed to false for new transactions
+          updatedRow.is_reviewed = false;
           return updatedRow;
         }
 
@@ -2023,6 +2032,12 @@ export default async function handler(req, res) {
           updatedRow.new_category !== "INTERNAL_TRANSFER"
         ) {
           updatedRow.if_recurring = "yes";
+        }
+
+        // Preserve existing is_reviewed status for existing transactions
+        const existingReviewed = existingReviewedMap.get(row.plaid_transaction_id);
+        if (existingReviewed !== undefined) {
+          updatedRow.is_reviewed = existingReviewed;
         }
 
         return updatedRow;

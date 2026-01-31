@@ -31,6 +31,8 @@ import { ActionButtons } from "@/src/components/home/ActionButtons";
 import { FinnyMessage } from "@/src/components/home/FinnyMessage";
 import { OnboardingProgressBox } from "@/src/components/home/OnboardingProgressBox";
 import { HoldingsMoversCard } from "@/src/components/home/HoldingsMoversCard";
+import { TransactionReviewCard } from "@/src/components/home/TransactionReviewCard";
+import { useUnreviewedTransactions } from "@/src/hooks/useUnreviewedTransactions";
 import { HomeScreenSkeleton } from "@/src/components/home/LoadingSkeletons";
 import OnboardingTimelineModal from "@/src/components/modals/OnboardingTimelineModal";
 import { useModalManager } from "@/src/components/modals/ModalFactory";
@@ -184,6 +186,9 @@ export default function HomeScreen() {
     loading: spendingLoading,
     refresh: refreshSpendingData,
   } = useSpendingData(totalBalance);
+
+  // Unreviewed transactions for notification badge
+  const { count: unreviewedCount } = useUnreviewedTransactions();
 
   // Onboarding state - load cache synchronously for instant UI
   const initialOnboardingCache = (() => {
@@ -851,6 +856,7 @@ export default function HomeScreen() {
       <HomeHeader
         userName={firstName || userData?.user_metadata?.full_name}
         onAddAccount={() => setShowCategoryModal(true)}
+        unreviewedCount={unreviewedCount}
       />
 
       <>
@@ -888,6 +894,9 @@ export default function HomeScreen() {
             netWorthChange={spendingData.netWorthChange}
             onboardingStatus={onboardingStatus}
           />
+
+          {/* Transaction Review Card */}
+          <TransactionReviewCard userId={userData?.id} />
 
           {/* Net Worth Carousel */}
           <QuickStats
