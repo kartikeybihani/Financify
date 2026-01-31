@@ -2,8 +2,6 @@ import React, { useEffect, useRef } from "react";
 import { View, Text, Animated, Easing, StyleSheet, Image } from "react-native";
 import Svg, { Circle } from "react-native-svg";
 
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-
 interface FinnyLoadingIndicatorProps {
   message?: string;
   color?: string;
@@ -24,8 +22,7 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
     new Animated.Value(0.3),
     new Animated.Value(0.3),
   ]).current;
-  const loadingPulseAnim = useRef(new Animated.Value(1)).current;
-  const loadingRingRotate = useRef(new Animated.Value(0)).current;
+  const ringRotateAnim = useRef(new Animated.Value(0)).current;
   const onCompleteRef = useRef(onComplete);
   const animationStartedRef = useRef(false);
 
@@ -43,47 +40,26 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
   }, [onComplete]);
 
   useEffect(() => {
-    // Prevent animation from restarting if already started
     if (animationStartedRef.current) {
       return;
     }
     animationStartedRef.current = true;
 
-    // Reset ring rotation to 0 before starting
-    loadingRingRotate.setValue(0);
+    ringRotateAnim.setValue(0);
 
-    // Gentle pulse animation for the image
-    const pulseAnimation = Animated.loop(
-      Animated.sequence([
-        Animated.timing(loadingPulseAnim, {
-          toValue: 1.08,
-          duration: 1200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(loadingPulseAnim, {
-          toValue: 1,
-          duration: 1200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
+    // Ring spins around the image (continuous rotation)
+    const ringRotation = Animated.loop(
+      Animated.timing(ringRotateAnim, {
+        toValue: 1,
+        duration: duration,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      })
     );
 
-    // Circular ring rotation animation - single rotation from 0 to 100%
-    const ringRotation = Animated.timing(loadingRingRotate, {
-      toValue: 1,
-      duration: duration,
-      easing: Easing.linear,
-      useNativeDriver: true,
-    });
-
-    // Call onComplete when ring rotation finishes
-    ringRotation.start((finished) => {
-      if (finished && onCompleteRef.current) {
-        onCompleteRef.current();
-      }
-    });
+    const onCompleteTimeout = setTimeout(() => {
+      onCompleteRef.current?.();
+    }, duration);
 
     // Dots animation
     const dotsAnimation = Animated.loop(
@@ -108,34 +84,30 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
       )
     );
 
-    pulseAnimation.start();
+    ringRotation.start();
     dotsAnimation.start();
 
     return () => {
-      pulseAnimation.stop();
+      clearTimeout(onCompleteTimeout);
       ringRotation.stop();
       dotsAnimation.stop();
       animationStartedRef.current = false;
     };
-  }, [duration]); // Only depend on duration to prevent re-running
+  }, [duration]);
 
-  // Calculate circle properties for SVG
-  const ringRadius = 107; // (220 - 6) / 2, accounting for 3px border width
+  const ringRadius = 107;
   const circumference = 2 * Math.PI * ringRadius;
+  const segmentLength = circumference * 0.25;
 
-  // Animate stroke-dashoffset from full circumference to 0
-  // This creates the effect of the arc growing from 0% to 100%
-  const strokeDashoffset = loadingRingRotate.interpolate({
+  const rotationDegrees = ringRotateAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [circumference, 0], // Start with full offset (invisible), end with 0 (full circle)
+    outputRange: ["0deg", "360deg"],
   });
 
   return (
     <View style={styles.container}>
       <View style={styles.imageWrapper}>
-        {/* SVG Circular Progress Ring */}
         <Svg width={220} height={220} style={styles.svgContainer}>
-          {/* Background circle (full, semi-transparent) */}
           <Circle
             cx={110}
             cy={110}
@@ -144,29 +116,36 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
             strokeWidth={3}
             fill="none"
           />
-          {/* Progress circle (grows from 6 o'clock clockwise) */}
-          <AnimatedCircle
-            cx={110}
-            cy={110}
-            r={ringRadius}
-            stroke={color}
-            strokeWidth={3}
-            fill="none"
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            strokeLinecap="round"
-            transform={`rotate(-90 110 110)`} // Rotate to start from 6 o'clock (bottom)
-            origin="110, 110"
-          />
         </Svg>
-        {/* Rounded image */}
         <Animated.View
           style={[
-            styles.loadingImageContainer,
+            styles.ringWrapper,
             {
-              transform: [{ scale: loadingPulseAnim }],
-              borderColor: hexToRgba(color, 0.25),
+              transform: [{ rotate: rotationDegrees }],
             },
+          ]}
+          pointerEvents="none"
+        >
+          <Svg width={220} height={220} style={styles.ringSvg}>
+            <Circle
+              cx={110}
+              cy={110}
+              r={ringRadius}
+              stroke={color}
+              strokeWidth={3}
+              fill="none"
+              strokeDasharray={`${segmentLength} ${
+                circumference - segmentLength
+              }`}
+              strokeLinecap="round"
+              transform="rotate(-90 110 110)"
+            />
+          </Svg>
+        </Animated.View>
+        <View
+          style={[
+            styles.loadingImageContainer,
+            { borderColor: hexToRgba(color, 0.25) },
           ]}
         >
           <Image
@@ -176,7 +155,7 @@ const FinnyLoadingIndicator: React.FC<FinnyLoadingIndicatorProps> = ({
             style={styles.loadingImage}
             resizeMode="cover"
           />
-        </Animated.View>
+        </View>
       </View>
       <Text style={styles.loadingText}>{message}</Text>
       <View style={styles.loadingDotsContainer}>
@@ -213,6 +192,18 @@ const styles = StyleSheet.create({
     position: "relative",
   },
   svgContainer: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+  },
+  ringWrapper: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 220,
+    height: 220,
+  },
+  ringSvg: {
     position: "absolute",
     top: 0,
     left: 0,

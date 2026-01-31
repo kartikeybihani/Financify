@@ -802,7 +802,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
 
       const balanceData = balanceResponse.data;
       const balanceResponseFull = balanceResponse.data || balanceResponse;
-      
+
       console.log(
         "💰 Balance data received:",
         JSON.stringify(balanceData, null, 2)
@@ -840,7 +840,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
           holdingsResponseData?.account?.balance?.total?.amount ||
           holdingsResponseData?.account?.balance?.total?.value ||
           null;
-        
+
         const accountTotalFromBalance =
           balanceResponse?.account?.balance?.total?.amount ||
           balanceResponse?.account?.balance?.total?.value ||
@@ -848,7 +848,8 @@ async function handleSnapTradeSync(res, userId, accountId) {
           balanceResponseFull?.account?.balance?.total?.value ||
           null;
 
-        const accountTotalValue = accountTotalFromHoldings || accountTotalFromBalance;
+        const accountTotalValue =
+          accountTotalFromHoldings || accountTotalFromBalance;
 
         // Get existing balance to read previous_total_value before updating
         // CRITICAL: Also fetch cash and buying_power to reconstruct full previous_total_value if needed
@@ -886,7 +887,9 @@ async function handleSnapTradeSync(res, userId, accountId) {
 
         // Use previous_total_value as baseline if same day, otherwise use total_value or null
         const previousTotalValue =
-          existingBalance && sameDay && existingBalance.previous_total_value != null
+          existingBalance &&
+          sameDay &&
+          existingBalance.previous_total_value != null
             ? existingBalance.previous_total_value
             : existingBalance?.previous_total_value ??
               existingBalance?.total_value ??
@@ -908,7 +911,9 @@ async function handleSnapTradeSync(res, userId, accountId) {
             // Calculate market_value from units * price if not provided directly
             const marketValue =
               holding.market_value ||
-              (holding.units && holding.price ? holding.units * holding.price : 0);
+              (holding.units && holding.price
+                ? holding.units * holding.price
+                : 0);
             const unrealizedPL = holding.open_pnl || holding.unrealized_pl || 0;
             totalUnrealizedPL += unrealizedPL;
             totalHoldingsValue += marketValue;
@@ -923,33 +928,35 @@ async function handleSnapTradeSync(res, userId, accountId) {
         if (accountTotalValue && accountTotalValue > 0) {
           totalValue = accountTotalValue;
           console.log(
-            `✅ Using account total value (holdings + cash): $${totalValue.toFixed(2)}`
+            `✅ Using account total value (holdings + cash): $${totalValue.toFixed(
+              2
+            )}`
           );
         } else {
           // Fallback: Calculate from holdings + cash + buying_power
-          const totalCash = balanceData.reduce(
-            (sum, b) => {
-              const cash = typeof b.cash === "number" ? b.cash : parseFloat(b.cash || 0);
-              const buyingPower = typeof b.buying_power === "number" ? b.buying_power : parseFloat(b.buying_power || 0);
-              return sum + cash + buyingPower;
-            },
-            0
-          );
+          const totalCash = balanceData.reduce((sum, b) => {
+            const cash =
+              typeof b.cash === "number" ? b.cash : parseFloat(b.cash || 0);
+            const buyingPower =
+              typeof b.buying_power === "number"
+                ? b.buying_power
+                : parseFloat(b.buying_power || 0);
+            return sum + cash + buyingPower;
+          }, 0);
           totalValue = totalHoldingsValue + totalCash;
-          console.log(
-            `⚠️ Fallback calculation:`,
-            {
-              totalHoldingsValue: totalHoldingsValue.toFixed(2),
-              totalCash: totalCash.toFixed(2),
-              totalValue: totalValue.toFixed(2),
-              balanceDataSample: balanceData[0] ? {
-                cash: balanceData[0].cash,
-                buying_power: balanceData[0].buying_power,
-                cashType: typeof balanceData[0].cash,
-                buyingPowerType: typeof balanceData[0].buying_power,
-              } : "no balance data",
-            }
-          );
+          console.log(`⚠️ Fallback calculation:`, {
+            totalHoldingsValue: totalHoldingsValue.toFixed(2),
+            totalCash: totalCash.toFixed(2),
+            totalValue: totalValue.toFixed(2),
+            balanceDataSample: balanceData[0]
+              ? {
+                  cash: balanceData[0].cash,
+                  buying_power: balanceData[0].buying_power,
+                  cashType: typeof balanceData[0].cash,
+                  buyingPowerType: typeof balanceData[0].buying_power,
+                }
+              : "no balance data",
+          });
         }
 
         // Calculate day_change using TOTAL account value (holdings + cash + buying_power)
@@ -957,7 +964,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
         // This ensures sales don't affect day_change - when stocks are sold, cash increases but total stays same
         let computedDayChange = null;
         let dayChangePercent = null;
-        
+
         // CRITICAL: previous_total_value MUST include cash + buying_power (total account value)
         // If previous_total_value exists but seems incomplete (holdings-only), reconstruct it
         // by adding the cash + buying_power from the previous balance record
@@ -966,32 +973,39 @@ async function handleSnapTradeSync(res, userId, accountId) {
           const previousCash = existingBalance.cash || 0;
           const previousBuyingPower = existingBalance.buying_power || 0;
           const previousCashTotal = previousCash + previousBuyingPower;
-          
+
           // Reconstruct: previous_total_value should be total account value (holdings + cash + buying_power)
           // If previous_total_value + previousCashTotal is closer to current totalValue, it was incomplete
           const reconstructedPrevious = previousTotalValue + previousCashTotal;
           const diffOriginal = Math.abs(previousTotalValue - totalValue);
-          const diffReconstructed = Math.abs(reconstructedPrevious - totalValue);
-          
+          const diffReconstructed = Math.abs(
+            reconstructedPrevious - totalValue
+          );
+
           // Use reconstructed value if:
           // 1. There's significant cash/buying_power (> $1)
           // 2. Reconstructed is closer to current total (or original is way off)
           // 3. Reconstructed makes sense (not negative, reasonable)
           if (
             previousCashTotal > 1 &&
-            (diffReconstructed < diffOriginal * 0.9 || diffOriginal > totalValue * 0.1) &&
+            (diffReconstructed < diffOriginal * 0.9 ||
+              diffOriginal > totalValue * 0.1) &&
             reconstructedPrevious > 0 &&
             reconstructedPrevious <= totalValue * 1.5 // Sanity check: not way too high
           ) {
             adjustedPreviousTotalValue = reconstructedPrevious;
-            console.log("🔧 Reconstructed previous_total_value to include cash + buying_power:", {
-              original_previous_total_value: previousTotalValue.toFixed(2),
-              previous_cash: previousCash.toFixed(2),
-              previous_buying_power: previousBuyingPower.toFixed(2),
-              reconstructed_previous_total_value: adjustedPreviousTotalValue.toFixed(2),
-              current_total_value: totalValue.toFixed(2),
-              reason: "previous_total_value was missing cash + buying_power",
-            });
+            console.log(
+              "🔧 Reconstructed previous_total_value to include cash + buying_power:",
+              {
+                original_previous_total_value: previousTotalValue.toFixed(2),
+                previous_cash: previousCash.toFixed(2),
+                previous_buying_power: previousBuyingPower.toFixed(2),
+                reconstructed_previous_total_value:
+                  adjustedPreviousTotalValue.toFixed(2),
+                current_total_value: totalValue.toFixed(2),
+                reason: "previous_total_value was missing cash + buying_power",
+              }
+            );
           } else if (previousCashTotal > 1) {
             console.log("⚠️ previous_total_value reconstruction check:", {
               original: previousTotalValue.toFixed(2),
@@ -1001,11 +1015,12 @@ async function handleSnapTradeSync(res, userId, accountId) {
               current_total: totalValue.toFixed(2),
               diff_original: diffOriginal.toFixed(2),
               diff_reconstructed: diffReconstructed.toFixed(2),
-              reason: "reconstruction didn't improve accuracy or failed sanity checks",
+              reason:
+                "reconstruction didn't improve accuracy or failed sanity checks",
             });
           }
         }
-        
+
         console.log("🔍 Day change calculation:", {
           previousTotalValue: previousTotalValue,
           adjustedPreviousTotalValue: adjustedPreviousTotalValue,
@@ -1017,22 +1032,30 @@ async function handleSnapTradeSync(res, userId, accountId) {
           existingCash: existingBalance?.cash,
           existingBuyingPower: existingBalance?.buying_power,
         });
-        
-        if (adjustedPreviousTotalValue !== null && adjustedPreviousTotalValue !== undefined && totalValue > 0) {
+
+        if (
+          adjustedPreviousTotalValue !== null &&
+          adjustedPreviousTotalValue !== undefined &&
+          totalValue > 0
+        ) {
           computedDayChange = totalValue - adjustedPreviousTotalValue;
           dayChangePercent =
             adjustedPreviousTotalValue !== 0
               ? (computedDayChange / adjustedPreviousTotalValue) * 100
               : 0;
           console.log(
-            `✅ Calculated day_change: $${computedDayChange.toFixed(2)} (${dayChangePercent.toFixed(2)}%)`
+            `✅ Calculated day_change: $${computedDayChange.toFixed(
+              2
+            )} (${dayChangePercent.toFixed(2)}%)`
           );
         } else {
           // No previous value, preserve existing or set to null
           computedDayChange = existingBalance?.day_change ?? null;
           dayChangePercent = existingBalance?.day_change_percent ?? null;
           console.log(
-            `⚠️ No previous value for day_change calculation. Using existing: $${computedDayChange || 0}`
+            `⚠️ No previous value for day_change calculation. Using existing: $${
+              computedDayChange || 0
+            }`
           );
         }
         const totalChangePercent =
@@ -1079,7 +1102,9 @@ async function handleSnapTradeSync(res, userId, accountId) {
           // Only update previous_total_value when rolling to a new day (same logic as holdings)
           // When a new day starts, set previous_total_value to current total (which includes cash + buying_power)
           previous_total_value:
-            !existingBalance || !sameDay ? totalValue : existingBalance.previous_total_value ?? totalValue,
+            !existingBalance || !sameDay
+              ? totalValue
+              : existingBalance.previous_total_value ?? totalValue,
           is_current: true,
           last_updated: new Date().toISOString(),
           provider: "snaptrade",
@@ -1111,7 +1136,10 @@ async function handleSnapTradeSync(res, userId, accountId) {
             .maybeSingle();
 
           if (checkError) {
-            console.error("❌ Error checking for existing balance:", checkError);
+            console.error(
+              "❌ Error checking for existing balance:",
+              checkError
+            );
           }
 
           let balanceErr = null;
@@ -1294,42 +1322,26 @@ async function handleSnapTradeSync(res, userId, accountId) {
             // Same day = keep existing baseline so day_change = change since start of day.
             const existingLastUpdated = existingHolding?.last_updated;
             const sameDay = isSameCalendarDayUTC(existingLastUpdated);
+
+            // Get the baseline value (previous_market_value if exists, otherwise market_value as fallback)
             const dayBaseline =
               existingHolding?.previous_market_value ??
               existingHolding?.market_value ??
               null;
 
+            // For day_change calculation: use baseline if same day, otherwise null (new day = no change yet)
             const previousMarketValue =
               existingHolding && sameDay && dayBaseline != null
                 ? dayBaseline
                 : null;
 
+            // For storage: reset to current value on new day, otherwise preserve baseline
             const previousMarketValueForStorage =
               !existingHolding || !sameDay
-                ? currentMarketValue
+                ? currentMarketValue // New holding or new day: reset baseline
                 : dayBaseline != null
-                ? dayBaseline
-                : currentMarketValue;
-
-            // Log price updates for debugging
-            if (existingHolding && existingHolding.price !== holding.price) {
-              console.log(`💰 Price update for ${symbolString}:`, {
-                previous_price: existingHolding.price,
-                new_price: holding.price,
-                change: holding.price - existingHolding.price,
-                change_percent: existingHolding.price
-                  ? (
-                      ((holding.price - existingHolding.price) /
-                        existingHolding.price) *
-                      100
-                    ).toFixed(2) + "%"
-                  : "N/A",
-              });
-            } else if (!existingHolding) {
-              console.log(
-                `💰 New holding price for ${symbolString}: $${holding.price}`
-              );
-            }
+                ? dayBaseline // Same day: preserve baseline
+                : currentMarketValue; // Fallback: use current value
 
             // Calculate day_change and day_change_percent (vs start-of-day baseline when same day)
             let dayChange = null;
@@ -1337,13 +1349,52 @@ async function handleSnapTradeSync(res, userId, accountId) {
             if (
               previousMarketValue !== null &&
               previousMarketValue !== undefined &&
-              currentMarketValue !== null
+              currentMarketValue !== null &&
+              Number.isFinite(currentMarketValue) &&
+              Number.isFinite(previousMarketValue)
             ) {
               dayChange = currentMarketValue - previousMarketValue;
               dayChangePercent =
                 previousMarketValue !== 0
                   ? (dayChange / previousMarketValue) * 100
                   : 0;
+            }
+
+            // Enhanced logging for debugging day_change calculation
+            if (existingHolding) {
+              if (sameDay && dayChange !== null) {
+                console.log(`💰 Day change for ${symbolString}:`, {
+                  previous_market_value: dayBaseline?.toFixed(2),
+                  current_market_value: currentMarketValue?.toFixed(2),
+                  day_change: dayChange?.toFixed(2),
+                  day_change_percent: dayChangePercent?.toFixed(2) + "%",
+                  same_day: sameDay,
+                });
+              } else if (!sameDay) {
+                console.log(`📅 New day for ${symbolString}:`, {
+                  previous_market_value: dayBaseline?.toFixed(2),
+                  current_market_value: currentMarketValue?.toFixed(2),
+                  reset_baseline: true,
+                  reason: "new calendar day - baseline reset",
+                });
+              } else {
+                console.log(
+                  `⚠️ Cannot calculate day_change for ${symbolString}:`,
+                  {
+                    previous_market_value: dayBaseline,
+                    current_market_value: currentMarketValue,
+                    same_day: sameDay,
+                    reason:
+                      dayBaseline == null ? "no baseline" : "missing data",
+                  }
+                );
+              }
+            } else {
+              console.log(`➕ New holding ${symbolString}:`, {
+                current_market_value: currentMarketValue?.toFixed(2),
+                price: holding.price,
+                units: holding.units,
+              });
             }
 
             return {

@@ -37,6 +37,7 @@ import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
 import { styles } from "@/src/styles/investmentsStyles";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
 import IconButton from "@/src/components/shared/IconButton";
+import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -685,7 +686,9 @@ export default function InvestmentsScreen({
       );
 
       if (snaptradeConnections.length === 0) {
-        logger.info("ℹ️ No SnapTrade connections to sync (Plaid accounts sync via webhooks)");
+        logger.info(
+          "ℹ️ No SnapTrade connections to sync (Plaid accounts sync via webhooks)"
+        );
         // Still reload data in case Plaid data was updated
         await loadFromDbWithoutAutoSync();
         return;
@@ -701,14 +704,18 @@ export default function InvestmentsScreen({
         const conn = snaptradeConnections[i];
         try {
           logger.info(
-            `🔄 Syncing account ${i + 1}/${snaptradeConnections.length}: ${conn.brokerage_name || conn.account_name || conn.account_id}`
+            `🔄 Syncing account ${i + 1}/${snaptradeConnections.length}: ${
+              conn.brokerage_name || conn.account_name || conn.account_id
+            }`
           );
 
           // Step 1: Call paid refresh endpoint to trigger SnapTrade to update their cache
           await refreshSnaptradeInvestments(user.id, conn.account_id);
 
           // Step 2: Wait for SnapTrade to process the refresh (they need time to update their cache)
-          logger.info("⏳ Waiting for SnapTrade to process refresh (5 seconds)...");
+          logger.info(
+            "⏳ Waiting for SnapTrade to process refresh (5 seconds)..."
+          );
           await new Promise((resolve) => setTimeout(resolve, 5000));
 
           // Step 3: Now sync the fresh data from SnapTrade API to our database
@@ -728,10 +735,14 @@ export default function InvestmentsScreen({
           }
 
           logger.info(
-            `✅ Successfully synced account ${i + 1}/${snaptradeConnections.length}`
+            `✅ Successfully synced account ${i + 1}/${
+              snaptradeConnections.length
+            }`
           );
         } catch (err: any) {
-          const errorMsg = `Failed to sync ${conn.brokerage_name || conn.account_name || conn.account_id}: ${err.message || "Unknown error"}`;
+          const errorMsg = `Failed to sync ${
+            conn.brokerage_name || conn.account_name || conn.account_id
+          }: ${err.message || "Unknown error"}`;
           logger.error(`❌ ${errorMsg}`, err);
           syncErrors.push(errorMsg);
 
@@ -741,7 +752,10 @@ export default function InvestmentsScreen({
             err.code === "CONNECTION_DISABLED" ||
             err.requiresReconnect
           ) {
-            logger.error("🔴 Connection disabled detected, stopping sync...", err);
+            logger.error(
+              "🔴 Connection disabled detected, stopping sync...",
+              err
+            );
             throw err; // Re-throw to trigger the disabled connection handler below
           }
         }
@@ -750,7 +764,10 @@ export default function InvestmentsScreen({
       // Clear cache to ensure fresh data (after all syncs)
       await clearInvestmentCache(user.id);
 
-      if (syncErrors.length > 0 && syncErrors.length === snaptradeConnections.length) {
+      if (
+        syncErrors.length > 0 &&
+        syncErrors.length === snaptradeConnections.length
+      ) {
         // All syncs failed
         throw new Error(syncErrors.join("; "));
       } else if (syncErrors.length > 0) {
@@ -1131,7 +1148,8 @@ export default function InvestmentsScreen({
               });
 
               // Reload connections from database to get updated status
-              const updatedConnections = await getAllInvestmentConnectionsFromDB();
+              const updatedConnections =
+                await getAllInvestmentConnectionsFromDB();
               setConnections(updatedConnections || []);
 
               // Reload all investment data (without triggering auto-sync)
@@ -1187,7 +1205,8 @@ export default function InvestmentsScreen({
               });
 
               // Reload connections
-              const updatedConnections = await getAllInvestmentConnectionsFromDB();
+              const updatedConnections =
+                await getAllInvestmentConnectionsFromDB();
               setConnections(updatedConnections || []);
 
               setSyncError(
@@ -1219,7 +1238,8 @@ export default function InvestmentsScreen({
               });
 
               // Reload connections optimistically
-              const updatedConnections = await getAllInvestmentConnectionsFromDB();
+              const updatedConnections =
+                await getAllInvestmentConnectionsFromDB();
               setConnections(updatedConnections || []);
 
               setSyncError(
@@ -1499,19 +1519,10 @@ export default function InvestmentsScreen({
 
   const renderLoadingState = () => {
     return (
-      <View style={styles.loadingStateContainer}>
-        <View style={styles.loadingStateContent}>
-          <View style={styles.loadingStateIconContainer}>
-            <ActivityIndicator size="large" color="#4A90E2" />
-          </View>
-          <Text style={styles.loadingStateTitle}>
-            Pulling up your investments now
-          </Text>
-          <Text style={styles.loadingStateMessage}>
-            We're fetching your latest portfolio data...
-          </Text>
-        </View>
-      </View>
+      <FinnyLoadingIndicator
+        message="Pulling up your investments now"
+        duration={1400}
+      />
     );
   };
 
