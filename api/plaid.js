@@ -899,6 +899,8 @@ async function handleSnapTradeSync(res, userId, accountId) {
               : 0
             : existingBalance?.total_change_percent || 0;
 
+        const safe = (v) =>
+          v != null && typeof v === "number" ? v.toFixed(2) : String(v);
         console.log(
           `📈 Portfolio metrics ${
             holdingsData &&
@@ -909,12 +911,12 @@ async function handleSnapTradeSync(res, userId, accountId) {
           }:`,
           {
             holdingsCount: holdingsData?.length || 0,
-            totalPortfolioValue: totalPortfolioValue.toFixed(2),
-            totalValue: totalValue.toFixed(2),
-            totalDayChange: computedDayChange.toFixed(2),
-            dayChangePercent: dayChangePercent.toFixed(2),
-            totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
-            totalChangePercent: totalChangePercent.toFixed(2),
+            totalPortfolioValue: safe(totalPortfolioValue),
+            totalValue: safe(totalValue),
+            totalDayChange: safe(computedDayChange),
+            dayChangePercent: safe(dayChangePercent),
+            totalUnrealizedPL: safe(totalUnrealizedPL),
+            totalChangePercent: safe(totalChangePercent),
           }
         );
 

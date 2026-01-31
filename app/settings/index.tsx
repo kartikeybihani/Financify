@@ -10,6 +10,8 @@ import {
   Alert,
   ScrollView,
   DeviceEventEmitter,
+  ActivityIndicator,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, MaterialIcons } from "@expo/vector-icons";
@@ -25,12 +27,14 @@ import {
 } from "@/src/utils/plaid/plaid";
 import logger from "@/src/utils/core/logger";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
-import { ActivityIndicator } from "react-native";
 import { notificationService } from "@/src/utils/core/notificationService";
+import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
+import { BlurView } from "expo-blur";
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { userName } = useLocalSearchParams();
+  const { clearAllCache } = useAuthNavigation();
   const [userData, setUserData] = useState<any>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(true);
@@ -38,6 +42,7 @@ export default function SettingsScreen() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
   const [isSyncingTransactions, setIsSyncingTransactions] = useState(false);
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
 
   useEffect(() => {
     const fetchAndSetUserData = async () => {
@@ -55,7 +60,7 @@ export default function SettingsScreen() {
           AppStorage.setItemSync("userData", JSON.stringify(user));
           logger.info(
             "[SettingsIndex] Current user email:",
-            user.user_metadata.full_name + " - " + user.email,
+            user.user_metadata.full_name + " - " + user.email
           );
         }
       } catch (error) {
@@ -110,7 +115,7 @@ export default function SettingsScreen() {
               if (total === 0) {
                 Alert.alert(
                   "No Account Found",
-                  "No connected bank accounts found to disconnect.",
+                  "No connected bank accounts found to disconnect."
                 );
                 return;
               }
@@ -132,24 +137,24 @@ export default function SettingsScreen() {
                     : "Partial Disconnect",
                   disconnected === 0
                     ? "Unable to disconnect any bank connections. Please try again."
-                    : `Disconnected ${disconnected}/${total} bank connection(s). Some connections could not be removed.`,
+                    : `Disconnected ${disconnected}/${total} bank connection(s). Some connections could not be removed.`
                 );
               } else {
                 Alert.alert(
                   "Success",
-                  `Disconnected ${disconnected} bank connection(s).`,
+                  `Disconnected ${disconnected} bank connection(s).`
                 );
               }
             } catch (error) {
               logger.error("Error disconnecting bank:", error);
               Alert.alert(
                 "Error",
-                "Failed to disconnect bank accounts. Please try again.",
+                "Failed to disconnect bank accounts. Please try again."
               );
             }
           },
         },
-      ],
+      ]
     );
   };
 
@@ -163,27 +168,26 @@ export default function SettingsScreen() {
         text: "Logout",
         style: "destructive",
         onPress: async () => {
-          if (userData?.email) {
-            logger.info("[SettingsIndex] Logging out user:", userData.email);
+          try {
+            setIsLoggingOut(true);
+            if (userData?.email) {
+              logger.info("[SettingsIndex] Logging out user:", userData.email);
+            }
+
+            await clearAllCache();
+            await supabase.auth.signOut();
+            logger.info("User logged out and cache cleared");
+
+            router.dismissAll();
+            router.replace("/");
+          } catch (error) {
+            logger.error("Error during logout:", error);
+            setIsLoggingOut(false);
+            Alert.alert(
+              "Logout Error",
+              "Something went wrong. Please try again."
+            );
           }
-
-          // Clear AsyncStorage cache on logout
-          // Use synchronous operations
-          AppStorage.removeItemSync("onboarding_complete");
-          AppStorage.removeItemSync("user_authenticated");
-          AppStorage.removeItemSync("userData");
-          // CRITICAL: Clear chat messages to prevent cross-user data leakage
-          AppStorage.removeItemSync("chatMessages");
-          AppStorage.removeItemSync("chatId");
-          AppStorage.removeItemSync("currentChatUserId");
-
-          // Sign out first (context will update state)
-          await supabase.auth.signOut();
-          logger.info("User logged out and cache cleared");
-
-          // Navigate to root - this triggers the declarative redirect in index.tsx
-          router.dismissAll();
-          router.replace("/");
         },
       },
     ]);
@@ -215,7 +219,7 @@ export default function SettingsScreen() {
       const results = Array.isArray(result.results) ? result.results : [];
       const failed = results.filter((entry) => entry?.error).length;
       const requiresUpdateCount = results.filter(
-        (entry) => entry?.requires_update_mode,
+        (entry) => entry?.requires_update_mode
       ).length;
 
       logger.info("[SettingsIndex] Transaction sync results:", result);
@@ -223,7 +227,7 @@ export default function SettingsScreen() {
       if (total === 0) {
         Alert.alert(
           "No Account Found",
-          "Please connect a bank account first to sync transactions.",
+          "Please connect a bank account first to sync transactions."
         );
         return;
       }
@@ -248,19 +252,19 @@ export default function SettingsScreen() {
           synced === 0 ? "Sync Failed" : "Sync Partially Complete",
           synced === 0
             ? `Unable to sync any bank connections.${reauthMessage}`
-            : `Synced ${synced}/${total} bank connection(s).${reauthMessage}`,
+            : `Synced ${synced}/${total} bank connection(s).${reauthMessage}`
         );
       } else {
         Alert.alert(
           "Sync Complete",
-          `Synced ${synced}/${total} bank connection(s).`,
+          `Synced ${synced}/${total} bank connection(s).`
         );
       }
     } catch (error: any) {
       logger.error("[SettingsIndex] Error syncing transactions:", error);
       Alert.alert(
         "Sync Failed",
-        error?.message || "Failed to sync transactions. Please try again.",
+        error?.message || "Failed to sync transactions. Please try again."
       );
     } finally {
       setIsSyncingTransactions(false);
@@ -272,7 +276,7 @@ export default function SettingsScreen() {
     title: string,
     onPress: () => void,
     showBorder = true,
-    rightElement?: JSX.Element,
+    rightElement?: JSX.Element
   ) => (
     <TouchableOpacity
       style={[styles.settingsItem, showBorder && styles.settingsItemBorder]}
@@ -293,7 +297,7 @@ export default function SettingsScreen() {
     title: string,
     value: boolean,
     onValueChange: (value: boolean) => void,
-    showBorder = true,
+    showBorder = true
   ) => (
     <View
       style={[styles.settingsItem, showBorder && styles.settingsItemBorder]}
@@ -356,7 +360,7 @@ export default function SettingsScreen() {
                   pathname: "/settings/personal-info",
                   params: { userName },
                 }),
-              true,
+              true
             )}
             {renderSettingsItem(
               <Ionicons name="refresh-outline" size={24} color="#4A90E2" />,
@@ -367,7 +371,7 @@ export default function SettingsScreen() {
                 <ActivityIndicator size="small" color="#4A90E2" />
               ) : (
                 <MaterialIcons name="chevron-right" size={24} color="#666" />
-              ),
+              )
             )}
             {/* {renderSettingsItem(
               <Ionicons name="card-outline" size={24} color="#4A90E2" />,
@@ -400,7 +404,7 @@ export default function SettingsScreen() {
                         setNotificationsEnabled(false);
                         Alert.alert(
                           "Permission Required",
-                          "Please enable notification permissions in your device settings to receive push notifications.",
+                          "Please enable notification permissions in your device settings to receive push notifications."
                         );
                         return;
                       }
@@ -417,10 +421,10 @@ export default function SettingsScreen() {
                       enabled: true,
                     };
                     await notificationService.savePreferences(
-                      updatedPreferences,
+                      updatedPreferences
                     );
                     await notificationService.scheduleNotifications(
-                      updatedPreferences,
+                      updatedPreferences
                     );
                     await notificationService.syncPreferencesToDatabase();
                     setNotificationsEnabled(true);
@@ -430,7 +434,7 @@ export default function SettingsScreen() {
                     setNotificationsEnabled(false);
                     Alert.alert(
                       "Error",
-                      "Failed to enable notifications. Please try again.",
+                      "Failed to enable notifications. Please try again."
                     );
                   }
                 } else {
@@ -444,7 +448,7 @@ export default function SettingsScreen() {
                       enabled: false,
                     };
                     await notificationService.savePreferences(
-                      updatedPreferences,
+                      updatedPreferences
                     );
                     // Cancel scheduled notifications
                     await notificationService.cancelAllNotifications();
@@ -455,11 +459,11 @@ export default function SettingsScreen() {
                     logger.error("Error disabling notifications:", error);
                     Alert.alert(
                       "Error",
-                      "Failed to disable notifications. Please try again.",
+                      "Failed to disable notifications. Please try again."
                     );
                   }
                 }
-              },
+              }
             )}
             {/* {renderSwitchItem(
               <Ionicons name="finger-print" size={24} color="#4A90E2" />,
@@ -468,7 +472,7 @@ export default function SettingsScreen() {
               setBiometricsEnabled,
               false
             )} */}
-          </>,
+          </>
         )}
 
         {renderSettingsGroup(
@@ -478,21 +482,21 @@ export default function SettingsScreen() {
               <MaterialIcons name="feedback" size={24} color="#4A90E2" />,
               "Give Feedback",
               () => setShowFeedbackModal(true),
-              true,
+              true
             )}
             {renderSettingsItem(
               <Ionicons name="call-outline" size={24} color="#4A90E2" />,
               "Contact Us",
               handleCallUs,
-              true,
+              true
             )}
             {renderSettingsItem(
               <Ionicons name="share-outline" size={24} color="#4A90E2" />,
               "Share the App",
               handleShareApp,
-              false,
+              false
             )}
-          </>,
+          </>
         )}
 
         {renderSettingsGroup(
@@ -502,15 +506,15 @@ export default function SettingsScreen() {
               <Ionicons name="wallet-outline" size={24} color="#ff6b6b" />,
               "Disconnect & Clear Data",
               handleDisconnectBank,
-              true,
+              true
             )}
             {renderSettingsItem(
               <MaterialIcons name="logout" size={24} color="#ff6b6b" />,
               "Log Out",
               handleLogout,
-              false,
+              false
             )}
-          </>,
+          </>
         )}
 
         <View style={styles.footer}>
@@ -529,6 +533,25 @@ export default function SettingsScreen() {
         visible={showContactModal}
         onClose={() => setShowContactModal(false)}
       />
+
+      <Modal
+        visible={isLoggingOut}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+      >
+        <View style={styles.logoutOverlay}>
+          <BlurView
+            intensity={40}
+            tint="dark"
+            style={StyleSheet.absoluteFill}
+          />
+          <View style={styles.logoutOverlayContent}>
+            <ActivityIndicator size="large" color="#fff" />
+            <Text style={styles.logoutOverlayText}>Logging out...</Text>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -537,6 +560,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "#121212",
+  },
+  logoutOverlay: {
+    flex: 1,
+  },
+  logoutOverlayContent: {
+    ...StyleSheet.absoluteFillObject,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  logoutOverlayText: {
+    marginTop: 12,
+    fontSize: 16,
+    color: "#fff",
   },
   scrollView: {
     flex: 1,

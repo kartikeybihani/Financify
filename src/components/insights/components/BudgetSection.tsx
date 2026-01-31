@@ -18,7 +18,7 @@ interface Props {
       percentage: number;
       color: string;
       hasRecurringTransactions: boolean;
-    },
+    }
   ][];
   onCategoryPress: (
     category: string,
@@ -27,7 +27,7 @@ interface Props {
       percentage: number;
       color: string;
       hasRecurringTransactions: boolean;
-    },
+    }
   ) => void;
   formatCategoryName: (cat: string) => string;
   onOpenAddCategoryModalRef?: (openFn: () => void) => void;
@@ -74,7 +74,7 @@ export default function BudgetSection({
   // Calculate total spent from category breakdown (fallback)
   const totalSpent = categoryBreakdown.reduce(
     (sum, [_, data]) => sum + data.amount,
-    0,
+    0
   );
 
   // Use budget total spent if available, otherwise use category breakdown total
@@ -126,8 +126,6 @@ export default function BudgetSection({
 
   return (
     <View style={styles.container}>
-      {/* <Text style={titleStyle}>Budget Overview</Text> */}
-
       {/* Show loading when fetching with no cache; empty state when loaded but no budget; otherwise BudgetView */}
       {budgetLoading ? (
         <LoadingIndicator

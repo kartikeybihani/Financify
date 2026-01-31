@@ -30,6 +30,7 @@ import { GoalsSection } from "@/src/components/home/GoalsSection";
 import { ActionButtons } from "@/src/components/home/ActionButtons";
 import { FinnyMessage } from "@/src/components/home/FinnyMessage";
 import { OnboardingProgressBox } from "@/src/components/home/OnboardingProgressBox";
+import { HoldingsMoversCard } from "@/src/components/home/HoldingsMoversCard";
 import { HomeScreenSkeleton } from "@/src/components/home/LoadingSkeletons";
 import OnboardingTimelineModal from "@/src/components/modals/OnboardingTimelineModal";
 import { useModalManager } from "@/src/components/modals/ModalFactory";
@@ -43,10 +44,13 @@ import CategorySelectionModal from "@/src/components/modals/CategorySelectionMod
 import CashDepositInstitutionModal from "@/src/components/modals/CashDepositInstitutionModal";
 import CreditCardInstitutionModal from "@/src/components/modals/CreditCardInstitutionModal";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
+import ConnectionSuccessModal from "@/src/components/modals/ConnectionSuccessModal";
 import AccountDetailModal from "@/src/components/modals/AccountDetailModal";
 import CashInputModal from "@/src/components/modals/CashInputModal";
 
 import { styles } from "@/src/styles/homeStyles";
+import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
+import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import AppStorage from "@/src/utils/storage/storage";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 import {
@@ -68,7 +72,7 @@ const checkUnifiedCacheSync = (): boolean => {
   try {
     const cacheString = AppStorage.getItemSync("unified_financial_data");
     const timestampString = AppStorage.getItemSync(
-      "unified_financial_data_timestamp",
+      "unified_financial_data_timestamp"
     );
 
     if (!cacheString || !timestampString) {
@@ -105,7 +109,7 @@ export default function HomeScreen() {
   // Check cache synchronously before first render
   const hasInitialCache = checkUnifiedCacheSync();
   logger.info(
-    `🏠 [HOME] Initial cache check: ${hasInitialCache ? "HIT" : "MISS"}`,
+    `🏠 [HOME] Initial cache check: ${hasInitialCache ? "HIT" : "MISS"}`
   );
 
   // Unified financial data hook - replaces 3 separate hooks
@@ -157,13 +161,17 @@ export default function HomeScreen() {
   const [showCreditModal, setShowCreditModal] = useState(false);
   const [showInvestmentModal, setShowInvestmentModal] = useState(false);
   const [showCashInputModal, setShowCashInputModal] = useState(false);
+  const [showConnectionSuccessModal, setShowConnectionSuccessModal] =
+    useState(false);
+  const [connectionSuccessInstitution, setConnectionSuccessInstitution] =
+    useState<{ name: string; id: string } | null>(null);
 
   const [userData, setUserData] = useState<any>(null);
   const [firstName, setFirstName] = useState<string | null>(null);
 
   // Account Detail Modal state
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
-    null,
+    null
   );
   const [selectedAccountData, setSelectedAccountData] = useState<any>(null);
   const [selectedAccountPerformance, setSelectedAccountPerformance] =
@@ -200,7 +208,7 @@ export default function HomeScreen() {
   const formatCurrency = (
     amount: number,
     currency = "USD",
-    options = { decimals: 1, useKM: true },
+    options = { decimals: 1, useKM: true }
   ) => {
     const cacheKey = `${currency}-${options.decimals}-${options.useKM}`;
 
@@ -230,7 +238,7 @@ export default function HomeScreen() {
   // Cash entry management functions
   const addCashEntry = async (
     amount: number,
-    description?: string,
+    description?: string
   ): Promise<void> => {
     try {
       const {
@@ -332,7 +340,7 @@ export default function HomeScreen() {
       if (connectionError || !connection) {
         console.log(
           "No Snaptrade connection found for account:",
-          account.account_id,
+          account.account_id
         );
         return null;
       }
@@ -341,7 +349,7 @@ export default function HomeScreen() {
       const { data: balanceData, error: balanceError } = await supabase
         .from("investment_balances")
         .select(
-          "day_change, day_change_percent, total_change, total_change_percent, total_value",
+          "day_change, day_change_percent, total_change, total_change_percent, total_value"
         )
         .eq("user_id", userData?.id)
         .eq("snaptrade_user_id", connection.snaptrade_user_id)
@@ -352,7 +360,7 @@ export default function HomeScreen() {
       if (balanceError || !balanceData) {
         console.log(
           "No investment balance data found for account:",
-          account.account_id,
+          account.account_id
         );
         return null;
       }
@@ -530,7 +538,7 @@ export default function HomeScreen() {
         } catch (error) {
           logger.error(
             "Error refreshing onboarding status in background:",
-            error,
+            error
           );
         }
       });
@@ -547,9 +555,15 @@ export default function HomeScreen() {
       // Already connected, do nothing or show message
       return;
     } else if (step === 2) {
-      // Navigate to Insights tab, scroll to budget section
+      // Navigate to Insights tab, then emit event to switch to budget section
       router.push("/(tabs)/insights");
-      // Note: BudgetSection will handle showing empty state
+      setTimeout(
+        () =>
+          DeviceEventEmitter.emit("navigateToInsightsSection", {
+            section: "budget",
+          }),
+        200
+      );
     } else if (step === 3) {
       // Navigate to chat tab
       router.push("/(tabs)/chat");
@@ -610,7 +624,7 @@ export default function HomeScreen() {
         }
       };
       refreshOnboarding();
-    }, []),
+    }, [])
   );
 
   // Listen for events that should invalidate onboarding cache
@@ -623,12 +637,13 @@ export default function HomeScreen() {
           data: { user },
         } = await supabase.auth.getUser();
         if (user?.id) {
-          const { invalidateOnboardingCache } =
-            await import("@/src/shared/utils/cacheInvalidation");
+          const { invalidateOnboardingCache } = await import(
+            "@/src/shared/utils/cacheInvalidation"
+          );
           await invalidateOnboardingCache(user.id);
           await loadOnboardingStatus(user.id);
         }
-      },
+      }
     );
 
     const goalsSubscription = DeviceEventEmitter.addListener(
@@ -639,12 +654,13 @@ export default function HomeScreen() {
           data: { user },
         } = await supabase.auth.getUser();
         if (user?.id) {
-          const { invalidateOnboardingCache } =
-            await import("@/src/shared/utils/cacheInvalidation");
+          const { invalidateOnboardingCache } = await import(
+            "@/src/shared/utils/cacheInvalidation"
+          );
           await invalidateOnboardingCache(user.id);
           await loadOnboardingStatus(user.id);
         }
-      },
+      }
     );
 
     return () => {
@@ -686,7 +702,7 @@ export default function HomeScreen() {
       (data) => {
         // Accounts are now managed by useUnifiedFinancialData hook
         logger.info("Financial data refreshed event received");
-      },
+      }
     );
 
     // Set up event listener for goals updates
@@ -702,7 +718,7 @@ export default function HomeScreen() {
           logger.info("Goals updated event received:", data.action);
           // Unified hook automatically refreshes on goalsUpdated event
         }
-      },
+      }
     );
 
     // Set up event listener for auth state changes (token refresh)
@@ -711,14 +727,14 @@ export default function HomeScreen() {
       async (data) => {
         if (data && data.event === "TOKEN_REFRESHED" && data.validated) {
           logger.info(
-            "🔄 [HOME] Token refreshed and validated, reinitializing app...",
+            "🔄 [HOME] Token refreshed and validated, reinitializing app..."
           );
           // Add small delay to ensure session is fully propagated
           setTimeout(async () => {
             await initializeApp();
           }, 200);
         }
-      },
+      }
     );
 
     return () => {
@@ -744,28 +760,25 @@ export default function HomeScreen() {
 
     const now = new Date();
 
-    return activeGoals.reduce(
-      (closest, goal) => {
-        const goalDate = new Date(goal.target_date);
-        const closestDate = closest ? new Date(closest.target_date) : null;
+    return activeGoals.reduce((closest, goal) => {
+      const goalDate = new Date(goal.target_date);
+      const closestDate = closest ? new Date(closest.target_date) : null;
 
-        // If the goal is in the past, ignore it
-        if (goalDate < now) return closest;
+      // If the goal is in the past, ignore it
+      if (goalDate < now) return closest;
 
-        // If we don't have a closest yet, use this goal
-        if (!closest) return goal;
+      // If we don't have a closest yet, use this goal
+      if (!closest) return goal;
 
-        // If the current closest is in the past, use this goal
-        if (closestDate && closestDate < now) return goal;
+      // If the current closest is in the past, use this goal
+      if (closestDate && closestDate < now) return goal;
 
-        // Compare the time difference
-        const goalDiff = Math.abs(goalDate.getTime() - now.getTime());
-        const closestDiff = Math.abs(closestDate!.getTime() - now.getTime());
+      // Compare the time difference
+      const goalDiff = Math.abs(goalDate.getTime() - now.getTime());
+      const closestDiff = Math.abs(closestDate!.getTime() - now.getTime());
 
-        return goalDiff < closestDiff ? goal : closest;
-      },
-      null as Goal | null,
-    );
+      return goalDiff < closestDiff ? goal : closest;
+    }, null as Goal | null);
   };
 
   // Memoized closest goal calculation - use unified goals data
@@ -775,22 +788,21 @@ export default function HomeScreen() {
   const checkingsSavingsTotal = useMemo(() => {
     return categorizedDeposits.reduce(
       (sum, account) => sum + getAccountBalance(account),
-      0,
+      0
     );
   }, [categorizedDeposits]);
 
   const investmentsCategoryTotal = useMemo(() => {
     return categorizedInvestments.reduce(
       (sum, account) => sum + getAccountBalance(account),
-      0,
+      0
     );
   }, [categorizedInvestments]);
 
   const creditCardsTotal = useMemo(() => {
     return categorizedLiabilities
       .filter(
-        (acc) =>
-          acc.type === "credit" || (acc as any).subtype === "credit card",
+        (acc) => acc.type === "credit" || (acc as any).subtype === "credit card"
       )
       .reduce((sum, account) => sum + getAccountBalance(account), 0);
   }, [categorizedLiabilities]);
@@ -798,7 +810,7 @@ export default function HomeScreen() {
   const loansTotal = useMemo(() => {
     return categorizedLiabilities
       .filter(
-        (acc) => acc.type === "loan" || (acc as any).subtype?.includes("loan"),
+        (acc) => acc.type === "loan" || (acc as any).subtype?.includes("loan")
       )
       .reduce((sum, account) => sum + getAccountBalance(account), 0);
   }, [categorizedLiabilities]);
@@ -905,7 +917,7 @@ export default function HomeScreen() {
                 initialExpandedCategory: cardType,
                 onAccountAdded: async () => {
                   logger.info(
-                    "New account added, refreshing financial data...",
+                    "New account added, refreshing financial data..."
                   );
                   await fetchFreshData();
                   logger.info("Financial data refreshed after new account");
@@ -925,6 +937,17 @@ export default function HomeScreen() {
               onDismiss={handleOnboardingDismiss}
             />
           )}
+
+          <HoldingsMoversCard
+            onPress={() => {
+              router.push("/(tabs)/insights");
+              setTimeout(() => {
+                DeviceEventEmitter.emit("navigateToInsightsSection", {
+                  section: "investments",
+                });
+              }, 200);
+            }}
+          />
 
           {/* Goals Progress */}
           <GoalsSection
@@ -1013,7 +1036,7 @@ export default function HomeScreen() {
                   .filter(
                     (acc) =>
                       acc.type === "credit" ||
-                      (acc as any).subtype === "credit card",
+                      (acc as any).subtype === "credit card"
                   )
                   .map((account, index) => (
                     <AccountItem
@@ -1023,7 +1046,7 @@ export default function HomeScreen() {
                       balance={formatCurrency(
                         getAccountBalance(account),
                         "USD",
-                        { decimals: 0, useKM: false },
+                        { decimals: 0, useKM: false }
                       )}
                       icon="card-outline"
                       bankName={account.institution_name || "Unknown Bank"}
@@ -1042,7 +1065,7 @@ export default function HomeScreen() {
                   .filter(
                     (acc) =>
                       acc.type === "loan" ||
-                      (acc as any).subtype?.includes("loan"),
+                      (acc as any).subtype?.includes("loan")
                   )
                   .map((account, index) => (
                     <AccountItem
@@ -1052,7 +1075,7 @@ export default function HomeScreen() {
                       balance={formatCurrency(
                         getAccountBalance(account),
                         "USD",
-                        { decimals: 0, useKM: false },
+                        { decimals: 0, useKM: false }
                       )}
                       icon="receipt-outline"
                       bankName={account.institution_name || "Unknown Bank"}
@@ -1102,28 +1125,28 @@ export default function HomeScreen() {
                                 await deleteCashEntry(entry.id);
                                 logger.info(
                                   "✅ Cash entry deleted successfully:",
-                                  entry.id,
+                                  entry.id
                                 );
 
                                 // Refresh all financial data to update UI and net worth
                                 await fetchFreshData();
                                 logger.info(
-                                  "🔄 Financial data refreshed after cash deletion",
+                                  "🔄 Financial data refreshed after cash deletion"
                                 );
                               } catch (error) {
                                 logger.error(
                                   "❌ Failed to delete cash entry:",
-                                  error,
+                                  error
                                 );
                                 Alert.alert(
                                   "Error",
                                   "Failed to delete cash entry. Please try again.",
-                                  [{ text: "OK" }],
+                                  [{ text: "OK" }]
                                 );
                               }
                             },
                           },
-                        ],
+                        ]
                       );
                     }}
                   />
@@ -1170,13 +1193,13 @@ export default function HomeScreen() {
                     async (itemId) => {
                       logger.info(
                         "Successfully added new cash account:",
-                        itemId,
+                        itemId
                       );
                       await fetchFreshData();
                     },
                     (error) => {
                       logger.error("Failed to add new cash account:", error);
-                    },
+                    }
                   );
                 } else {
                   // Use standard bank account addition flow
@@ -1184,13 +1207,13 @@ export default function HomeScreen() {
                     async (itemId) => {
                       logger.info(
                         "Successfully added new cash account:",
-                        itemId,
+                        itemId
                       );
                       await fetchFreshData();
                     },
                     (error) => {
                       logger.error("Failed to add new cash account:", error);
-                    },
+                    }
                   );
                 }
               } catch (error) {
@@ -1210,16 +1233,16 @@ export default function HomeScreen() {
                   async (itemId) => {
                     logger.info(
                       "Successfully added new credit card account:",
-                      itemId,
+                      itemId
                     );
                     await fetchFreshData();
                   },
                   (error) => {
                     logger.error(
                       "Failed to add new credit card account:",
-                      error,
+                      error
                     );
-                  },
+                  }
                 );
               } catch (error) {
                 logger.error("Error adding credit card account:", error);
@@ -1233,8 +1256,33 @@ export default function HomeScreen() {
             onClose={() => setShowInvestmentModal(false)}
             onInstitutionSelect={async (institutionId) => {
               logger.info("Investment institution selected:", institutionId);
-              // Investment institutions are handled by the InstitutionSelectionModal itself
-              // which calls the Snaptrade connection logic
+            }}
+            onConnectionSuccess={(institutionName, institutionId) => {
+              setShowInvestmentModal(false);
+              setConnectionSuccessInstitution({
+                name: institutionName,
+                id: institutionId,
+              });
+              setShowConnectionSuccessModal(true);
+            }}
+          />
+
+          {/* Connection success: gathering data modal */}
+          <ConnectionSuccessModal
+            visible={showConnectionSuccessModal}
+            institutionName={connectionSuccessInstitution?.name ?? ""}
+            institutionId={connectionSuccessInstitution?.id}
+            onComplete={() => {
+              setShowConnectionSuccessModal(false);
+              setConnectionSuccessInstitution(null);
+              DeviceEventEmitter.emit("financialDataRefreshed", {});
+            }}
+            performRefresh={async () => {
+              const user = (await getAuthenticatedUser())?.user;
+              if (user?.id) await clearInvestmentCache(user.id);
+              await refreshFinancialData();
+              DeviceEventEmitter.emit("financialDataRefreshed", {});
+              await new Promise((r) => setTimeout(r, 2200));
             }}
           />
 

@@ -69,6 +69,11 @@ interface InstitutionSelectionModalProps {
   onClose: () => void;
   onInstitutionSelect: (institutionId: string) => void;
   onReopenFinancialSheet?: () => void;
+  /** Called when an investment account is successfully connected; use to show post-connect UI (e.g. gathering-data modal). */
+  onConnectionSuccess?: (
+    institutionName: string,
+    institutionId: string
+  ) => void;
 }
 
 export default function InstitutionSelectionModal({
@@ -76,6 +81,7 @@ export default function InstitutionSelectionModal({
   onClose,
   onInstitutionSelect,
   onReopenFinancialSheet,
+  onConnectionSuccess,
 }: InstitutionSelectionModalProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectingInstitution, setConnectingInstitution] = useState<
@@ -253,19 +259,13 @@ export default function InstitutionSelectionModal({
               }
             }
 
-            // CRITICAL: Close modal and refresh parent component to show new data
             setIsConnecting(false);
             setConnectingInstitution(null);
 
-            // Notify parent that connection was successful
+            onConnectionSuccess?.(institutionName, institutionId);
             if (onReopenFinancialSheet) {
-              // Small delay to ensure database updates are complete
-              setTimeout(() => {
-                onReopenFinancialSheet();
-              }, 1000);
+              setTimeout(() => onReopenFinancialSheet(), 1000);
             }
-
-            // Close the modal
             onClose();
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
@@ -553,28 +553,21 @@ export default function InstitutionSelectionModal({
               }
             }
 
-            // CRITICAL: Close modal and refresh parent component to show new data
             setIsConnecting(false);
             setConnectingInstitution(null);
 
-            // Notify parent that connection was successful
+            const otherName = accounts[0]?.brokerage || "Other Institutions";
+            onConnectionSuccess?.(otherName, "other");
             if (onReopenFinancialSheet) {
-              // Small delay to ensure database updates are complete
-              setTimeout(() => {
-                onReopenFinancialSheet();
-              }, 1000);
+              setTimeout(() => onReopenFinancialSheet(), 1000);
             }
-
-            // Close the modal
             onClose();
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
             setIsConnecting(false);
             setConnectingInstitution(null);
-            // Show error to user - connection may have failed
           }
         } else {
-          // Browser was opened but result type is unexpected
           logger.warn("⚠️ Unexpected browser result type:", result.type);
           setIsConnecting(false);
           setConnectingInstitution(null);

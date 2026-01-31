@@ -6,6 +6,7 @@ import {
   Modal,
   Animated,
   Dimensions,
+  Easing,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,18 +28,31 @@ export default function CategoryMappingModal({
 }: CategoryMappingModalProps) {
   const insets = useSafeAreaInsets();
   const slideAnim = useRef(new Animated.Value(300)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
   const checkmarkScale = useRef(new Animated.Value(0)).current;
   const [isComplete, setIsComplete] = useState(false);
   const [isAnimatingOut, setIsAnimatingOut] = useState(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
 
-  // Animate modal slide up/down
+  // Animate modal slide up/down - check isAnimatingOut FIRST to avoid resetting when closing
   useEffect(() => {
+    if (isAnimatingOut) {
+      // Slide down animation when closing
+      Animated.spring(slideAnim, {
+        toValue: 300,
+        damping: 20,
+        stiffness: 300,
+        useNativeDriver: true,
+      }).start();
+      return;
+    }
+
     if (visible) {
       // Reset animations and state
       setIsAnimatingOut(false);
       slideAnim.setValue(300);
-      pulseAnim.setValue(1);
+      spinAnim.setValue(0);
       checkmarkScale.setValue(0);
       setIsComplete(false);
 
@@ -50,33 +64,28 @@ export default function CategoryMappingModal({
         useNativeDriver: true,
       }).start();
 
-      // Pulse animation for icon
-      Animated.loop(
+      // Smooth continuous spin at normal speed
+      const spinLoop = Animated.loop(
         Animated.sequence([
-          Animated.timing(pulseAnim, {
-            toValue: 1.2,
-            duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.timing(pulseAnim, {
+          Animated.timing(spinAnim, {
             toValue: 1,
-            duration: 800,
+            duration: 1100,
+            easing: Easing.linear,
             useNativeDriver: true,
           }),
-        ]),
-      ).start();
-    } else if (isAnimatingOut) {
-      // Slide down animation when closing
-      Animated.spring(slideAnim, {
-        toValue: 300,
-        damping: 20,
-        stiffness: 300,
-        useNativeDriver: true,
-      }).start();
+          Animated.timing(spinAnim, {
+            toValue: 0,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ])
+      );
+      spinLoop.start();
+      return () => spinLoop.stop();
     }
-  }, [visible, isAnimatingOut]);
+  }, [visible, isAnimatingOut, slideAnim, spinAnim]);
 
-  // Poll for mapping status
+  // Poll for mapping status - use ref for onComplete to avoid effect restarts from inline callbacks
   useEffect(() => {
     if (!visible || !userId) return;
 
@@ -92,10 +101,10 @@ export default function CategoryMappingModal({
         const periodEnd = new Date(year, month + 1, 0);
 
         const formatDate = (date: Date) => {
-          const year = date.getFullYear();
-          const month = String(date.getMonth() + 1).padStart(2, "0");
-          const day = String(date.getDate()).padStart(2, "0");
-          return `${year}-${month}-${day}`;
+          const y = date.getFullYear();
+          const m = String(date.getMonth() + 1).padStart(2, "0");
+          const d = String(date.getDate()).padStart(2, "0");
+          return `${y}-${m}-${d}`;
         };
 
         const periodStartStr = formatDate(periodStart);
@@ -117,7 +126,6 @@ export default function CategoryMappingModal({
 
         if (data?.category_mapping_status === "completed") {
           setIsComplete(true);
-          // Show checkmark animation
           Animated.spring(checkmarkScale, {
             toValue: 1,
             damping: 10,
@@ -125,22 +133,20 @@ export default function CategoryMappingModal({
             useNativeDriver: true,
           }).start();
 
-          // Wait a moment then close with animation
           setTimeout(() => {
             if (pollInterval) clearInterval(pollInterval);
             if (timeout) clearTimeout(timeout);
             setIsAnimatingOut(true);
             setTimeout(() => {
-              onComplete();
+              onCompleteRef.current();
             }, 300);
           }, 1500);
         } else if (data?.category_mapping_status === "failed") {
-          // Close on failure (silently) with animation
           if (pollInterval) clearInterval(pollInterval);
           if (timeout) clearTimeout(timeout);
           setIsAnimatingOut(true);
           setTimeout(() => {
-            onComplete();
+            onCompleteRef.current();
           }, 300);
         }
       } catch (error) {
@@ -148,16 +154,14 @@ export default function CategoryMappingModal({
       }
     };
 
-    // Start polling immediately, then every 2 seconds
     checkMappingStatus();
     pollInterval = setInterval(checkMappingStatus, 2000);
 
-    // Timeout after 30 seconds (fallback)
     timeout = setTimeout(() => {
       if (pollInterval) clearInterval(pollInterval);
       setIsAnimatingOut(true);
       setTimeout(() => {
-        onComplete();
+        onCompleteRef.current();
       }, 300);
     }, 30000);
 
@@ -165,7 +169,7 @@ export default function CategoryMappingModal({
       if (pollInterval) clearInterval(pollInterval);
       if (timeout) clearTimeout(timeout);
     };
-  }, [visible, userId, onComplete, checkmarkScale]);
+  }, [visible, userId]);
 
   if (!visible && !isAnimatingOut) return null;
 
@@ -186,7 +190,7 @@ export default function CategoryMappingModal({
           ]}
         >
           <LinearGradient
-            colors={["#16213e", "#0f3460"]}
+            colors={["#0d0d0d", "#18181a", "#141416"]}
             style={styles.gradient}
           >
             <View
@@ -202,10 +206,19 @@ export default function CategoryMappingModal({
                 <Animated.View
                   style={[
                     styles.iconContainer,
-                    { transform: [{ scale: pulseAnim }] },
+                    {
+                      transform: [
+                        {
+                          rotate: spinAnim.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: ["0deg", "360deg"],
+                          }),
+                        },
+                      ],
+                    },
                   ]}
                 >
-                  <Ionicons name="sync" size={32} color="#4A90E2" />
+                  <Ionicons name="sync" size={40} color="#4A90E2" />
                 </Animated.View>
               ) : (
                 <Animated.View
@@ -235,18 +248,21 @@ export default function CategoryMappingModal({
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.4)",
     justifyContent: "flex-end",
   },
   modalContainer: {
     width: SCREEN_WIDTH,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 44,
+    borderTopRightRadius: 44,
     overflow: "hidden",
+    minHeight: 220,
     maxHeight: "80%",
   },
   gradient: {
     ...StyleSheet.absoluteFillObject,
+    borderTopLeftRadius: 44,
+    borderTopRightRadius: 44,
   },
   content: {
     flex: 1,
@@ -268,7 +284,7 @@ const styles = StyleSheet.create({
   },
   subtitle: {
     fontSize: 14,
-    color: "#B0B0B0",
+    color: "#8E8E93",
     textAlign: "center",
     lineHeight: 20,
     paddingHorizontal: 8,
