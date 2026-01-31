@@ -798,6 +798,8 @@ async function handleSnapTradeSync(res, userId, accountId) {
         });
 
       const balanceData = balanceResponse.data;
+      const balanceResponseFull = balanceResponse.data || balanceResponse;
+      
       console.log(
         "💰 Balance data received:",
         JSON.stringify(balanceData, null, 2)
@@ -812,22 +814,38 @@ async function handleSnapTradeSync(res, userId, accountId) {
             userSecret: connection.user_secret,
           });
 
-        const holdingsData = holdingsResponse?.data || [];
-        const holdingsResponseFull = holdingsResponse?.data || holdingsResponse;
-        
+        // holdingsResponse structure: { account: {...}, positions: [...], balances: [...], total_value: {...} }
+        // OR: { data: { account: {...}, positions: [...], ... } }
+        // OR: { data: [...] } (just positions array)
+        const holdingsResponseData = holdingsResponse?.data || holdingsResponse;
+        const holdingsData = Array.isArray(holdingsResponseData)
+          ? holdingsResponseData
+          : holdingsResponseData?.positions || holdingsResponseData?.data || [];
+
         console.log(
           `📊 Got ${
             holdingsData ? holdingsData.length : 0
           } holdings for performance calculation`
         );
 
-        // CRITICAL: Use TOTAL account value (holdings + cash), not just holdings value
-        // This correctly handles stock sales (cash increases, holdings decrease, total stays same)
-        // Check for account.balance.total.amount in holdings response (full account info)
-        const accountTotalValue =
-          holdingsResponseFull?.account?.balance?.total?.amount ||
-          holdingsResponseFull?.account?.balance?.total?.value ||
+        // CRITICAL: Extract TOTAL account value (holdings + cash) from account.balance.total
+        // Check both balanceResponse and holdingsResponse for account info
+        // Priority: holdingsResponse.account (most reliable), then balanceResponse.account
+        const accountTotalFromHoldings =
+          holdingsResponse?.account?.balance?.total?.amount ||
+          holdingsResponse?.account?.balance?.total?.value ||
+          holdingsResponseData?.account?.balance?.total?.amount ||
+          holdingsResponseData?.account?.balance?.total?.value ||
           null;
+        
+        const accountTotalFromBalance =
+          balanceResponse?.account?.balance?.total?.amount ||
+          balanceResponse?.account?.balance?.total?.value ||
+          balanceResponseFull?.account?.balance?.total?.amount ||
+          balanceResponseFull?.account?.balance?.total?.value ||
+          null;
+
+        const accountTotalValue = accountTotalFromHoldings || accountTotalFromBalance;
 
         // Get existing balance to read previous_total_value before updating
         const { data: existingBalance } = await supabase
@@ -841,11 +859,34 @@ async function handleSnapTradeSync(res, userId, accountId) {
           .eq("is_current", true)
           .single();
 
-        // Get previous portfolio total value from previous_total_value column, fallback to total_value
+        // Get previous portfolio total value - use day-boundary logic like holdings
+        // Only update previous_total_value when rolling to a new calendar day (UTC)
+        const existingLastUpdated = existingBalance?.last_updated;
+        const now = new Date();
+        const todayUTC = Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate()
+        );
+        const isSameCalendarDayUTC = (dateStr) => {
+          if (!dateStr) return false;
+          const d = new Date(dateStr);
+          const dayUTC = Date.UTC(
+            d.getUTCFullYear(),
+            d.getUTCMonth(),
+            d.getUTCDate()
+          );
+          return dayUTC === todayUTC;
+        };
+        const sameDay = isSameCalendarDayUTC(existingLastUpdated);
+
+        // Use previous_total_value as baseline if same day, otherwise use total_value or null
         const previousTotalValue =
-          existingBalance?.previous_total_value ??
-          existingBalance?.total_value ??
-          null;
+          existingBalance && sameDay && existingBalance.previous_total_value != null
+            ? existingBalance.previous_total_value
+            : existingBalance?.previous_total_value ??
+              existingBalance?.total_value ??
+              null;
 
         // Calculate portfolio performance metrics
         let totalUnrealizedPL = existingBalance?.total_change || 0;
@@ -883,12 +924,27 @@ async function handleSnapTradeSync(res, userId, accountId) {
         } else {
           // Fallback: Calculate from holdings + cash + buying_power
           const totalCash = balanceData.reduce(
-            (sum, b) => sum + (b.cash || 0) + (b.buying_power || 0),
+            (sum, b) => {
+              const cash = typeof b.cash === "number" ? b.cash : parseFloat(b.cash || 0);
+              const buyingPower = typeof b.buying_power === "number" ? b.buying_power : parseFloat(b.buying_power || 0);
+              return sum + cash + buyingPower;
+            },
             0
           );
           totalValue = totalHoldingsValue + totalCash;
           console.log(
-            `⚠️ Fallback: holdings ($${totalHoldingsValue.toFixed(2)}) + cash+buying_power ($${totalCash.toFixed(2)}) = $${totalValue.toFixed(2)}`
+            `⚠️ Fallback calculation:`,
+            {
+              totalHoldingsValue: totalHoldingsValue.toFixed(2),
+              totalCash: totalCash.toFixed(2),
+              totalValue: totalValue.toFixed(2),
+              balanceDataSample: balanceData[0] ? {
+                cash: balanceData[0].cash,
+                buying_power: balanceData[0].buying_power,
+                cashType: typeof balanceData[0].cash,
+                buyingPowerType: typeof balanceData[0].buying_power,
+              } : "no balance data",
+            }
           );
         }
 
@@ -897,16 +953,32 @@ async function handleSnapTradeSync(res, userId, accountId) {
         // but total account value only changes by market movements, not by the sale itself
         let computedDayChange = null;
         let dayChangePercent = null;
-        if (previousTotalValue !== null && previousTotalValue !== undefined) {
+        
+        console.log("🔍 Day change calculation:", {
+          previousTotalValue: previousTotalValue,
+          totalValue: totalValue,
+          sameDay: sameDay,
+          existingLastUpdated: existingLastUpdated,
+          existingBalancePrevious: existingBalance?.previous_total_value,
+          existingBalanceTotal: existingBalance?.total_value,
+        });
+        
+        if (previousTotalValue !== null && previousTotalValue !== undefined && totalValue > 0) {
           computedDayChange = totalValue - previousTotalValue;
           dayChangePercent =
             previousTotalValue !== 0
               ? (computedDayChange / previousTotalValue) * 100
               : 0;
+          console.log(
+            `✅ Calculated day_change: $${computedDayChange.toFixed(2)} (${dayChangePercent.toFixed(2)}%)`
+          );
         } else {
           // No previous value, preserve existing or set to null
           computedDayChange = existingBalance?.day_change ?? null;
           dayChangePercent = existingBalance?.day_change_percent ?? null;
+          console.log(
+            `⚠️ No previous value for day_change calculation. Using existing: $${computedDayChange || 0}`
+          );
         }
         const totalChangePercent =
           holdingsData && Array.isArray(holdingsData) && holdingsData.length > 0
@@ -948,7 +1020,9 @@ async function handleSnapTradeSync(res, userId, accountId) {
           total_change: totalUnrealizedPL,
           total_change_percent: totalChangePercent,
           total_value: totalValue,
-          previous_total_value: totalValue,
+          // Only update previous_total_value when rolling to a new day (same logic as holdings)
+          previous_total_value:
+            !existingBalance || !sameDay ? totalValue : existingBalance.previous_total_value ?? totalValue,
           is_current: true,
           last_updated: new Date().toISOString(),
           provider: "snaptrade",
