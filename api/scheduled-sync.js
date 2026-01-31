@@ -154,7 +154,10 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
           user_id: item.user_id,
           error: syncResult.error,
         });
-        console.error(`❌ Failed to sync item ${item.item_id}:`, syncResult.error);
+        console.error(
+          `❌ Failed to sync item ${item.item_id}:`,
+          syncResult.error
+        );
       }
     } catch (error) {
       results.errors++;
@@ -182,11 +185,15 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
         .single();
 
       if (connectionErr || !connection) {
-        throw new Error(`SnapTrade connection not found for account ${accountId}`);
+        throw new Error(
+          `SnapTrade connection not found for account ${accountId}`
+        );
       }
 
       if (!connection.is_active) {
-        throw new Error(`SnapTrade connection inactive for account ${accountId}`);
+        throw new Error(
+          `SnapTrade connection inactive for account ${accountId}`
+        );
       }
 
       // SnapTrade sync runs in-process on Vercel (Node.js has crypto.createHmac)
@@ -217,7 +224,9 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
       }
 
       if (!syncSuccessful) {
-        throw new Error(lastResult?.error || "SnapTrade sync failed after retries");
+        throw new Error(
+          lastResult?.error || "SnapTrade sync failed after retries"
+        );
       }
 
       results.synced++;
@@ -229,7 +238,10 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
         user_id: item.user_id,
         error: error.message,
       });
-      console.error(`❌ SnapTrade sync failed for item ${item.item_id}:`, error);
+      console.error(
+        `❌ SnapTrade sync failed for item ${item.item_id}:`,
+        error
+      );
     }
   }
 
@@ -257,7 +269,9 @@ async function runWeeklyBalanceSync(plaidItems) {
 
       if (tokenErr || !access_token) {
         throw new Error(
-          `Access token not found: ${tokenErr?.message || "Token is null/undefined"}`
+          `Access token not found: ${
+            tokenErr?.message || "Token is null/undefined"
+          }`
         );
       }
 
@@ -293,7 +307,10 @@ async function runWeeklyBalanceSync(plaidItems) {
         user_id: item.user_id,
         error: error.message,
       });
-      console.error(`❌ Weekly balance sync failed for ${item.item_id}:`, error);
+      console.error(
+        `❌ Weekly balance sync failed for ${item.item_id}:`,
+        error
+      );
     }
   }
 
@@ -619,14 +636,29 @@ async function syncItemTransactions(item_id, user_id) {
           categoryId = null; // Explicitly null for internal transfers
         }
         // Priority 3: Stream-based category (if no merchant rule matched)
-        else if (!categoryId && newCategory && newCategory !== "INTERNAL_TRANSFER") {
+        else if (
+          !categoryId &&
+          newCategory &&
+          newCategory !== "INTERNAL_TRANSFER"
+        ) {
           // Look up category_id for user-set category (from stream or override)
-          categoryId = categoryIdMap.get(newCategory) || categoryIdMap.get(newCategory.toLowerCase()) || null;
+          categoryId =
+            categoryIdMap.get(newCategory) ||
+            categoryIdMap.get(newCategory.toLowerCase()) ||
+            null;
         }
         // Priority 4: Plaid mapped category (if no merchant rule or stream match)
-        else if (!categoryId && !newCategory && mappedCategory.top && mappedCategory.top !== "INTERNAL_TRANSFER") {
+        else if (
+          !categoryId &&
+          !newCategory &&
+          mappedCategory.top &&
+          mappedCategory.top !== "INTERNAL_TRANSFER"
+        ) {
           // Look up category_id for top_category (Plaid mapped category)
-          categoryId = categoryIdMap.get(mappedCategory.top) || categoryIdMap.get(mappedCategory.top.toLowerCase()) || null;
+          categoryId =
+            categoryIdMap.get(mappedCategory.top) ||
+            categoryIdMap.get(mappedCategory.top.toLowerCase()) ||
+            null;
         }
 
         // Priority 5: Fallback to "Other" if no match found (and not internal transfer)
@@ -663,31 +695,47 @@ async function syncItemTransactions(item_id, user_id) {
 
       // First, get existing transactions to check which ones already have new_category, category_id, and if_recurring
       const plaidTxIds = rows.map((r) => r.plaid_transaction_id);
-      
+
       // CRITICAL: Validate account_ids exist before processing transactions
-      const accountIds = [...new Set(rows.map((r) => r.account_id).filter(Boolean))];
+      const accountIds = [
+        ...new Set(rows.map((r) => r.account_id).filter(Boolean)),
+      ];
       if (accountIds.length > 0) {
         const { data: existingAccounts, error: accountsErr } = await supabase
           .from("accounts")
           .select("account_id")
           .in("account_id", accountIds)
           .eq("item_id", item_id);
-        
+
         if (accountsErr) {
-          throw new Error(`Failed to validate accounts: ${accountsErr.message}`);
+          throw new Error(
+            `Failed to validate accounts: ${accountsErr.message}`
+          );
         }
-        
-        const validAccountIds = new Set(existingAccounts?.map((a) => a.account_id) || []);
-        const invalidRows = rows.filter((r) => !validAccountIds.has(r.account_id));
-        
+
+        const validAccountIds = new Set(
+          existingAccounts?.map((a) => a.account_id) || []
+        );
+        const invalidRows = rows.filter(
+          (r) => !validAccountIds.has(r.account_id)
+        );
+
         if (invalidRows.length > 0) {
-          const invalidAccountIds = [...new Set(invalidRows.map((r) => r.account_id))];
-          console.warn(`⚠️ Skipping ${invalidRows.length} transactions for deleted accounts (account_ids: ${invalidAccountIds.join(", ")})`);
+          const invalidAccountIds = [
+            ...new Set(invalidRows.map((r) => r.account_id)),
+          ];
+          console.warn(
+            `⚠️ Skipping ${
+              invalidRows.length
+            } transactions for deleted accounts (account_ids: ${invalidAccountIds.join(
+              ", "
+            )})`
+          );
           // Filter out transactions with invalid account_ids instead of throwing error
           rows = rows.filter((r) => validAccountIds.has(r.account_id));
         }
       }
-      
+
       const { data: fetchedExistingTxs, error: fetchErr } = await supabase
         .from("transactions")
         .select(
@@ -695,7 +743,7 @@ async function syncItemTransactions(item_id, user_id) {
         )
         .eq("user_id", user_id)
         .in("plaid_transaction_id", plaidTxIds);
-      
+
       existingTxs = fetchedExistingTxs || [];
 
       // CRITICAL FIX: If fetch fails, we cannot safely set new_category or if_recurring
@@ -765,8 +813,10 @@ async function syncItemTransactions(item_id, user_id) {
         }
 
         // Existing transaction - preserve user overrides
-        const existingCategoryId = existingCategoryIdMap.get(row.plaid_transaction_id);
-        
+        const existingCategoryId = existingCategoryIdMap.get(
+          row.plaid_transaction_id
+        );
+
         if (existingCategoryId) {
           // User has set category_id - preserve it (highest priority)
           updatedRow.category_id = existingCategoryId;
@@ -783,7 +833,10 @@ async function syncItemTransactions(item_id, user_id) {
           updatedRow.new_category = existingCategory;
           if (existingCategory !== "INTERNAL_TRANSFER") {
             // Try to look up category_id for the existing category name
-            updatedRow.category_id = categoryIdMap.get(existingCategory) || categoryIdMap.get(existingCategory.toLowerCase()) || null;
+            updatedRow.category_id =
+              categoryIdMap.get(existingCategory) ||
+              categoryIdMap.get(existingCategory.toLowerCase()) ||
+              null;
           } else {
             updatedRow.category_id = null; // INTERNAL_TRANSFER doesn't have a category_id
           }
@@ -843,7 +896,9 @@ async function syncItemTransactions(item_id, user_id) {
         );
 
       if (removedErr) {
-        throw new Error(`Failed to fetch removed transactions: ${removedErr.message}`);
+        throw new Error(
+          `Failed to fetch removed transactions: ${removedErr.message}`
+        );
       }
 
       removedExisting = removedTxs || [];
@@ -1000,7 +1055,10 @@ async function updateDerivedBalances(
       .single();
 
     if (accountErr || !accountRow) {
-      console.error("⚠️ Account not found for derived balance update:", accountId);
+      console.error(
+        "⚠️ Account not found for derived balance update:",
+        accountId
+      );
       continue;
     }
 
@@ -1010,8 +1068,12 @@ async function updateDerivedBalances(
       balance_source: "derived",
     };
 
-    if (accountRow.available_balance !== null && accountRow.available_balance !== undefined) {
-      updatePayload.available_balance = Number(accountRow.available_balance) + delta;
+    if (
+      accountRow.available_balance !== null &&
+      accountRow.available_balance !== undefined
+    ) {
+      updatePayload.available_balance =
+        Number(accountRow.available_balance) + delta;
     }
 
     const { error: updateErr } = await supabase

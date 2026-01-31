@@ -7,40 +7,31 @@ import {
 export default function Index() {
   const { isLoading, navigationState, onboardingStep } = useAuthNavigation();
 
-  // Show nothing while loading (parent shows loading screen)
   if (isLoading) {
     return null;
   }
 
-  // Declarative navigation based on state
+  let href: string;
   switch (navigationState) {
     case NavigationState.PRE_SIGNUP:
-      return <Redirect href="/(auth)/welcome" />;
-
+      href = "/(auth)/welcome";
+      break;
     case NavigationState.ONBOARDING:
-      // Route to specific onboarding step
-      if (onboardingStep === 1) {
-        return <Redirect href="/onboarding-profile" />;
-      }
-      if (onboardingStep === 2) {
-        return <Redirect href="/onboarding-intent1" />;
-      }
-      if (onboardingStep === 3) {
-        return <Redirect href="/onboarding-connect" />;
-      }
-      if (onboardingStep === 4) {
-        return <Redirect href="/(onboarding-complete)" />;
-      }
-      // Default to profile screen if step is 0 or unknown
-      return <Redirect href="/onboarding-profile" />;
-
+      if (onboardingStep === 1) href = "/onboarding-profile";
+      else if (onboardingStep === 2) href = "/onboarding-intent1";
+      else if (onboardingStep === 3) href = "/onboarding-connect";
+      else if (onboardingStep === 4) href = "/(onboarding-complete)";
+      else href = "/onboarding-profile";
+      break;
     case NavigationState.ONBOARDING_FINAL:
-      return <Redirect href="/(onboarding-complete)" />;
-
+      href = "/(onboarding-complete)";
+      break;
     case NavigationState.AUTHENTICATED:
-      return <Redirect href="/(tabs)" />;
-
+      href = "/(tabs)";
+      break;
     default:
-      return <Redirect href="/(auth)/welcome" />;
+      href = "/(auth)/welcome";
   }
+
+  return <Redirect href={href as any} />;
 }

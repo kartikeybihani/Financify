@@ -442,22 +442,16 @@ export default function InvestmentsScreen({
             JSON.stringify(lastPreloadedDataRef.current));
 
       if (!shouldReload) {
-        logger.info(
-          "Investments: Data already loaded, skipping initial reload (pull-to-refresh will still work)"
-        );
         return;
       }
 
       // Check if data is preloaded (when embedded in insights screen)
       if (preloadedData) {
-        logger.info("Investments: Using preloaded data from insights screen");
-
         // Check if preloaded data has changed
         const hasPreloadedDataChanged =
           JSON.stringify(preloadedData) !==
           JSON.stringify(lastPreloadedDataRef.current);
         if (hasPreloadedDataChanged) {
-          logger.info("Investments: Preloaded data changed, updating state");
           lastPreloadedDataRef.current = preloadedData;
 
           // Update state with new preloaded data
@@ -510,9 +504,6 @@ export default function InvestmentsScreen({
       JSON.stringify(preloadedData) !==
         JSON.stringify(lastPreloadedDataRef.current)
     ) {
-      logger.info(
-        "Investments: Preloaded data changed, updating state immediately"
-      );
       lastPreloadedDataRef.current = preloadedData;
 
       // Update state with new preloaded data
@@ -1317,10 +1308,6 @@ export default function InvestmentsScreen({
           (b) => b.total_change !== null && b.total_change !== undefined
         )
       ) {
-        console.log(
-          `✅ Using pre-calculated total_change from investment_balances: $${totalChangeSum} (sum of ${balances.length} accounts)`
-        );
-
         // Calculate percentage based on total portfolio value
         const percentage =
           totalPortfolioValue > 0
@@ -1335,7 +1322,6 @@ export default function InvestmentsScreen({
     }
 
     // Fallback: Calculate from holdings (legacy method)
-    console.log("🔍 Fallback: Calculating total unrealized P&L from holdings");
     const totalUnrealizedPL = holdings.reduce(
       (sum, h) => sum + (h.unrealized_pl || 0),
       0
@@ -1392,10 +1378,6 @@ export default function InvestmentsScreen({
       );
 
       if (hasValidDayChange) {
-        console.log(
-          `✅ Using pre-calculated day_change from investment_balances: $${dayChangeSum} (sum of ${balances.length} accounts)`
-        );
-
         // Calculate percentage based on total portfolio value
         const percentage =
           totalPortfolioValue > 0
@@ -1412,11 +1394,6 @@ export default function InvestmentsScreen({
     // Fallback: Calculate from holdings (legacy method)
     let totalDailyPerformance = 0;
     let hasValidDayData = false;
-
-    console.log(
-      "🔍 Fallback: Calculating today's performance from holdings:",
-      holdings.length
-    );
 
     for (const holding of holdings) {
       // STEP 1: First priority - use day_change field from Supabase database if available
@@ -1445,10 +1422,6 @@ export default function InvestmentsScreen({
       }
     }
 
-    console.log(
-      `📊 Fallback total daily performance calculated: $${totalDailyPerformance}, hasValidDayData: ${hasValidDayData}`
-    );
-
     // If we don't have day change data from Supabase, we can't accurately show today's performance
     if (!hasValidDayData) {
       return {
@@ -1462,12 +1435,6 @@ export default function InvestmentsScreen({
       totalPortfolioValue > 0
         ? (totalDailyPerformance / totalPortfolioValue) * 100
         : 0;
-
-    console.log(
-      `✅ Fallback final performance: $${totalDailyPerformance.toFixed(
-        2
-      )}, ${todayPortfolioPercentage.toFixed(2)}%`
-    );
 
     return {
       amount: totalDailyPerformance,
@@ -1837,12 +1804,6 @@ export default function InvestmentsScreen({
         securityType.includes("money market") ||
         securityType.includes("sweep");
 
-      if (isCash) {
-        console.log(
-          `🚫 Filtering out cash holding: ${holding.symbol} - ${holding.description}`
-        );
-      }
-
       return !isCash;
     });
 
@@ -1860,10 +1821,6 @@ export default function InvestmentsScreen({
 
     // Keep the same sequence - don't sort, just use filtered holdings
     const nonCashHoldings = filteredHoldings;
-
-    console.log(
-      `📊 Holdings: ${holdings.length} total, ${nonCashHoldings.length} non-cash`
-    );
 
     if (nonCashHoldings.length === 0) return null;
 

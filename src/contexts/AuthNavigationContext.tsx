@@ -25,6 +25,7 @@ const INITIALIZATION_BUFFER_MS = 100; // Buffer for initialization completion
 const PENDING_REFRESH_STALE_MS = 30000; // 30 seconds - ignore stale queued refreshes
 const NAV_STATE_CACHE_KEY = "cached_nav_state";
 const NAV_STATE_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
+const SESSION_FROM_LINK_WAIT_MS = 1000; // Give email-confirm link a moment to establish session before showing welcome
 
 // Navigation states - the 4 main stages
 export enum NavigationState {
@@ -200,24 +201,15 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         return null;
       }
 
-      // Legacy users without profile row = treat as completed
+      // No profile row: return null so caller can use nav cache (completed users) or send to onboarding
       if (!profile) {
-        const legacyProfile = {
-          onboarding_completed: true,
-          onboarding_step: 0,
-        };
-        // Cache the result
-        profileCache.current = legacyProfile;
-        profileCacheUserId.current = userId;
-        return legacyProfile;
+        return null;
       }
 
       const parsedProfile = {
         onboarding_completed: !!profile.onboarding_completed,
         onboarding_step: Number(profile.onboarding_step || 0),
       };
-
-      // Cache the result
       profileCache.current = parsedProfile;
       profileCacheUserId.current = userId;
 
@@ -241,14 +233,12 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
           return fetchProfile(userId, retryCount + 1, useCache);
         }
 
-        // On final timeout, return cached profile if available, otherwise treat as legacy user
+        // On final timeout, return cached profile if available; otherwise null (caller uses nav cache or onboarding)
         if (profileCache.current && profileCacheUserId.current === userId) {
-          logger.warn(`[AUTH] Using stale cached profile due to timeout`);
           return profileCache.current;
         }
 
-        logger.warn(`[AUTH] Treating as legacy user due to timeout`);
-        return { onboarding_completed: true, onboarding_step: 0 };
+        return null;
       }
 
       logger.error("[AUTH] Error in fetchProfile:", error);
@@ -329,24 +319,15 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         cacheData.userId !== currentUserId ||
         !cacheData.state
       ) {
-        logger.info("[AUTH] Navigation cache invalid or stale, ignoring");
         return null;
       }
 
       // Don't use cached state if user is in onboarding (safety check for old cache data)
       if (cacheData.onboardingCompleted === false) {
-        logger.info(
-          "[AUTH] Navigation cache indicates onboarding incomplete, ignoring"
-        );
         AppStorage.removeItemSync(NAV_STATE_CACHE_KEY);
         return null;
       }
 
-      logger.info(
-        `[AUTH] Loaded cached navigation state: ${
-          cacheData.state
-        } (age: ${Math.round(age / 1000)}s)`
-      );
       return {
         state: cacheData.state as NavigationState,
         onboardingStep: cacheData.onboardingStep || 0,
@@ -375,19 +356,16 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
     if (!hasSession) {
       return NavigationState.PRE_SIGNUP;
     }
-
     if (!profile) {
-      return NavigationState.AUTHENTICATED;
+      // Profile unknown: safe default is ONBOARDING (caller may use nav cache for completed users)
+      return NavigationState.ONBOARDING;
     }
-
     if (profile.onboarding_completed) {
       return NavigationState.AUTHENTICATED;
     }
-
     if (profile.onboarding_step === 4) {
       return NavigationState.ONBOARDING_FINAL;
     }
-
     return NavigationState.ONBOARDING;
   };
 
@@ -408,16 +386,15 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
    * @param currentSession - The current Supabase session (or null if signed out)
    */
   const updateNavigationState = async (currentSession: Session | null) => {
-    // Prevent concurrent updates
     if (isUpdatingNavigationRef.current) {
       return;
     }
 
     isUpdatingNavigationRef.current = true;
+    const userId = currentSession?.user?.id;
 
     try {
       if (!currentSession?.user) {
-        // No session = clear everything
         profileCache.current = null;
         profileCacheUserId.current = null;
         setNavigationState(NavigationState.PRE_SIGNUP);
@@ -428,61 +405,75 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       }
 
       if (isRecoveryInProgress()) {
-        const userId = currentSession.user.id;
+        const uid = currentSession.user.id;
         const cachedProfile =
-          profileCache.current && profileCacheUserId.current === userId
+          profileCache.current && profileCacheUserId.current === uid
             ? profileCache.current
             : null;
         const newState = determineNavigationState(true, cachedProfile);
-        logger.info("[AUTH] Skipping profile fetch during password recovery");
         setNavigationState(newState);
         setOnboardingStep(cachedProfile?.onboarding_step || 0);
         setOnboardingCompleted(cachedProfile?.onboarding_completed || false);
         return;
       }
 
-      // Fetch profile - fetchProfile handles caching internally
-      const userId = currentSession.user.id;
+      const uid = currentSession.user.id;
       const useCache = !!(
-        profileCache.current && profileCacheUserId.current === userId
+        profileCache.current && profileCacheUserId.current === uid
       );
-      const profile = await fetchProfile(userId, 0, useCache);
+      const profile = await fetchProfile(uid, 0, useCache);
 
-      // Use the returned profile value (fetchProfile updates cache on success, but may return null on error)
-      // If profile is null, fall back to cached profile if available for the same user
       const finalProfile =
         profile ||
-        (profileCache.current && profileCacheUserId.current === userId
+        (profileCache.current && profileCacheUserId.current === uid
           ? profileCache.current
           : null);
-      const newState = determineNavigationState(true, finalProfile);
+
+      let newState: NavigationState;
+      let step: number;
+      let completed: boolean;
+
+      if (finalProfile) {
+        newState = determineNavigationState(true, finalProfile);
+        step = finalProfile.onboarding_step;
+        completed = finalProfile.onboarding_completed;
+      } else {
+        // Profile null: use nav cache if completed (e.g. fetch failed for returning user), else onboarding step 0
+        const cachedNav = await loadCachedNavigationState(uid);
+        if (cachedNav?.onboardingCompleted === true) {
+          newState = cachedNav.state as NavigationState;
+          step = cachedNav.onboardingStep;
+          completed = cachedNav.onboardingCompleted;
+        } else {
+          newState = NavigationState.ONBOARDING;
+          step = 0;
+          completed = false;
+        }
+      }
 
       setNavigationState(newState);
-      setOnboardingStep(finalProfile?.onboarding_step || 0);
-      setOnboardingCompleted(finalProfile?.onboarding_completed || false);
+      setOnboardingStep(step);
+      setOnboardingCompleted(completed);
 
-      // Cache the navigation state for fast app startup
       await cacheNavigationState(
         newState,
         currentSession.user.id,
-        finalProfile?.onboarding_step || 0,
-        finalProfile?.onboarding_completed || false
+        step,
+        completed
       );
     } catch (error) {
       logger.error("[AUTH] Error in updateNavigationState:", error);
-      // On error, try to use cached profile if available
       if (currentSession?.user) {
-        const userId = currentSession.user.id;
-        if (profileCache.current && profileCacheUserId.current === userId) {
+        const uid = currentSession.user.id;
+        if (profileCache.current && profileCacheUserId.current === uid) {
           const cachedProfile = profileCache.current;
           const newState = determineNavigationState(true, cachedProfile);
           setNavigationState(newState);
           setOnboardingStep(cachedProfile?.onboarding_step || 0);
           setOnboardingCompleted(cachedProfile?.onboarding_completed || false);
-          // Cache the fallback state
           await cacheNavigationState(
             newState,
-            userId,
+            uid,
             cachedProfile?.onboarding_step || 0,
             cachedProfile?.onboarding_completed || false
           );
@@ -738,14 +729,13 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         if (!mounted) return;
 
         if (initialSession) {
-          // Validate user exists
           const {
             data: { user },
             error,
           } = await supabase.auth.getUser();
 
           if (error || !user) {
-            logger.error("Invalid session, signing out:", error?.message);
+            logger.error("Invalid session, signing out:", error?.message ?? "no user");
             await supabase.auth.signOut();
             await clearAllCache();
             setSession(null);
@@ -755,44 +745,56 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
           setSession(initialSession);
 
-          // OPTIMISTIC NAVIGATION: Load cached state immediately for instant navigation
-          const cachedState = await loadCachedNavigationState(user.id);
-          if (cachedState) {
-            logger.info(
-              "[AUTH] Using cached navigation state for instant navigation"
-            );
-            setNavigationState(cachedState.state);
-            setOnboardingStep(cachedState.onboardingStep);
-            setOnboardingCompleted(cachedState.onboardingCompleted);
-            // Set loading to false immediately so navigation can proceed
+          await updateNavigationState(initialSession);
+          setIsAuthLoading(false);
+          isInitializedRef.current = true;
+        } else {
+          // No session at first tick: may be opening from email-confirm link. Wait briefly before committing to welcome (same idea as always-await-profile for reopen).
+          await new Promise((resolve) =>
+            setTimeout(resolve, SESSION_FROM_LINK_WAIT_MS)
+          );
+          if (!mounted) return;
+
+          const {
+            data: { session: retrySession },
+          } = await supabase.auth.getSession();
+
+          if (retrySession?.user) {
+            const {
+              data: { user },
+              error,
+            } = await supabase.auth.getUser();
+            if (error || !user) {
+              await supabase.auth.signOut();
+              await clearAllCache();
+              setSession(null);
+              setNavigationState(NavigationState.PRE_SIGNUP);
+              await cacheNavigationState(
+                NavigationState.PRE_SIGNUP,
+                null,
+                0,
+                false
+              );
+              setIsAuthLoading(false);
+              isInitializedRef.current = true;
+              return;
+            }
+            setSession(retrySession);
+            await updateNavigationState(retrySession);
             setIsAuthLoading(false);
             isInitializedRef.current = true;
-
-            // Fetch fresh data in background (non-blocking)
-            // This ensures we have the latest state, but doesn't block navigation
-            updateNavigationState(initialSession).catch((error) => {
-              logger.error(
-                "[AUTH] Background navigation state update failed:",
-                error
-              );
-            });
           } else {
-            // No cache available, fetch fresh data (this will take longer)
-            await updateNavigationState(initialSession);
+            setSession(null);
+            setNavigationState(NavigationState.PRE_SIGNUP);
+            await cacheNavigationState(
+              NavigationState.PRE_SIGNUP,
+              null,
+              0,
+              false
+            );
             setIsAuthLoading(false);
             isInitializedRef.current = true;
           }
-        } else {
-          setSession(null);
-          setNavigationState(NavigationState.PRE_SIGNUP);
-          await cacheNavigationState(
-            NavigationState.PRE_SIGNUP,
-            null,
-            0,
-            false
-          );
-          setIsAuthLoading(false);
-          isInitializedRef.current = true;
         }
 
         // Process any pending token refresh that occurred during initialization

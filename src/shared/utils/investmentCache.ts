@@ -160,10 +160,63 @@ export const hasValidInvestmentCache = async (userId: string): Promise<boolean> 
   }
 };
 
+/**
+ * Load investment data from cache synchronously (for instant UI before first render)
+ * Returns null if cache is expired, doesn't exist, or belongs to different user
+ * This is a synchronous version that doesn't clear expired cache (for performance)
+ */
+export const loadInvestmentFromCacheSync = (userId: string): CachedInvestmentData | null => {
+  try {
+    if (!userId) {
+      return null;
+    }
+
+    const cacheKey = getInvestmentCacheKey(userId);
+    const timestampKey = getInvestmentCacheTimestampKey(userId);
+
+    // Use synchronous reads for instant cache access (MMKV advantage)
+    const cachedData = AppStorage.getItemSync(cacheKey);
+    const timestampStr = AppStorage.getItemSync(timestampKey);
+
+    if (!cachedData || !timestampStr) {
+      return null;
+    }
+
+    const timestamp = parseInt(timestampStr);
+    const now = Date.now();
+    const age = now - timestamp;
+
+    if (age > CACHE_DURATION) {
+      // Cache expired, but don't clear it here (let async version handle cleanup)
+      return null;
+    }
+
+    const data = JSON.parse(cachedData) as CachedInvestmentData;
+
+    // CRITICAL SECURITY CHECK: Verify cache belongs to current user
+    if (data.userId !== userId) {
+      logger.error("🔒 [INVESTMENT CACHE] SECURITY: Cache belongs to different user! Clearing cache.", {
+        cachedUserId: data.userId?.substring(0, 8),
+        currentUserId: userId.substring(0, 8)
+      });
+      // Clear cache synchronously for security
+      AppStorage.removeItemSync(cacheKey);
+      AppStorage.removeItemSync(timestampKey);
+      return null;
+    }
+
+    return data;
+  } catch (error) {
+    logger.error("❌ [INVESTMENT CACHE] Failed to load from cache synchronously:", error);
+    return null;
+  }
+};
+
 // Default export for Expo Router compatibility
 export default {
   saveInvestmentToCache,
   loadInvestmentFromCache,
+  loadInvestmentFromCacheSync,
   clearInvestmentCache,
   hasValidInvestmentCache,
 };

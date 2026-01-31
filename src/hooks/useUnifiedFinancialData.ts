@@ -10,8 +10,10 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
-import { getSnaptradeBalancesFromDB } from "@/src/utils/integrations/snaptrade";
+import { getSnaptradeBalancesFromDB, getSnaptradeHoldingsFromDB } from "@/src/utils/integrations/snaptrade";
 import { getAccountBalance } from "@/src/utils/accountBalance";
+import { loadInvestmentFromCacheSync } from "@/src/shared/utils/investmentCache";
+import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
 
 // Cache keys
 const UNIFIED_CACHE_KEY = "unified_financial_data";
@@ -24,6 +26,7 @@ interface CachedFinancialData {
   goals: Goal[];
   cashEntries: CashEntry[];
   investmentBalances: any[];
+  investmentHoldings: any[];
   timestamp: number;
 }
 
@@ -52,6 +55,9 @@ export interface UnifiedFinancialData {
   // Cash
   cashEntries: CashEntry[];
   
+  // Investments
+  investmentHoldings: any[];
+  
   // Totals (memoized)
   accountsTotal: number;
   investmentsTotal: number;
@@ -75,7 +81,7 @@ export interface UnifiedFinancialData {
  * with smart caching for optimal performance
  */
 export function useUnifiedFinancialData(): UnifiedFinancialData {
-  // Load cache synchronously before first render (MMKV advantage)
+  // Load unified cache synchronously before first render (MMKV advantage)
   const initialCache = (() => {
     try {
       const cacheString = AppStorage.getItemSync(UNIFIED_CACHE_KEY);
@@ -101,24 +107,39 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     }
   })();
 
+  // Load investment holdings cache synchronously (separate cache system)
+  const initialInvestmentCache = (() => {
+    try {
+      const userId = getUserIdSync();
+      if (!userId) return null;
+      const cached = loadInvestmentFromCacheSync(userId);
+      return cached?.holdings || null;
+    } catch (error) {
+      logger.error("❌ [UNIFIED] Error loading investment cache synchronously:", error);
+      return null;
+    }
+  })();
+
   // Initialize state with cached data if available (instant UI)
   const [accounts, setAccounts] = useState<Account[]>(initialCache?.accounts || []);
   const [goals, setGoals] = useState<Goal[]>(initialCache?.goals || []);
   const [cashEntries, setCashEntries] = useState<CashEntry[]>(initialCache?.cashEntries || []);
   const [investmentBalances, setInvestmentBalances] = useState<any[]>(initialCache?.investmentBalances || []);
+  const [investmentHoldings, setInvestmentHoldings] = useState<any[]>(initialInvestmentCache || initialCache?.investmentHoldings || []);
   const [loading, setLoading] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(!initialCache); // If we have cache, not initial load
+  const [isInitialLoad, setIsInitialLoad] = useState(!initialCache && !initialInvestmentCache); // If we have cache, not initial load
 
   // Removed verbose initial state logging
 
   // Cache management
-  const saveToCache = useCallback(async (data: { accounts: Account[]; goals: Goal[]; cashEntries: CashEntry[]; investmentBalances?: any[] }): Promise<void> => {
+  const saveToCache = useCallback(async (data: { accounts: Account[]; goals: Goal[]; cashEntries: CashEntry[]; investmentBalances?: any[]; investmentHoldings?: any[] }): Promise<void> => {
     try {
       const cacheData: CachedFinancialData = {
         accounts: data.accounts,
         goals: data.goals,
         cashEntries: data.cashEntries,
         investmentBalances: data.investmentBalances || [],
+        investmentHoldings: data.investmentHoldings || [],
         timestamp: Date.now(),
       };
       
@@ -192,8 +213,8 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
         (acc: Account) => acc.type === "investment"
       );
 
-      // Fetch remaining data in parallel (skip investment balances if no investment accounts)
-      const [goalsData, cashData, balancesData] = await Promise.all([
+      // Fetch remaining data in parallel (skip investment data if no investment accounts)
+      const [goalsData, cashData, balancesData, holdingsData] = await Promise.all([
         supabase
           .from('goals')
           .select('*')
@@ -225,6 +246,13 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
               logger.error("❌ [UNIFIED] Failed to fetch investment balances:", err);
               return [];
             })
+          : Promise.resolve([]),
+        // Only fetch investment holdings if user has investment accounts
+        hasInvestmentAccounts
+          ? getSnaptradeHoldingsFromDB().catch(err => {
+              logger.error("❌ [UNIFIED] Failed to fetch investment holdings:", err);
+              return [];
+            })
           : Promise.resolve([])
       ]);
 
@@ -233,18 +261,20 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       setGoals(goalsData || []);
       setCashEntries(cashData || []);
       setInvestmentBalances(balancesData || []);
+      setInvestmentHoldings(holdingsData || []);
 
       // Only log on first load or when cache is missing (reduced verbosity)
       if (!hasCache) {
         logger.info(`✅ [UNIFIED] Loaded ${accountsData?.length || 0} accounts, ${goalsData?.length || 0} goals, ${cashData?.length || 0} cash entries`);
       }
 
-      // Save to cache (including investment balances)
+      // Save to cache (including investment balances and holdings)
       await saveToCache({
         accounts: accountsData || [],
         goals: goalsData || [],
         cashEntries: cashData || [],
         investmentBalances: balancesData || [],
+        investmentHoldings: holdingsData || [],
       });
     } catch (error) {
       logger.error("❌ [UNIFIED] Error fetching financial data:", error);
@@ -266,6 +296,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
         setGoals(cachedData.goals);
         setCashEntries(cachedData.cashEntries);
         setInvestmentBalances(cachedData.investmentBalances || []);
+        setInvestmentHoldings(cachedData.investmentHoldings || []);
         setIsInitialLoad(false);
       }
 
@@ -456,6 +487,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     categorizedInvestments,
     goals,
     cashEntries,
+    investmentHoldings,
     accountsTotal,
     investmentsTotal,
     liabilitiesTotal,

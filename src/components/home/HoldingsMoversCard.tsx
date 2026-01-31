@@ -17,9 +17,6 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import logger from "@/src/utils/core/logger";
-import { getSnaptradeHoldingsFromDB } from "@/src/utils/integrations/snaptrade";
-import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
-import { loadInvestmentFromCache } from "@/src/shared/utils/investmentCache";
 
 type MaybeNumber = number | null | undefined;
 
@@ -47,6 +44,7 @@ interface Mover {
 
 interface HoldingsMoversCardProps {
   onPress: () => void;
+  holdings?: any[]; // Receive holdings as props (like GoalsSection receives goals)
 }
 
 const COLORS = {
@@ -245,67 +243,10 @@ const TickerAvatar = React.memo(function TickerAvatar({
 });
 
 export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
-  ({ onPress }) => {
-    const [holdings, setHoldings] = useState<InvestmentHoldingRow[]>([]);
-    const [isLoading, setIsLoading] = useState(false);
-    const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
-    const isRefreshingRef = useRef(false);
-    const userId = getUserIdSync();
-
-    const refreshHoldings = useCallback(async () => {
-      if (isRefreshingRef.current) return;
-      isRefreshingRef.current = true;
-      setIsLoading(true);
-
-      try {
-        const rows =
-          (await getSnaptradeHoldingsFromDB()) as InvestmentHoldingRow[];
-        setHoldings(rows || []);
-      } catch (error) {
-        logger.error("❌ [HOME MOVERS] Failed to load holdings:", error);
-        setHoldings([]);
-      } finally {
-        setIsLoading(false);
-        isRefreshingRef.current = false;
-        setHasLoadedOnce(true);
-      }
-    }, []);
-
-    // Quick path: if Insights has already cached investment data, use it for instant UI.
-    useEffect(() => {
-      let isMounted = true;
-      if (!userId) return;
-
-      loadInvestmentFromCache(userId)
-        .then((cached) => {
-          if (!isMounted) return;
-          if (cached?.holdings?.length) {
-            setHoldings(cached.holdings as InvestmentHoldingRow[]);
-          }
-        })
-        .catch(() => {
-          // Ignore cache errors here; DB load will handle.
-        });
-
-      return () => {
-        isMounted = false;
-      };
-    }, [userId]);
-
-    useEffect(() => {
-      refreshHoldings();
-    }, [refreshHoldings]);
-
-    // Refresh movers when the user pulls-to-refresh on Home.
-    useEffect(() => {
-      const subscription = DeviceEventEmitter.addListener(
-        "financialDataRefreshed",
-        () => {
-          refreshHoldings();
-        }
-      );
-      return () => subscription.remove();
-    }, [refreshHoldings]);
+  ({ onPress, holdings: propHoldings = [] }) => {
+    // Use holdings from props (loaded synchronously by useUnifiedFinancialData)
+    // This matches the pattern used by GoalsSection
+    const holdings = (propHoldings as InvestmentHoldingRow[]) || [];
 
     const dayMovers = useMemo(() => pickTopMovers(holdings), [holdings]);
     const fallbackMovers = useMemo(
@@ -323,10 +264,10 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
     const hero = displayMovers[0];
     const runners = displayMovers.slice(1);
 
-    // Show card when there are any holdings (after at least one load to avoid flash).
+    // Show card when there are any holdings (like GoalsSection - no gate needed)
+    // Holdings are loaded synchronously, so if we have holdings, show immediately
     const hasHoldings = holdings.length > 0;
-    const shouldShowCard = hasLoadedOnce && hasHoldings;
-    if (!shouldShowCard) return null;
+    if (!hasHoldings) return null;
 
     const maxAbsPct = hero?.absPct || 1;
 
@@ -400,23 +341,13 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
           </View>
 
           {!hero ? (
-            isLoading ? (
-              <View style={styles.skeletonWrap}>
-                <View style={[styles.skeletonLine, { width: "52%" }]} />
-                <View style={[styles.skeletonLine, { width: "36%" }]} />
-                <View style={[styles.skeletonBar, { width: "88%" }]} />
-                <View style={[styles.skeletonLine, { width: "46%" }]} />
-                <View style={[styles.skeletonLine, { width: "32%" }]} />
-              </View>
-            ) : (
-              <View style={styles.emptyWrap}>
-                <Text style={styles.emptyTitle}>No mover data yet</Text>
-                <Text style={styles.emptySubtitle}>
-                  We’ll show your biggest movers once today’s pricing is
-                  available.
-                </Text>
-              </View>
-            )
+            <View style={styles.emptyWrap}>
+              <Text style={styles.emptyTitle}>No mover data yet</Text>
+              <Text style={styles.emptySubtitle}>
+                We’ll show your biggest movers once today’s pricing is
+                available.
+              </Text>
+            </View>
           ) : (
             <>
               <View style={styles.heroSection}>
