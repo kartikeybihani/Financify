@@ -1,5 +1,5 @@
 // /api/scheduled-sync.js
-import { supabase, supabaseUrl, supabaseServiceKey } from "../lib/api/supabase.js";
+import { supabase } from "../lib/api/supabase.js";
 import {
   mapPlaidToAppCategory,
   isInternalTransfer,
@@ -8,6 +8,7 @@ import {
   checkRateLimit,
   formatRetryAfterSeconds,
 } from "../lib/api/rateLimiter.js";
+import { syncSnaptradeInvestments } from "../lib/snaptradeSync.js";
 
 export default async function handler(req, res) {
   // Only allow GET requests (for cron triggers)
@@ -188,59 +189,35 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
         throw new Error(`SnapTrade connection inactive for account ${accountId}`);
       }
 
-      // Retry logic for SnapTrade sync (handles transient 503 errors)
-      let lastError = null;
+      // SnapTrade sync runs in-process on Vercel (Node.js has crypto.createHmac)
+      // Retry logic for transient SnapTrade API errors
+      let lastResult = null;
       const maxRetries = 3;
-      let response = null;
       let syncSuccessful = false;
-      
-      for (let attempt = 1; attempt <= maxRetries; attempt++) {
-        try {
-          response = await fetch(`${supabaseUrl}/functions/v1/sync-investments`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${supabaseServiceKey}`,
-            },
-            body: JSON.stringify({
-              user_id: item.user_id,
-              snaptrade_user_id: connection.snaptrade_user_id,
-              account_id: connection.account_id,
-            }),
-          });
 
-          if (response.ok) {
-            syncSuccessful = true;
-            break; // Success, exit retry loop
-          }
-          
-          const errorText = await response.text();
-          lastError = new Error(`SnapTrade sync failed (${response.status}): ${errorText}`);
-          
-          // If it's a 503 (service unavailable) and we have retries left, wait and retry
-          if (response.status === 503 && attempt < maxRetries) {
-            const waitTime = attempt * 2000; // Exponential backoff: 2s, 4s, 6s
-            console.log(`⚠️ SnapTrade sync returned 503, retrying in ${waitTime}ms (attempt ${attempt}/${maxRetries})...`);
-            await new Promise((resolve) => setTimeout(resolve, waitTime));
-            continue;
-          }
-          
-          // For non-503 errors or final attempt, throw immediately
-          throw lastError;
-        } catch (error) {
-          lastError = error;
-          if (attempt === maxRetries) {
-            throw error;
-          }
-          // For network errors, retry with exponential backoff
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        lastResult = await syncSnaptradeInvestments(
+          item.user_id,
+          connection.snaptrade_user_id,
+          connection.account_id
+        );
+
+        if (lastResult.success) {
+          syncSuccessful = true;
+          break;
+        }
+
+        if (attempt < maxRetries) {
           const waitTime = attempt * 2000;
-          console.log(`⚠️ SnapTrade sync error, retrying in ${waitTime}ms (attempt ${attempt}/${maxRetries})...`);
+          console.log(
+            `⚠️ SnapTrade sync failed, retrying in ${waitTime}ms (attempt ${attempt}/${maxRetries})...`
+          );
           await new Promise((resolve) => setTimeout(resolve, waitTime));
         }
       }
-      
+
       if (!syncSuccessful) {
-        throw lastError || new Error("SnapTrade sync failed after retries");
+        throw new Error(lastResult?.error || "SnapTrade sync failed after retries");
       }
 
       results.synced++;

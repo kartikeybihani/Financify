@@ -6,6 +6,7 @@ import {
 } from "../lib/api/supabase.js";
 import { client as plaidClient } from "../lib/api/plaidClient.js";
 import { refreshAndStoreRecurringForItem } from "../lib/plaid/recurringRefresh.js";
+import { syncSnaptradeInvestments } from "../lib/snaptradeSync.js";
 
 export default async function handler(req, res) {
   // Log ALL incoming requests for debugging
@@ -550,19 +551,12 @@ async function handleConnectionFixed(user_id, connection_id) {
 
     if (connection) {
       console.log("🔄 Triggering sync after connection fixed...");
-      await fetch(`${supabaseUrl}/functions/v1/sync-investments`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${supabaseServiceKey}`,
-        },
-        body: JSON.stringify({
-          user_id: connection.user_id, // Use Supabase user_id from connection
-          snaptrade_user_id: connection.snaptrade_user_id,
-          account_id: connection.account_id,
-        }),
-      }).catch((e) =>
-        console.error("sync-investments function call failed", e)
+      await syncSnaptradeInvestments(
+        connection.user_id,
+        connection.snaptrade_user_id,
+        connection.account_id
+      ).catch((e) =>
+        console.error("SnapTrade sync failed after connection fixed", e)
       );
     } else {
       console.warn("⚠️ Could not find connection to trigger sync");
@@ -605,19 +599,14 @@ async function handleAccountHoldingsUpdated(user_id, connection_id) {
       snaptrade_user_id: connection.snaptrade_user_id,
     });
 
-    // Call sync-investments Supabase function to pull fresh data
-    await fetch(`${supabaseUrl}/functions/v1/sync-investments`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${supabaseServiceKey}`,
-      },
-      body: JSON.stringify({
-        user_id: connection.user_id, // CRITICAL: Use Supabase user_id from connection, not SnapTrade user_id
-        snaptrade_user_id: connection.snaptrade_user_id,
-        account_id: connection.account_id,
-      }),
-    }).catch((e) => console.error("sync-investments function call failed", e));
+    // Sync investments in-process (Vercel/Node.js - has crypto for SnapTrade SDK)
+    await syncSnaptradeInvestments(
+      connection.user_id,
+      connection.snaptrade_user_id,
+      connection.account_id
+    ).catch((e) =>
+      console.error("SnapTrade sync failed after holdings webhook", e)
+    );
 
     console.log("✅ Triggered sync after holdings update webhook");
   } catch (error) {
