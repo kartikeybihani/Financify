@@ -1124,15 +1124,17 @@ async function handleSnapTradeSync(res, userId, accountId) {
             provider: "snaptrade",
           });
 
+          // CRITICAL: Check for existing row WITHOUT is_current filter
+          // The unique constraint is on (user_id, snaptrade_user_id, account_id, currency_code)
+          // regardless of is_current value, so we need to find any existing row
           const { data: existingBalanceRow, error: checkError } = await supabase
             .from("investment_balances")
-            .select("id, day_change, day_change_percent")
+            .select("id, day_change, day_change_percent, is_current")
             .eq("user_id", connection.user_id)
             .eq("snaptrade_user_id", connection.snaptrade_user_id)
             .eq("account_id", accountId)
             .eq("currency_code", balanceRow.currency_code)
             .eq("provider", "snaptrade")
-            .eq("is_current", true)
             .maybeSingle();
 
           if (checkError) {
@@ -1142,11 +1144,22 @@ async function handleSnapTradeSync(res, userId, accountId) {
             );
           }
 
+          // Set all other balances for this account to is_current: false
+          // This ensures only one current balance exists per account
+          await supabase
+            .from("investment_balances")
+            .update({ is_current: false })
+            .eq("user_id", connection.user_id)
+            .eq("snaptrade_user_id", connection.snaptrade_user_id)
+            .eq("account_id", accountId)
+            .eq("provider", "snaptrade");
+
           let balanceErr = null;
           if (existingBalanceRow?.id) {
-            // Update existing row
+            // Update existing row (regardless of is_current value)
             console.log("📝 Updating existing balance row:", {
               id: existingBalanceRow.id,
+              was_current: existingBalanceRow.is_current,
               new_day_change: balanceRow.day_change,
               new_day_change_percent: balanceRow.day_change_percent,
               new_total_value: balanceRow.total_value,
