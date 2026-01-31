@@ -33,6 +33,8 @@ interface InvestmentHoldingRow {
   previous_market_value?: MaybeNumber;
   security_type?: string | null;
   last_updated?: string | null;
+  total_percent_change?: MaybeNumber;
+  unrealized_pl?: MaybeNumber;
 }
 
 interface Mover {
@@ -40,6 +42,7 @@ interface Mover {
   pct: number;
   absPct: number;
   dayImpact: number;
+  isTotalReturn?: boolean;
 }
 
 interface HoldingsMoversCardProps {
@@ -160,6 +163,43 @@ const pickTopMovers = (holdings: InvestmentHoldingRow[]): Mover[] => {
   return movers.slice(0, 3);
 };
 
+/** Fallback: top 3 by absolute total_percent_change when day data is missing. */
+const pickTopMoversByTotalReturn = (
+  holdings: InvestmentHoldingRow[]
+): Mover[] => {
+  const movers: Mover[] = [];
+  for (const holding of holdings) {
+    const symbol = (holding.symbol || "").trim();
+    if (!symbol) continue;
+
+    const pct =
+      typeof holding.total_percent_change === "number"
+        ? holding.total_percent_change
+        : null;
+    if (pct === null || !Number.isFinite(pct)) continue;
+
+    const absPct = Math.abs(pct);
+    if (absPct <= 0) continue;
+
+    const impact =
+      typeof holding.unrealized_pl === "number" &&
+      Number.isFinite(holding.unrealized_pl)
+        ? holding.unrealized_pl
+        : 0;
+
+    movers.push({
+      symbol,
+      pct,
+      absPct,
+      dayImpact: impact,
+      isTotalReturn: true,
+    });
+  }
+
+  movers.sort((a, b) => b.absPct - a.absPct);
+  return movers.slice(0, 3);
+};
+
 const TickerAvatar = React.memo(function TickerAvatar({
   symbol,
   size,
@@ -267,13 +307,21 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
       return () => subscription.remove();
     }, [refreshHoldings]);
 
-    const movers = useMemo(() => pickTopMovers(holdings), [holdings]);
+    const dayMovers = useMemo(() => pickTopMovers(holdings), [holdings]);
+    const fallbackMovers = useMemo(
+      () => pickTopMoversByTotalReturn(holdings),
+      [holdings]
+    );
+    const useDayData = dayMovers.length > 0;
+    const displayMovers = useDayData ? dayMovers : fallbackMovers;
+    const isFallback = !useDayData && fallbackMovers.length > 0;
+
     const todayPerf = useMemo(
       () => computeTodayTotalPerformance(holdings),
       [holdings]
     );
-    const hero = movers[0];
-    const runners = movers.slice(1);
+    const hero = displayMovers[0];
+    const runners = displayMovers.slice(1);
 
     // Show card when there are any holdings (after at least one load to avoid flash).
     const hasHoldings = holdings.length > 0;
@@ -303,8 +351,10 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
           <View style={styles.headerRow}>
             <View style={styles.headerLeft}>
               <View style={styles.titleRow}>
-                <Text style={styles.title}>Todays Movers</Text>
-                {todayPerf.hasData && (
+                <Text style={styles.title}>
+                  {isFallback ? "Investments" : "Todays Movers"}
+                </Text>
+                {!isFallback && todayPerf.hasData && (
                   <View
                     style={[
                       styles.todayChip,
@@ -397,7 +447,7 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
                         },
                       ]}
                     >
-                      Top Mover
+                      {isFallback ? "Top gainer" : "Top Mover"}
                     </Text>
                   </View>
                   <View style={styles.heroRow}>
@@ -437,7 +487,9 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
                       </View>
                       <Text style={styles.heroImpact}>
                         {formatSignedMoney(hero.dayImpact)}
-                        <Text style={styles.heroImpactSuffix}> today</Text>
+                        <Text style={styles.heroImpactSuffix}>
+                          {isFallback ? " total" : " today"}
+                        </Text>
                       </Text>
                     </View>
                   </View>
@@ -446,7 +498,9 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
 
               {runners.length > 0 && (
                 <View style={styles.runnersSection}>
-                  <Text style={styles.otherMoversLabel}>Other movers</Text>
+                  <Text style={styles.otherMoversLabel}>
+                    {isFallback ? "Other gainers" : "Other movers"}
+                  </Text>
                   <View style={styles.runnersRow}>
                     {runners.slice(0, 2).map((mover, idx) => {
                       const color =

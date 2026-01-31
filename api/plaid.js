@@ -1005,14 +1005,34 @@ async function handleSnapTradeSync(res, userId, accountId) {
         positions = holdingsData.holdings;
       }
       if (positions && positions.length > 0) {
-        // Get existing holdings to read previous_market_value before updating
+        // Get existing holdings to read previous_market_value and last_updated (for same-day check)
         const { data: existingHoldings } = await supabase
           .from("investment_holdings")
-          .select("symbol_id, previous_market_value, market_value")
+          .select(
+            "symbol_id, symbol, previous_market_value, market_value, last_updated"
+          )
           .eq("user_id", connection.user_id)
           .eq("snaptrade_user_id", connection.snaptrade_user_id)
           .eq("account_id", accountId)
           .eq("is_active", true);
+
+        const now = new Date();
+        const todayUTC = Date.UTC(
+          now.getUTCFullYear(),
+          now.getUTCMonth(),
+          now.getUTCDate()
+        );
+
+        const isSameCalendarDayUTC = (dateStr) => {
+          if (!dateStr) return false;
+          const d = new Date(dateStr);
+          const dayUTC = Date.UTC(
+            d.getUTCFullYear(),
+            d.getUTCMonth(),
+            d.getUTCDate()
+          );
+          return dayUTC === todayUTC;
+        };
 
         // Process holdings with day change calculation using previous_market_value
         console.log("🔍 Calculating daily performance changes...");
@@ -1062,8 +1082,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
                 ? holding.units * holding.price
                 : null;
 
-            // Find existing holding to get previous_market_value
-            // Match by symbol_id (position ID) OR universal symbol ID OR symbol string
+            // Find existing holding: match by symbol_id OR universal symbol ID OR symbol string
             const existingHolding = existingHoldings?.find(
               (eh) =>
                 eh.symbol_id === symbolId ||
@@ -1073,13 +1092,28 @@ async function handleSnapTradeSync(res, userId, accountId) {
 
             // CRITICAL: If we found an existing holding by symbol string but symbol_id doesn't match,
             // use the existing symbol_id from database to ensure upsert updates the correct row
-            // This prevents duplicates when API uses position IDs but DB has universal IDs
             const finalSymbolId = existingHolding?.symbol_id || symbolId;
 
-            const previousMarketValue =
+            // Day baseline: only update previous_market_value when rolling to a new calendar day (UTC).
+            // Same day = keep existing baseline so day_change = change since start of day.
+            const existingLastUpdated = existingHolding?.last_updated;
+            const sameDay = isSameCalendarDayUTC(existingLastUpdated);
+            const dayBaseline =
               existingHolding?.previous_market_value ??
               existingHolding?.market_value ??
               null;
+
+            const previousMarketValue =
+              existingHolding && sameDay && dayBaseline != null
+                ? dayBaseline
+                : null;
+
+            const previousMarketValueForStorage =
+              !existingHolding || !sameDay
+                ? currentMarketValue
+                : dayBaseline != null
+                ? dayBaseline
+                : currentMarketValue;
 
             // Log price updates for debugging
             if (existingHolding && existingHolding.price !== holding.price) {
@@ -1101,7 +1135,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
               );
             }
 
-            // Calculate day_change and day_change_percent
+            // Calculate day_change and day_change_percent (vs start-of-day baseline when same day)
             let dayChange = null;
             let dayChangePercent = null;
             if (
@@ -1120,7 +1154,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
               user_id: connection.user_id,
               snaptrade_user_id: connection.snaptrade_user_id,
               account_id: accountId,
-              symbol_id: finalSymbolId, // CRITICAL: Use existing DB symbol_id if found to prevent duplicates
+              symbol_id: finalSymbolId,
               symbol: symbolString,
               description: symbolObj?.description || null,
               currency_code: holding.currency?.code || "USD",
@@ -1130,14 +1164,13 @@ async function handleSnapTradeSync(res, userId, accountId) {
               units: holding.units || 0,
               price: holding.price,
               market_value: currentMarketValue,
-              previous_market_value: currentMarketValue, // Set for next sync
+              previous_market_value: previousMarketValueForStorage,
               average_purchase_price: holding.average_purchase_price,
               total_cost_basis:
                 holding.units && holding.average_purchase_price
                   ? holding.units * holding.average_purchase_price
                   : null,
               unrealized_pl: holding.open_pnl,
-              // NOTE: realized_pl is NOT in investment_holdings table (only in investment_options)
               day_change: dayChange,
               day_change_percent: dayChangePercent,
               is_active: true,
