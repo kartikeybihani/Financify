@@ -1230,10 +1230,11 @@ async function handleSnapTradeSync(res, userId, accountId) {
       }
       if (positions && positions.length > 0) {
         // Get existing holdings to read previous_market_value and last_updated (for same-day check)
+        // CRITICAL: Also fetch price to detect if it changed during the day
         const { data: existingHoldings } = await supabase
           .from("investment_holdings")
           .select(
-            "symbol_id, symbol, previous_market_value, market_value, last_updated"
+            "symbol_id, symbol, previous_market_value, market_value, last_updated, price"
           )
           .eq("user_id", connection.user_id)
           .eq("snaptrade_user_id", connection.snaptrade_user_id)
@@ -1318,10 +1319,13 @@ async function handleSnapTradeSync(res, userId, accountId) {
             // use the existing symbol_id from database to ensure upsert updates the correct row
             const finalSymbolId = existingHolding?.symbol_id || symbolId;
 
-            // Day baseline: only update previous_market_value when rolling to a new calendar day (UTC).
-            // Same day = keep existing baseline so day_change = change since start of day.
+            // Day baseline logic:
+            // - First sync ever: previous_market_value = current_market_value, day_change = 0
+            // - New day: preserve previous day's baseline, calculate day_change vs previous day's end value
+            // - Same day: preserve baseline, calculate day_change vs start of day
             const existingLastUpdated = existingHolding?.last_updated;
             const sameDay = isSameCalendarDayUTC(existingLastUpdated);
+            const isFirstSyncEver = !existingHolding;
 
             // Get the baseline value (previous_market_value if exists, otherwise market_value as fallback)
             const dayBaseline =
@@ -1329,53 +1333,91 @@ async function handleSnapTradeSync(res, userId, accountId) {
               existingHolding?.market_value ??
               null;
 
-            // For day_change calculation: use baseline if same day, otherwise null (new day = no change yet)
+            // For day_change calculation:
+            // - First sync ever: no change (0)
+            // - New day: use previous day's baseline (preserve last day_change calculation)
+            // - Same day: use start-of-day baseline
             const previousMarketValue =
-              existingHolding && sameDay && dayBaseline != null
-                ? dayBaseline
+              isFirstSyncEver
+                ? null // First sync: no baseline yet
+                : sameDay && dayBaseline != null
+                ? dayBaseline // Same day: use start-of-day baseline
+                : dayBaseline != null
+                ? dayBaseline // New day: use previous day's baseline (preserve last calculation)
                 : null;
 
-            // For storage: reset to current value on new day, otherwise preserve baseline
+            // For storage: 
+            // - First sync ever: set to current value (new baseline)
+            // - New day: preserve previous baseline (don't reset)
+            // - Same day: preserve baseline
             const previousMarketValueForStorage =
-              !existingHolding || !sameDay
-                ? currentMarketValue // New holding or new day: reset baseline
+              isFirstSyncEver
+                ? currentMarketValue // First sync: set new baseline
                 : dayBaseline != null
-                ? dayBaseline // Same day: preserve baseline
+                ? dayBaseline // Preserve existing baseline (same day OR new day)
                 : currentMarketValue; // Fallback: use current value
 
-            // Calculate day_change and day_change_percent (vs start-of-day baseline when same day)
+            // Calculate day_change and day_change_percent
             let dayChange = null;
             let dayChangePercent = null;
-            if (
+            
+            if (isFirstSyncEver) {
+              // First sync ever: no change
+              dayChange = 0;
+              dayChangePercent = 0;
+            } else if (
               previousMarketValue !== null &&
               previousMarketValue !== undefined &&
               currentMarketValue !== null &&
               Number.isFinite(currentMarketValue) &&
               Number.isFinite(previousMarketValue)
             ) {
+              // Calculate change vs baseline (works for both same day and new day)
               dayChange = currentMarketValue - previousMarketValue;
               dayChangePercent =
                 previousMarketValue !== 0
                   ? (dayChange / previousMarketValue) * 100
                   : 0;
+            } else if (existingHolding?.day_change != null) {
+              // New day but no baseline: preserve last known day_change
+              dayChange = existingHolding.day_change;
+              dayChangePercent = existingHolding.day_change_percent ?? 0;
             }
 
             // Enhanced logging for debugging day_change calculation
-            if (existingHolding) {
+            if (isFirstSyncEver) {
+              console.log(`➕ First sync for ${symbolString}:`, {
+                current_market_value: currentMarketValue?.toFixed(2),
+                day_change: "0.00",
+                reason: "first sync ever - no baseline",
+                price: holding.price,
+                units: holding.units,
+              });
+            } else if (existingHolding) {
               if (sameDay && dayChange !== null) {
-                console.log(`💰 Day change for ${symbolString}:`, {
+                console.log(`💰 Day change for ${symbolString} (same day):`, {
                   previous_market_value: dayBaseline?.toFixed(2),
                   current_market_value: currentMarketValue?.toFixed(2),
                   day_change: dayChange?.toFixed(2),
                   day_change_percent: dayChangePercent?.toFixed(2) + "%",
                   same_day: sameDay,
+                  previous_price: existingHolding.price,
+                  current_price: holding.price,
                 });
-              } else if (!sameDay) {
-                console.log(`📅 New day for ${symbolString}:`, {
+              } else if (!sameDay && dayChange !== null) {
+                console.log(`📅 Day change for ${symbolString} (new day):`, {
                   previous_market_value: dayBaseline?.toFixed(2),
                   current_market_value: currentMarketValue?.toFixed(2),
-                  reset_baseline: true,
-                  reason: "new calendar day - baseline reset",
+                  day_change: dayChange?.toFixed(2),
+                  day_change_percent: dayChangePercent?.toFixed(2) + "%",
+                  reason: "new day - using previous day's baseline (preserving last day_change)",
+                  previous_price: existingHolding.price,
+                  current_price: holding.price,
+                });
+              } else if (dayChange !== null && existingHolding.day_change != null) {
+                console.log(`➡️ Preserved day_change for ${symbolString}:`, {
+                  preserved_day_change: dayChange?.toFixed(2),
+                  reason: "no baseline available, using last known value",
                 });
               } else {
                 console.log(
@@ -1389,12 +1431,6 @@ async function handleSnapTradeSync(res, userId, accountId) {
                   }
                 );
               }
-            } else {
-              console.log(`➕ New holding ${symbolString}:`, {
-                current_market_value: currentMarketValue?.toFixed(2),
-                price: holding.price,
-                units: holding.units,
-              });
             }
 
             return {
