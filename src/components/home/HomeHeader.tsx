@@ -66,7 +66,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = React.memo(
                 size={28}
                 color="#4A90E2"
               />
-              {unreviewedCount > 0 && (
+              {/* {unreviewedCount > 0 && (
                 <View
                   style={{
                     position: "absolute",
@@ -93,13 +93,13 @@ export const HomeHeader: React.FC<HomeHeaderProps> = React.memo(
                     {unreviewedCount > 99 ? "99+" : unreviewedCount}
                   </Text>
                 </View>
-              )}
+              )} */}
             </TouchableOpacity>
           )}
         </View>
       </LinearGradient>
     );
-  },
+  }
 );
 
 HomeHeader.displayName = "HomeHeader";

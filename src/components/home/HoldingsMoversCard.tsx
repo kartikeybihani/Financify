@@ -15,7 +15,6 @@ import {
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import logger from "@/src/utils/core/logger";
 
 type MaybeNumber = number | null | undefined;
@@ -278,17 +277,6 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
         style={styles.pressable}
       >
         <View style={styles.card}>
-          <LinearGradient
-            colors={[
-              "rgba(78, 205, 196, 0.35)",
-              "rgba(74, 144, 226, 0.10)",
-              "rgba(255, 255, 255, 0.00)",
-            ]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 0 }}
-            style={styles.topAccent}
-          />
-
           <View style={styles.headerRow}>
             <View style={styles.headerLeft}>
               <View style={styles.titleRow}>
@@ -427,7 +415,7 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
                 </View>
               </View>
 
-              {runners.length > 0 && (
+              {runners.length < 0 && (
                 <View style={styles.runnersSection}>
                   <Text style={styles.otherMoversLabel}>
                     {isFallback ? "Other gainers" : "Other movers"}
@@ -483,7 +471,7 @@ HoldingsMoversCard.displayName = "HoldingsMoversCard";
 const styles = StyleSheet.create({
   pressable: {
     marginBottom: 25,
-    marginTop: 16,
+    marginTop: 5,
   },
   card: {
     backgroundColor: COLORS.card,
@@ -496,10 +484,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 4,
-  },
-  topAccent: {
-    height: 2,
-    width: "100%",
   },
   headerRow: {
     flexDirection: "row",

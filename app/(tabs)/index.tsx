@@ -10,6 +10,7 @@ import {
   DeviceEventEmitter,
   Alert,
   InteractionManager,
+  Animated,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -179,6 +180,11 @@ export default function HomeScreen() {
   const [selectedAccountData, setSelectedAccountData] = useState<any>(null);
   const [selectedAccountPerformance, setSelectedAccountPerformance] =
     useState<any>(null);
+
+  // Accounts expansion state and animation
+  const [isAccountsExpanded, setIsAccountsExpanded] = useState(false);
+  const accountsAnimationHeight = useRef(new Animated.Value(0)).current;
+  const financialCardsHeight = useRef(150); // Approximate height of FinancialCards component
 
   // Real spending data from transactions
   const {
@@ -602,6 +608,19 @@ export default function HomeScreen() {
     }
   };
 
+  // Toggle accounts expansion
+  const toggleAccountsExpansion = () => {
+    const toValue = isAccountsExpanded ? 0 : 1;
+    setIsAccountsExpanded(!isAccountsExpanded);
+
+    Animated.spring(accountsAnimationHeight, {
+      toValue,
+      useNativeDriver: false,
+      tension: 65,
+      friction: 11,
+    }).start();
+  };
+
   // Watch for when financial hook finishes loading to set access token correctly
   // This prevents false "No accounts found" warnings when cache is still loading
   useEffect(() => {
@@ -912,10 +931,29 @@ export default function HomeScreen() {
             isLoading={
               financialLoading || financialInitialLoad || spendingLoading
             }
+            onToggleAccounts={toggleAccountsExpansion}
+            isAccountsExpanded={isAccountsExpanded}
           />
 
-          {/* Summary Cards */}
-          <FinancialCards
+          {/* Summary Cards - Animated Expandable */}
+          <Animated.View
+            style={{
+              maxHeight: accountsAnimationHeight.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, financialCardsHeight.current],
+              }),
+              overflow: "hidden",
+              opacity: accountsAnimationHeight.interpolate({
+                inputRange: [0, 0.5, 1],
+                outputRange: [0, 0.5, 1],
+              }),
+              marginBottom: accountsAnimationHeight.interpolate({
+                inputRange: [0, 1],
+                outputRange: [0, 20],
+              }),
+            }}
+          >
+            <FinancialCards
             accountsTotal={accountsTotal}
             investmentsTotal={investmentsTotal}
             liabilitiesTotal={liabilitiesTotal}
@@ -938,6 +976,7 @@ export default function HomeScreen() {
               });
             }}
           />
+          </Animated.View>
 
           {/* Onboarding Progress Box */}
           {onboardingStatus && (

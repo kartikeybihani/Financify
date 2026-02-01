@@ -1,7 +1,13 @@
 // components/home/FinnyMessage.tsx
 
 import React, { useMemo } from "react";
-import { View, Text, Image, TouchableOpacity } from "react-native";
+import {
+  View,
+  Text,
+  Image,
+  TouchableOpacity,
+  DeviceEventEmitter,
+} from "react-native";
 import { useRouter } from "expo-router";
 import { styles } from "@/src/styles/homeStyles";
 import { Goal } from "@/src/types/finny";
@@ -70,53 +76,58 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
       const activeGoals = goals.filter(
         (goal) =>
           goal.status !== "completed" &&
-          !(
-            goal.target_amount > 0 && goal.current_amount >= goal.target_amount
-          ),
+          !(goal.target_amount > 0 && goal.current_amount >= goal.target_amount)
       );
 
       // Priority 1: Budget progress questions
       if (insight?.type === "budget_progress") {
         const { percentage, remaining, daysLeft } = insight.budgetProgress!;
         if (percentage > 100) {
-          return `You've overspent by ${Math.abs(remaining).toFixed(0)}%. What should you cut?`;
+          return `You've overspent by ${Math.abs(remaining).toFixed(
+            0
+          )}%. What should you cut?`;
         }
         if (percentage > 80) {
-          return `You've spent ${percentage.toFixed(0)}% of your budget with ${daysLeft} days left. Want to adjust?`;
+          return `You've spent ${percentage.toFixed(
+            0
+          )}% of your budget with ${daysLeft} days left. Want to adjust?`;
         }
         if (percentage > 50) {
-          return `You're ${percentage.toFixed(0)}% through your budget. On track?`;
+          return `You're ${percentage.toFixed(
+            0
+          )}% through your budget. On track?`;
         }
       }
 
       // Priority 2: Category alert questions
       if (insight?.type === "category_alert") {
         const { category, percentage } = insight.categoryAlert!;
-        return `You're spending ${percentage.toFixed(0)}% on ${category}. Is that normal for you?`;
+        return `You're spending ${percentage.toFixed(
+          0
+        )}% on ${category}. Is that normal for you?`;
       }
 
       // Priority 3: Spending spike questions
       if (spendingData && spendingData.lastMonthChange > 15) {
-        return `Your spending is up ${spendingData.lastMonthChange.toFixed(0)}% this month. What changed?`;
+        return `Your spending is up ${spendingData.lastMonthChange.toFixed(
+          0
+        )}% this month. What changed?`;
       }
 
       // Priority 4: Goal progress questions
       if (activeGoals.length > 0) {
-        const closestGoal = activeGoals.reduce(
-          (closest, goal) => {
-            if (!closest) return goal;
-            const closestProgress =
-              closest.target_amount > 0
-                ? closest.current_amount / closest.target_amount
-                : 0;
-            const goalProgress =
-              goal.target_amount > 0
-                ? goal.current_amount / goal.target_amount
-                : 0;
-            return goalProgress > closestProgress ? goal : closest;
-          },
-          null as Goal | null,
-        );
+        const closestGoal = activeGoals.reduce((closest, goal) => {
+          if (!closest) return goal;
+          const closestProgress =
+            closest.target_amount > 0
+              ? closest.current_amount / closest.target_amount
+              : 0;
+          const goalProgress =
+            goal.target_amount > 0
+              ? goal.current_amount / goal.target_amount
+              : 0;
+          return goalProgress > closestProgress ? goal : closest;
+        }, null as Goal | null);
 
         if (closestGoal) {
           const progress =
@@ -124,24 +135,34 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
               ? (closestGoal.current_amount / closestGoal.target_amount) * 100
               : 0;
           if (progress > 50 && progress < 90) {
-            return `You're ${progress.toFixed(0)}% to your goal. Want to accelerate it?`;
+            return `You're ${progress.toFixed(
+              0
+            )}% to your goal. Want to accelerate it?`;
           }
         }
       }
 
       // Priority 5: Investment questions
       if (investmentsTotal > 0 && investmentsTotal > totalBalance * 0.2) {
-        return `Your investments are ${((investmentsTotal / totalBalance) * 100).toFixed(0)}% of net worth. Optimized?`;
+        return `Your investments are ${(
+          (investmentsTotal / totalBalance) *
+          100
+        ).toFixed(0)}% of net worth. Optimized?`;
       }
 
       // Priority 6: Debt questions
       if (liabilitiesTotal > 0 && liabilitiesTotal > totalBalance * 0.3) {
-        return `Your debt is ${((liabilitiesTotal / totalBalance) * 100).toFixed(0)}% of net worth. Want a payoff plan?`;
+        return `Your debt is ${(
+          (liabilitiesTotal / totalBalance) *
+          100
+        ).toFixed(0)}% of net worth. Want a payoff plan?`;
       }
 
       // Priority 7: Net worth growth questions
       if (netWorthChange > 5) {
-        return `Net worth up ${netWorthChange.toFixed(1)}% this month! What's driving it?`;
+        return `Net worth up ${netWorthChange.toFixed(
+          1
+        )}% this month! What's driving it?`;
       }
 
       // Priority 8: No goals questions
@@ -185,6 +206,11 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
         // Navigate to the appropriate tab based on onboarding step
         if (linkDestination === "insights") {
           router.push("/(tabs)/insights");
+          setTimeout(() => {
+            DeviceEventEmitter.emit("navigateToInsightsSection", {
+              section: "budget",
+            });
+          }, 200);
         } else {
           router.push("/(tabs)/chat");
         }
@@ -221,7 +247,7 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
         </TouchableOpacity>
       </View>
     );
-  },
+  }
 );
 
 FinnyMessage.displayName = "FinnyMessage";

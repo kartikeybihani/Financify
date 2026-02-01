@@ -261,7 +261,7 @@ export const TEXT_STYLES = {
     fontSize: 22,
     fontWeight: "600" as const,
     color: "#fff",
-    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+    fontFamily: "Manrope",
     letterSpacing: 0.3,
   },
   closeButton: {

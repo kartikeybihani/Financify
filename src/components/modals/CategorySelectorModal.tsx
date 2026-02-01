@@ -97,7 +97,7 @@ export default function CategorySelectorModal({
           style: "destructive",
           onPress: () => handleDeleteCategory(categoryId),
         },
-      ],
+      ]
     );
   };
 
@@ -160,13 +160,13 @@ export default function CategorySelectorModal({
           text: "All Similar Transactions",
           onPress: () => handleUpdateOption("similar", categoryId),
         },
-      ],
+      ]
     );
   };
 
   const handleUpdateOption = async (
     updateType: "single" | "similar",
-    categoryId: string,
+    categoryId: string
   ) => {
     if (!transactionId) return;
 
@@ -274,7 +274,7 @@ export default function CategorySelectorModal({
         if (!useMerchantName && !useTransactionName) {
           Alert.alert(
             "Error",
-            "Cannot update similar transactions without merchant name or transaction name",
+            "Cannot update similar transactions without merchant name or transaction name"
           );
           return;
         }
@@ -287,13 +287,16 @@ export default function CategorySelectorModal({
           .eq("user_id", userId);
 
         if (useMerchantName && merchantName) {
-          selectQueryForIds = selectQueryForIds.eq("merchant_name", merchantName);
+          selectQueryForIds = selectQueryForIds.eq(
+            "merchant_name",
+            merchantName
+          );
         } else if (useTransactionName && transactionName) {
           selectQueryForIds = selectQueryForIds.eq("name", transactionName);
         }
 
         const { data: transactionIds } = await selectQueryForIds;
-        
+
         // Store optimistic updates for all affected transactions
         if (transactionIds && transactionIds.length > 0) {
           transactionIds.forEach((tx: any) => {
@@ -361,7 +364,7 @@ export default function CategorySelectorModal({
 
         Alert.alert(
           "Success",
-          `Updated ${data} similar transactions to ${selectedCategory.name}`,
+          `Updated ${data} similar transactions to ${selectedCategory.name}`
         );
 
         // Create or update category rule for future transactions
@@ -376,7 +379,7 @@ export default function CategorySelectorModal({
               p_match_field: matchField,
               p_match_value: matchValue,
               p_category_name: selectedCategory.name,
-            },
+            }
           );
 
           if (ruleError) {
@@ -405,11 +408,17 @@ export default function CategorySelectorModal({
           .eq("id", transactionId);
 
         if (reviewError) {
-          console.error("Error auto-marking transaction as reviewed:", reviewError);
+          console.error(
+            "Error auto-marking transaction as reviewed:",
+            reviewError
+          );
           // Don't fail the whole operation if review update fails
         }
       } catch (reviewErr) {
-        console.error("Exception auto-marking transaction as reviewed:", reviewErr);
+        console.error(
+          "Exception auto-marking transaction as reviewed:",
+          reviewErr
+        );
         // Don't fail the whole operation
       }
 
@@ -593,7 +602,7 @@ export default function CategorySelectorModal({
                           styles.categoryChip,
                           {
                             backgroundColor: getCategoryBackgroundColor(
-                              category.name,
+                              category.name
                             ),
                             borderColor: isSelected
                               ? category.color
@@ -624,7 +633,7 @@ export default function CategorySelectorModal({
                         {isSelected && (
                           <Ionicons
                             name="checkmark-circle"
-                            size={16}
+                            size={15}
                             color={category.color}
                             style={styles.checkmarkIcon}
                           />
@@ -720,17 +729,17 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     justifyContent: "center",
-    gap: 8,
+    gap: 7,
     minHeight: 100, // Debug: ensure container has height
   },
   categoryChip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
     borderWidth: 2,
-    marginBottom: 8,
+    marginBottom: 7,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -748,18 +757,18 @@ const styles = StyleSheet.create({
   addNewChip: {
     flexDirection: "row",
     alignItems: "center",
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.2)",
     borderStyle: "dashed",
-    marginBottom: 8,
+    marginBottom: 7,
     backgroundColor: "rgba(255, 255, 255, 0.05)",
   },
   chipIcon: {
-    fontSize: 16,
-    marginRight: 6,
+    fontSize: 15,
+    marginRight: 5,
   },
   chipText: {
     fontSize: 12,

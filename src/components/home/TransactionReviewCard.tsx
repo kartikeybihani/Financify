@@ -1,22 +1,30 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
-  Animated,
   ActivityIndicator,
   Modal,
   ScrollView,
-  useWindowDimensions,
+  Animated,
+  DeviceEventEmitter,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
-import { useUnreviewedTransactions, UnreviewedTransaction } from "@/src/hooks/useUnreviewedTransactions";
+import {
+  useUnreviewedTransactions,
+  UnreviewedTransaction,
+} from "@/src/hooks/useUnreviewedTransactions";
 import { getDisplayCategory } from "@/src/utils/categories/transactionCategory";
 import { useCategories } from "@/src/hooks/useCategories";
 import TransactionDetailModal from "@/src/components/modals/TransactionDetailModal";
+import { Transaction } from "@/src/types/plaid";
 import * as Haptics from "expo-haptics";
+import AppStorage from "@/src/utils/storage/storage";
+
+const SCREEN_WIDTH = Dimensions.get("window").width;
+const FIRST_TIME_MESSAGE_KEY = "transaction_review_first_time_shown";
 
 interface TransactionReviewCardProps {
   userId?: string;
@@ -29,18 +37,155 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
     count,
     markAsReviewed,
     markAllAsReviewed,
+    refresh,
   } = useUnreviewedTransactions();
 
-  const { getCategoryIcon, getCategoryColor, formatCategoryName } = useCategories(userId);
-  const [selectedTransactionId, setSelectedTransactionId] = useState<string | null>(null);
-  const [selectedTransaction, setSelectedTransaction] = useState<UnreviewedTransaction | null>(null);
+  const { getCategoryIcon, getCategoryColor, formatCategoryName } =
+    useCategories(userId);
+  const [selectedTransactionId, setSelectedTransactionId] = useState<
+    string | null
+  >(null);
+  const [selectedTransaction, setSelectedTransaction] =
+    useState<UnreviewedTransaction | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showAllModal, setShowAllModal] = useState(false);
   const [animatingIds, setAnimatingIds] = useState<Set<string>>(new Set());
+  const [slideAnimations, setSlideAnimations] = useState<
+    Map<string, Animated.Value>
+  >(new Map());
+  const [categoryChangedIds, setCategoryChangedIds] = useState<Set<string>>(
+    new Set()
+  );
+  const [showFirstTimeMessage, setShowFirstTimeMessage] = useState(false);
+  const [showThankYouMessage, setShowThankYouMessage] = useState(false);
+  const [thankYouOpacity] = useState(new Animated.Value(0));
+  const previousCountRef = useRef<number>(0);
 
-  // Don't render if no unreviewed transactions
-  if (!loading && count === 0) {
+  // Check if we should show the message (show it 2 times total)
+  useEffect(() => {
+    if (!loading && count > 0) {
+      const timesShownStr = AppStorage.getItemSync(FIRST_TIME_MESSAGE_KEY);
+      const timesShown = timesShownStr ? parseInt(timesShownStr, 10) : 0;
+
+      if (timesShown < 2) {
+        setShowFirstTimeMessage(true);
+        // Increment the count
+        AppStorage.setItemSync(FIRST_TIME_MESSAGE_KEY, String(timesShown + 1));
+      }
+    }
+  }, [loading, count]);
+
+  // Listen for category updates and remove transactions from list
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      "transactionCategoryUpdated",
+      (event: { transactionId?: string }) => {
+        if (event.transactionId) {
+          setCategoryChangedIds((prev) =>
+            new Set(prev).add(event.transactionId!)
+          );
+          // Refresh to remove the transaction from the list (category change auto-marks as reviewed)
+          setTimeout(() => {
+            refresh();
+          }, 300); // Small delay to ensure DB update completes
+        }
+      }
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [refresh]);
+
+  // Listen for event to open review modal after category change
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      "openTransactionReviewModal",
+      () => {
+        // Open the review modal after a short delay to allow TransactionDetailModal to close
+        setTimeout(() => {
+          if (count > 0) {
+            setShowAllModal(true);
+          }
+        }, 400);
+      }
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [count]);
+
+  // Initialize slide animations for transactions
+  useEffect(() => {
+    const newAnimations = new Map<string, Animated.Value>();
+    transactions.forEach((tx) => {
+      if (!slideAnimations.has(tx.id)) {
+        newAnimations.set(tx.id, new Animated.Value(0));
+      } else {
+        newAnimations.set(tx.id, slideAnimations.get(tx.id)!);
+      }
+    });
+    setSlideAnimations(newAnimations);
+  }, [transactions.length]);
+
+  // Show thank you message when all transactions are reviewed
+  useEffect(() => {
+    if (!loading) {
+      const previousCount = previousCountRef.current;
+      
+      // If count went from > 0 to 0, show thank you message
+      if (previousCount > 0 && count === 0) {
+        setShowThankYouMessage(true);
+        
+        // Fade in animation
+        Animated.sequence([
+          Animated.timing(thankYouOpacity, {
+            toValue: 1,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+          Animated.delay(2000), // Show for 2 seconds
+          Animated.timing(thankYouOpacity, {
+            toValue: 0,
+            duration: 400,
+            useNativeDriver: true,
+          }),
+        ]).start(() => {
+          setShowThankYouMessage(false);
+        });
+      }
+      
+      // Update previous count
+      previousCountRef.current = count;
+    }
+    
+    // Reset when transactions appear again
+    if (count > 0 && showThankYouMessage) {
+      setShowThankYouMessage(false);
+      thankYouOpacity.setValue(0);
+    }
+  }, [loading, count]);
+
+  // Don't render if no unreviewed transactions (unless showing thank you)
+  if (!loading && count === 0 && !showThankYouMessage) {
     return null;
+  }
+
+  // Show thank you message
+  if (showThankYouMessage && count === 0) {
+    return (
+      <View style={styles.container}>
+        <Animated.View
+          style={[
+            styles.thankYouContainer,
+            { opacity: thankYouOpacity },
+          ]}
+        >
+          <Text style={styles.thankYouText}>Thanks!</Text>
+        </Animated.View>
+      </View>
+    );
   }
 
   // Get the first transaction as preview
@@ -57,7 +202,10 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
     } else if (date.toDateString() === yesterday.toDateString()) {
       return "Yesterday";
     } else {
-      return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+      return date.toLocaleDateString("en-US", {
+        month: "short",
+        day: "numeric",
+      });
     }
   };
 
@@ -74,31 +222,49 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
     setShowDetailModal(true);
   };
 
-  const handleMarkAsReviewed = async (transactionId: string, transaction: UnreviewedTransaction) => {
+  const handleMarkAsReviewed = async (
+    transactionId: string,
+    transaction: UnreviewedTransaction
+  ) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
+
     // Add to animating set
     setAnimatingIds((prev) => new Set(prev).add(transactionId));
 
+    // Get or create animation value
+    let animValue = slideAnimations.get(transactionId);
+    if (!animValue) {
+      animValue = new Animated.Value(0);
+      setSlideAnimations((prev) => {
+        const next = new Map(prev);
+        next.set(transactionId, animValue!);
+        return next;
+      });
+    }
+
+    // Slide right animation
+    Animated.spring(animValue, {
+      toValue: SCREEN_WIDTH,
+      useNativeDriver: true,
+      tension: 50,
+      friction: 8,
+    }).start();
+
     // Wait for animation
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 400));
 
     // Mark as reviewed
     await markAsReviewed(transactionId);
 
-    // Remove from animating set after a short delay
+    // Reset animation for next use
     setTimeout(() => {
+      animValue?.setValue(0);
       setAnimatingIds((prev) => {
         const next = new Set(prev);
         next.delete(transactionId);
         return next;
       });
     }, 100);
-  };
-
-  const handleMarkAsUnreviewed = async (transactionId: string) => {
-    // For now, same behavior as reviewed (just dismiss)
-    await handleMarkAsReviewed(transactionId, previewTransaction!);
   };
 
   const handleReviewAll = async () => {
@@ -134,23 +300,48 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
     return null;
   }
 
-  const displayCategory = getDisplayCategory(previewTransaction);
+  // Don't show if category was changed
+  if (categoryChangedIds.has(previewTransaction.id)) {
+    return null;
+  }
+
+  // Convert UnreviewedTransaction to Transaction format (handle null merchant_name)
+  const previewTransactionAsTransaction: Transaction = {
+    ...previewTransaction,
+    merchant_name: previewTransaction.merchant_name ?? undefined,
+  };
+
+  const displayCategory = getDisplayCategory(previewTransactionAsTransaction);
   const categoryIcon = getCategoryIcon(displayCategory);
   const categoryColor = getCategoryColor(displayCategory);
   const isAnimating = animatingIds.has(previewTransaction.id);
+  const previewSlideAnim =
+    slideAnimations.get(previewTransaction.id) || new Animated.Value(0);
 
   return (
     <>
       <View style={styles.container}>
-        <View style={[styles.card, isAnimating && styles.animating]}>
+        {/* First-time message */}
+        {showFirstTimeMessage && (
+          <View style={styles.firstTimeMessage}>
+            <Text style={styles.firstTimeMessageText}>
+              Quick check: Confirm categories so we can learn your preferences
+              and categorize future transactions automatically.
+            </Text>
+          </View>
+        )}
+        <Animated.View
+          style={[
+            styles.card,
+            isAnimating && styles.animating,
+            {
+              transform: [{ translateX: previewSlideAnim }],
+            },
+          ]}
+        >
           <View style={styles.header}>
             <View style={styles.headerLeft}>
               <Text style={styles.title}>Review Transactions</Text>
-              {count > 1 && (
-                <View style={styles.badge}>
-                  <Text style={styles.badgeText}>{count}</Text>
-                </View>
-              )}
             </View>
             {count > 1 && (
               <TouchableOpacity
@@ -158,7 +349,7 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
                 style={styles.reviewAllButton}
                 activeOpacity={0.7}
               >
-                <Text style={styles.reviewAllText}>Review All</Text>
+                <Text style={styles.reviewAllText}>Mark all reviewed ✓</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -170,23 +361,47 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
             disabled={isAnimating}
           >
             <View style={styles.transactionLeft}>
-              <View style={[styles.categoryIcon, { backgroundColor: `${categoryColor}20` }]}>
-                <Text style={styles.categoryIconText}>{categoryIcon}</Text>
-              </View>
               <View style={styles.transactionDetails}>
-                <Text style={styles.transactionName} numberOfLines={1}>
-                  {previewTransaction.merchant_name || previewTransaction.name}
-                </Text>
-                <Text style={styles.transactionMeta}>
-                  {formatDate(previewTransaction.date)} • {formatCategoryName(displayCategory)}
-                </Text>
+                <View style={styles.transactionNameRow}>
+                  <Text style={styles.transactionName} numberOfLines={1}>
+                    {previewTransaction.merchant_name ||
+                      previewTransaction.name}
+                  </Text>
+                </View>
+                <View style={styles.transactionMetaRow}>
+                  <Text style={styles.transactionDate}>
+                    {formatDate(previewTransaction.date)}
+                  </Text>
+                  <View
+                    style={[
+                      styles.categoryChip,
+                      {
+                        backgroundColor: `${categoryColor}20`,
+                        borderColor: `${categoryColor}40`,
+                      },
+                    ]}
+                  >
+                    <Text style={styles.categoryChipIcon}>{categoryIcon}</Text>
+                    <Text
+                      style={[
+                        styles.categoryChipText,
+                        { color: categoryColor },
+                      ]}
+                    >
+                      {formatCategoryName(displayCategory)}
+                    </Text>
+                  </View>
+                </View>
               </View>
             </View>
             <View style={styles.transactionRight}>
               <Text
                 style={[
                   styles.transactionAmount,
-                  { color: previewTransaction.amount < 0 ? "#4ECDC4" : "#FF6B6B" },
+                  {
+                    color:
+                      previewTransaction.amount < 0 ? "#4ECDC4" : "#FF6B6B",
+                  },
                 ]}
               >
                 {formatAmount(previewTransaction.amount)}
@@ -194,26 +409,24 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
             </View>
           </TouchableOpacity>
 
-          <View style={styles.actions}>
-            <TouchableOpacity
-              onPress={() => handleMarkAsReviewed(previewTransaction.id, previewTransaction)}
-              style={[styles.actionButton, styles.checkButton]}
-              activeOpacity={0.7}
-              disabled={isAnimating}
-            >
-              <Ionicons name="checkmark-circle" size={24} color="#4ECDC4" />
-              <Text style={styles.actionButtonText}>Reviewed</Text>
-            </TouchableOpacity>
-            <TouchableOpacity
-              onPress={() => handleMarkAsUnreviewed(previewTransaction.id)}
-              style={[styles.actionButton, styles.crossButton]}
-              activeOpacity={0.7}
-              disabled={isAnimating}
-            >
-              <Ionicons name="close-circle" size={24} color="#FF6B6B" />
-              <Text style={styles.actionButtonText}>Unreviewed</Text>
-            </TouchableOpacity>
-          </View>
+          {count === 1 && (
+            <View style={styles.cardActions}>
+              <TouchableOpacity
+                onPress={() =>
+                  handleMarkAsReviewed(
+                    previewTransaction.id,
+                    previewTransaction
+                  )
+                }
+                style={styles.cardActionBoxRight}
+                activeOpacity={0.7}
+                disabled={isAnimating}
+              >
+                <Ionicons name="checkmark-circle" size={18} color="#4ECDC4" />
+                <Text style={styles.cardActionText}>Mark as reviewed</Text>
+              </TouchableOpacity>
+            </View>
+          )}
 
           {count > 1 && (
             <TouchableOpacity
@@ -221,23 +434,30 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
               style={styles.viewAllButton}
               activeOpacity={0.7}
             >
-              <Text style={styles.viewAllText}>
-                View all {count} transactions →
-              </Text>
+              <Text style={styles.viewAllText}>View all transactions →</Text>
             </TouchableOpacity>
           )}
-        </View>
+        </Animated.View>
       </View>
 
       {/* Transaction Detail Modal */}
       <TransactionDetailModal
         visible={showDetailModal}
         transactionId={selectedTransactionId}
-        transaction={selectedTransaction || undefined}
+        transaction={
+          selectedTransaction
+            ? {
+                ...selectedTransaction,
+                merchant_name: selectedTransaction.merchant_name ?? undefined,
+              }
+            : undefined
+        }
         onClose={() => {
           setShowDetailModal(false);
           setSelectedTransactionId(null);
           setSelectedTransaction(null);
+          // Refresh the list when modal closes to remove any reviewed transactions
+          refresh();
         }}
       />
 
@@ -259,78 +479,139 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
                 <Ionicons name="close" size={24} color="#fff" />
               </TouchableOpacity>
             </View>
-            <ScrollView style={styles.modalScrollView}>
-              {transactions.map((transaction) => {
-                const displayCategory = getDisplayCategory(transaction);
-                const categoryIcon = getCategoryIcon(displayCategory);
-                const categoryColor = getCategoryColor(displayCategory);
-                const isAnimating = animatingIds.has(transaction.id);
+            <ScrollView
+              style={styles.modalScrollView}
+              showsVerticalScrollIndicator={false}
+            >
+              {transactions
+                .filter((tx) => !categoryChangedIds.has(tx.id))
+                .map((transaction) => {
+                  // Convert UnreviewedTransaction to Transaction format (handle null merchant_name)
+                  const transactionAsTransaction: Transaction = {
+                    ...transaction,
+                    merchant_name: transaction.merchant_name ?? undefined,
+                  };
+                  const displayCategory = getDisplayCategory(
+                    transactionAsTransaction
+                  );
+                  const categoryIcon = getCategoryIcon(displayCategory);
+                  const categoryColor = getCategoryColor(displayCategory);
+                  const isAnimating = animatingIds.has(transaction.id);
+                  const slideAnim =
+                    slideAnimations.get(transaction.id) ||
+                    new Animated.Value(0);
 
-                return (
-                  <View
-                    key={transaction.id}
-                    style={[styles.modalTransactionItem, isAnimating && styles.animating]}
-                  >
-                    <TouchableOpacity
-                      onPress={() => {
-                        setShowAllModal(false);
-                        handleTransactionPress(transaction);
-                      }}
-                      style={styles.modalTransactionTouchable}
-                      activeOpacity={0.7}
+                  return (
+                    <Animated.View
+                      key={transaction.id}
+                      style={[
+                        styles.modalTransactionItem,
+                        isAnimating && styles.animating,
+                        {
+                          transform: [{ translateX: slideAnim }],
+                        },
+                      ]}
                     >
-                      <View style={styles.modalTransactionLeft}>
-                        <View
-                          style={[
-                            styles.modalCategoryIcon,
-                            { backgroundColor: `${categoryColor}20` },
-                          ]}
-                        >
-                          <Text style={styles.modalCategoryIconText}>{categoryIcon}</Text>
-                        </View>
-                        <View style={styles.modalTransactionDetails}>
-                          <Text style={styles.modalTransactionName} numberOfLines={1}>
-                            {transaction.merchant_name || transaction.name}
-                          </Text>
-                          <Text style={styles.modalTransactionMeta}>
-                            {formatDate(transaction.date)} • {formatCategoryName(displayCategory)}
-                          </Text>
-                        </View>
-                      </View>
-                      <View style={styles.modalTransactionRight}>
-                        <Text
-                          style={[
-                            styles.modalTransactionAmount,
-                            {
-                              color: transaction.amount < 0 ? "#4ECDC4" : "#FF6B6B",
-                            },
-                          ]}
-                        >
-                          {formatAmount(transaction.amount)}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                    <View style={styles.modalActions}>
                       <TouchableOpacity
-                        onPress={() => handleMarkAsReviewed(transaction.id, transaction)}
-                        style={[styles.modalActionButton, styles.modalCheckButton]}
+                        onPress={() => {
+                          setShowAllModal(false);
+                          handleTransactionPress(transaction);
+                        }}
+                        style={styles.modalTransactionTouchable}
                         activeOpacity={0.7}
-                        disabled={isAnimating}
                       >
-                        <Ionicons name="checkmark-circle" size={20} color="#4ECDC4" />
+                        <View style={styles.modalTransactionLeft}>
+                          <View style={styles.modalTransactionDetails}>
+                            <View style={styles.modalTransactionNameRow}>
+                              <Text
+                                style={styles.modalTransactionName}
+                                numberOfLines={1}
+                              >
+                                {transaction.merchant_name || transaction.name}
+                              </Text>
+                            </View>
+                            <View style={styles.modalTransactionMetaRow}>
+                              <Text style={styles.modalTransactionDate}>
+                                {formatDate(transaction.date)}
+                              </Text>
+                              <View
+                                style={[
+                                  styles.modalCategoryChip,
+                                  {
+                                    backgroundColor: `${categoryColor}20`,
+                                    borderColor: `${categoryColor}40`,
+                                  },
+                                ]}
+                              >
+                                <Text style={styles.modalCategoryChipIcon}>
+                                  {categoryIcon}
+                                </Text>
+                                <Text
+                                  style={[
+                                    styles.modalCategoryChipText,
+                                    { color: categoryColor },
+                                  ]}
+                                >
+                                  {formatCategoryName(displayCategory)}
+                                </Text>
+                              </View>
+                            </View>
+                          </View>
+                        </View>
+                        <View style={styles.modalTransactionRight}>
+                          <Text
+                            style={[
+                              styles.modalTransactionAmount,
+                              {
+                                color:
+                                  transaction.amount < 0
+                                    ? "#4ECDC4"
+                                    : "#f78b8b",
+                              },
+                            ]}
+                          >
+                            {formatAmount(transaction.amount)}
+                          </Text>
+                        </View>
                       </TouchableOpacity>
-                      <TouchableOpacity
-                        onPress={() => handleMarkAsUnreviewed(transaction.id)}
-                        style={[styles.modalActionButton, styles.modalCrossButton]}
-                        activeOpacity={0.7}
-                        disabled={isAnimating}
-                      >
-                        <Ionicons name="close-circle" size={20} color="#FF6B6B" />
-                      </TouchableOpacity>
-                    </View>
-                  </View>
-                );
-              })}
+                      <View style={styles.modalActions}>
+                        <TouchableOpacity
+                          onPress={() => {
+                            setShowAllModal(false);
+                            handleTransactionPress(transaction);
+                          }}
+                          style={styles.modalActionBoxLeft}
+                          activeOpacity={0.7}
+                          disabled={isAnimating}
+                        >
+                          <Ionicons
+                            name="create-outline"
+                            size={18}
+                            color="#4A90E2"
+                          />
+                          <Text style={styles.modalActionText}>
+                            View Details
+                          </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                          onPress={() =>
+                            handleMarkAsReviewed(transaction.id, transaction)
+                          }
+                          style={styles.modalActionBoxRight}
+                          activeOpacity={0.7}
+                          disabled={isAnimating}
+                        >
+                          <Ionicons
+                            name="checkmark-circle"
+                            size={18}
+                            color="#4ECDC4"
+                          />
+                          <Text style={styles.modalActionText}>Reviewed</Text>
+                        </TouchableOpacity>
+                      </View>
+                    </Animated.View>
+                  );
+                })}
             </ScrollView>
             {transactions.length > 0 && (
               <TouchableOpacity
@@ -338,7 +619,10 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
                 style={styles.modalReviewAllButton}
                 activeOpacity={0.7}
               >
-                <Text style={styles.modalReviewAllText}>Review All ({count})</Text>
+                <Text style={styles.modalReviewAllText}>
+                  Review All ({count})
+                </Text>
+                <Ionicons name="checkmark-circle" size={22} color="#fff" />
               </TouchableOpacity>
             )}
           </View>
@@ -350,8 +634,18 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 20,
+    // paddingHorizontal: 20,
     marginBottom: 16,
+  },
+  firstTimeMessage: {
+    marginBottom: 12,
+    paddingHorizontal: 4,
+  },
+  firstTimeMessageText: {
+    fontSize: 13,
+    lineHeight: 18,
+    color: "rgba(255, 255, 255, 0.65)",
+    fontWeight: "400",
   },
   card: {
     backgroundColor: "#1f1f1f",
@@ -361,8 +655,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.06)",
   },
   animating: {
-    opacity: 0,
-    transform: [{ translateY: -20 }],
+    opacity: 0.3,
   },
   header: {
     flexDirection: "row",
@@ -377,20 +670,6 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 16,
-    fontWeight: "700",
-    color: "#fff",
-  },
-  badge: {
-    backgroundColor: "#4A90E2",
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    minWidth: 24,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  badgeText: {
-    fontSize: 12,
     fontWeight: "700",
     color: "#fff",
   },
@@ -420,29 +699,42 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
   },
-  categoryIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  categoryIconText: {
-    fontSize: 18,
-  },
   transactionDetails: {
     flex: 1,
+  },
+  transactionNameRow: {
+    marginBottom: 6,
   },
   transactionName: {
     fontSize: 15,
     fontWeight: "600",
     color: "#fff",
-    marginBottom: 4,
   },
-  transactionMeta: {
+  transactionMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  transactionDate: {
     fontSize: 12,
     color: "rgba(255, 255, 255, 0.6)",
+  },
+  categoryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 4,
+  },
+  categoryChipIcon: {
+    fontSize: 12,
+  },
+  categoryChipText: {
+    fontSize: 11,
+    fontWeight: "600",
   },
   transactionRight: {
     alignItems: "flex-end",
@@ -450,31 +742,6 @@ const styles = StyleSheet.create({
   transactionAmount: {
     fontSize: 16,
     fontWeight: "700",
-  },
-  actions: {
-    flexDirection: "row",
-    gap: 12,
-    marginBottom: 8,
-  },
-  actionButton: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 12,
-    borderRadius: 12,
-    gap: 8,
-  },
-  checkButton: {
-    backgroundColor: "rgba(78, 205, 196, 0.15)",
-  },
-  crossButton: {
-    backgroundColor: "rgba(255, 107, 107, 0.15)",
-  },
-  actionButtonText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#fff",
   },
   viewAllButton: {
     paddingVertical: 8,
@@ -484,6 +751,43 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#4A90E2",
     fontWeight: "600",
+  },
+  cardActions: {
+    flexDirection: "row",
+    gap: 15,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  cardActionBoxLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 107, 107, 0.3)",
+    backgroundColor: "rgba(222, 185, 185, 0.08)",
+  },
+  cardActionBoxRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 8,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(78, 205, 196, 0.3)",
+    backgroundColor: "rgba(194, 221, 219, 0.08)",
+  },
+  cardActionText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#fff",
   },
   loadingText: {
     fontSize: 14,
@@ -521,6 +825,35 @@ const styles = StyleSheet.create({
   modalScrollView: {
     maxHeight: 400,
   },
+  modalTransactionNameRow: {
+    marginBottom: 6,
+  },
+  modalTransactionMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+  },
+  modalTransactionDate: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.6)",
+  },
+  modalCategoryChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    gap: 4,
+  },
+  modalCategoryChipIcon: {
+    fontSize: 11,
+  },
+  modalCategoryChipText: {
+    fontSize: 10,
+    fontWeight: "600",
+  },
   modalTransactionItem: {
     padding: 16,
     borderBottomWidth: 1,
@@ -538,17 +871,6 @@ const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
   },
-  modalCategoryIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: "center",
-    justifyContent: "center",
-    marginRight: 12,
-  },
-  modalCategoryIconText: {
-    fontSize: 16,
-  },
   modalTransactionDetails: {
     flex: 1,
   },
@@ -556,11 +878,6 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "600",
     color: "#fff",
-    marginBottom: 4,
-  },
-  modalTransactionMeta: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.6)",
   },
   modalTransactionRight: {
     alignItems: "flex-end",
@@ -571,32 +888,66 @@ const styles = StyleSheet.create({
   },
   modalActions: {
     flexDirection: "row",
-    gap: 12,
-    justifyContent: "flex-end",
+    gap: 15,
+    justifyContent: "center",
+    alignItems: "center",
   },
-  modalActionButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  modalActionBoxLeft: {
+    flex: 1,
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    gap: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 107, 107, 0.3)",
+    backgroundColor: "rgba(222, 185, 185, 0.08)",
   },
-  modalCheckButton: {
-    backgroundColor: "rgba(78, 205, 196, 0.15)",
+  modalActionBoxRight: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 4,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(78, 205, 196, 0.3)",
+    backgroundColor: "rgba(194, 221, 219, 0.08)",
   },
-  modalCrossButton: {
-    backgroundColor: "rgba(255, 107, 107, 0.15)",
+  modalActionText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#fff",
   },
   modalReviewAllButton: {
     margin: 20,
     padding: 16,
     backgroundColor: "#4A90E2",
     borderRadius: 12,
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
   modalReviewAllText: {
     fontSize: 16,
     fontWeight: "700",
     color: "#fff",
+  },
+  thankYouContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 20,
+    paddingHorizontal: 20,
+  },
+  thankYouText: {
+    fontSize: 18,
+    fontWeight: "500",
+    color: "#4A90E2",
+    opacity: 0.8,
   },
 });

@@ -174,7 +174,10 @@ export default function TransactionDetailModal({
       if (initialTransaction && initialTransaction.id === transactionId) {
         setLoading(false);
         // Apply optimistic updates if any
-        const updatedTransaction = OptimisticUpdateManager.applyCategoryUpdateToTransaction(initialTransaction);
+        const updatedTransaction =
+          OptimisticUpdateManager.applyCategoryUpdateToTransaction(
+            initialTransaction
+          );
         setTransaction(updatedTransaction);
         setIsInternalTransfer(
           updatedTransaction.new_category === "INTERNAL_TRANSFER"
@@ -239,9 +242,14 @@ export default function TransactionDetailModal({
           };
 
           // Apply optimistic updates if any
-          const updatedTransaction = OptimisticUpdateManager.applyCategoryUpdateToTransaction(transformedTransaction);
+          const updatedTransaction =
+            OptimisticUpdateManager.applyCategoryUpdateToTransaction(
+              transformedTransaction
+            );
           setTransaction(updatedTransaction);
-          setIsInternalTransfer(updatedTransaction.new_category === "INTERNAL_TRANSFER");
+          setIsInternalTransfer(
+            updatedTransaction.new_category === "INTERNAL_TRANSFER"
+          );
           setIsRecurring(shouldShowRecurringChip(updatedTransaction));
         }
       } catch (error) {
@@ -266,36 +274,38 @@ export default function TransactionDetailModal({
     const categorySubscription = DeviceEventEmitter.addListener(
       "transactionCategoryUpdated",
       (data) => {
-        if (data.transactionId === transaction?.id) {
+        const isCurrentTransaction =
+          data.transactionId === transaction?.id ||
+          (data.affectedTransactions &&
+            data.affectedTransactions.some(
+              (affected: any) => affected.transactionId === transaction?.id
+            ));
+
+        if (isCurrentTransaction && transaction) {
           setUpdatedCategory(data.newCategory);
-          
+
           // Apply optimistic update to transaction object immediately
-          if (transaction) {
-            const optimisticUpdate = OptimisticUpdateManager.getCategoryUpdate(transaction.id);
-            if (optimisticUpdate) {
-              const updatedTransaction = OptimisticUpdateManager.applyCategoryUpdateToTransaction(transaction);
-              setTransaction(updatedTransaction);
-            }
-          }
-        }
-
-        // Handle targeted updates for similar transactions
-        if (data.affectedTransactions && data.affectedTransactions.length > 0) {
-          // Check if the current transaction was affected
-          const affectedTx = data.affectedTransactions.find(
-            (affected: any) => affected.transactionId === transaction?.id
+          const optimisticUpdate = OptimisticUpdateManager.getCategoryUpdate(
+            transaction.id
           );
-
-          if (affectedTx && transaction) {
-            setUpdatedCategory(data.newCategory);
-            
-            // Apply optimistic update to transaction object immediately
-            const optimisticUpdate = OptimisticUpdateManager.getCategoryUpdate(transaction.id);
-            if (optimisticUpdate) {
-              const updatedTransaction = OptimisticUpdateManager.applyCategoryUpdateToTransaction(transaction);
-              setTransaction(updatedTransaction);
-            }
+          if (optimisticUpdate) {
+            const updatedTransaction =
+              OptimisticUpdateManager.applyCategoryUpdateToTransaction(
+                transaction
+              );
+            setTransaction(updatedTransaction);
           }
+
+          // Close the CategorySelectorModal first
+          setShowCategorySelector(false);
+
+          // Emit event to open review modal after category change
+          DeviceEventEmitter.emit("openTransactionReviewModal");
+
+          // Close the TransactionDetailModal after a short delay to allow UI updates
+          setTimeout(() => {
+            handleClose();
+          }, 300);
         }
       }
     );
@@ -583,7 +593,7 @@ export default function TransactionDetailModal({
         updatedCategory === "INTERNAL_TRANSFER" ||
         (updatedCategory === undefined &&
           transaction?.new_category === "INTERNAL_TRANSFER");
-      
+
       // INTERNAL_TRANSFER is a special marker (not a real category)
       // Set category_id to NULL and use new_category as marker
       const updateData = currentlyInternalTransfer
@@ -611,7 +621,9 @@ export default function TransactionDetailModal({
           // Determine which field to use for matching: merchant_name first, then transaction name
           const useMerchantName = merchantName && merchantName.trim() !== "";
           const useTransactionName =
-            !useMerchantName && transactionName && transactionName.trim() !== "";
+            !useMerchantName &&
+            transactionName &&
+            transactionName.trim() !== "";
 
           if (useMerchantName || useTransactionName) {
             // For internal transfers, we need to store the rule differently since INTERNAL_TRANSFER
@@ -619,53 +631,56 @@ export default function TransactionDetailModal({
             // Since category_rules requires top_category_id, we'll need to handle this specially.
             // For now, we'll insert a rule that we can identify later by checking if the category
             // doesn't exist in the user's categories (which INTERNAL_TRANSFER won't).
-            
+
             // Actually, a better approach: Check if there's an "Other" category and use that as a placeholder,
             // but mark it specially. Or, we can check for rules where merchant_name/transaction_name matches
             // and the transaction's new_category is INTERNAL_TRANSFER.
-            
+
             // Simplest approach: Store the rule with merchant_name/transaction_name, and in the sync function,
             // check if a rule matches and if the transaction should be marked as internal transfer.
             // We'll use a special UUID or marker for internal transfer rules.
-            
+
             // For now, let's create a rule entry that we can identify. Since we can't easily modify schema,
             // we'll use a workaround: create the rule with a special marker category_id.
             // But actually, the sync function already checks merchant rules first, so we just need to
             // ensure that when a rule matches, if it's an internal transfer rule, we set new_category.
-            
+
             // Let me use a simpler approach: Create a rule entry, and in sync, check if merchant_name/transaction_name
             // matches AND if we should treat it as internal transfer. We can do this by checking existing
             // transactions with the same merchant_name/transaction_name that are marked as INTERNAL_TRANSFER.
-            
+
             // Actually, the cleanest solution: When creating the rule, we can check if there are other transactions
             // with the same merchant_name/transaction_name that are INTERNAL_TRANSFER, and if so, treat future
             // matches as internal transfer. But that's complex.
-            
+
             // For now, let's create a simple rule: Insert into category_rules with merchant_name/transaction_name,
             // and use a special approach in sync to detect internal transfer rules.
             // Since INTERNAL_TRANSFER is not a category, we'll need to handle this differently.
-            
+
             // Workaround: Create a rule with merchant_name/transaction_name, and in the sync function,
             // check if merchant_name/transaction_name matches AND if there's a pattern indicating internal transfer.
             // We can do this by checking if the matched rule's category_id doesn't exist in categories (special marker).
-            
+
             // Actually, simplest solution: Don't create a category_rules entry for internal transfers.
             // Instead, in the sync function, check if merchant_name/transaction_name matches any existing
             // transactions that are marked as INTERNAL_TRANSFER, and if so, mark new transactions the same way.
-            
+
             // But that's inefficient. Better: Create a special internal_transfer_rules table or use a marker.
-            
+
             // For MVP: Let's create a rule entry with merchant_name/transaction_name, and use a special
             // category_id that we can identify. We can use a UUID like "00000000-0000-0000-0000-000000000001"
             // as a marker for internal transfers.
-            
+
             const matchValue = useMerchantName ? merchantName : transactionName;
-            const matchField = useMerchantName ? "merchant_name" : "transaction_name";
-            
+            const matchField = useMerchantName
+              ? "merchant_name"
+              : "transaction_name";
+
             // Use a special marker UUID for internal transfer rules
             // This UUID will be recognized in the sync function as a marker for internal transfers
-            const INTERNAL_TRANSFER_MARKER_UUID = "00000000-0000-0000-0000-000000000001";
-            
+            const INTERNAL_TRANSFER_MARKER_UUID =
+              "00000000-0000-0000-0000-000000000001";
+
             // Check if rule already exists
             const { data: existingRule } = await supabase
               .from("category_rules")
@@ -674,7 +689,7 @@ export default function TransactionDetailModal({
               .eq("active", true)
               .eq(matchField, matchValue)
               .maybeSingle();
-            
+
             if (!existingRule) {
               // Create the rule with the special marker UUID
               const { error: ruleError } = await supabase
@@ -688,12 +703,19 @@ export default function TransactionDetailModal({
                   match_field: matchField,
                   active: true,
                 });
-              
+
               if (ruleError) {
-                console.error("Error creating internal transfer rule:", ruleError);
+                console.error(
+                  "Error creating internal transfer rule:",
+                  ruleError
+                );
                 // Don't fail the whole operation if rule creation fails
               } else {
-                console.log("✅ Created internal transfer rule for", matchField, matchValue);
+                console.log(
+                  "✅ Created internal transfer rule for",
+                  matchField,
+                  matchValue
+                );
               }
             }
           }
@@ -732,7 +754,7 @@ export default function TransactionDetailModal({
 
       const currentIsRecurring = transaction?.if_recurring === "yes";
       const newRecurringValue = currentIsRecurring ? "no" : "yes";
-      
+
       // Update all similar transactions
       // Priority: Use recurring_stream_id if available (Plaid streams), otherwise use name/merchant_name
       const result = await bulkUpdateRecurringStatus(
@@ -747,7 +769,10 @@ export default function TransactionDetailModal({
       );
 
       if (result.updated === 0) {
-        Alert.alert("Error", "Failed to update transactions. Please try again.");
+        Alert.alert(
+          "Error",
+          "Failed to update transactions. Please try again."
+        );
         return;
       }
 
@@ -755,7 +780,10 @@ export default function TransactionDetailModal({
       setTransaction({
         ...transaction,
         if_recurring: newRecurringValue,
-        recurring_stream_id: newRecurringValue === "no" ? undefined : transaction.recurring_stream_id || undefined,
+        recurring_stream_id:
+          newRecurringValue === "no"
+            ? undefined
+            : transaction.recurring_stream_id || undefined,
       });
 
       // Update local state for consistency
@@ -765,7 +793,9 @@ export default function TransactionDetailModal({
       if (result.updated > 1) {
         Alert.alert(
           "Success",
-          `Updated ${result.updated} similar transactions to ${newRecurringValue === "yes" ? "recurring" : "non-recurring"}.`
+          `Updated ${result.updated} similar transactions to ${
+            newRecurringValue === "yes" ? "recurring" : "non-recurring"
+          }.`
         );
       }
 
@@ -990,8 +1020,7 @@ export default function TransactionDetailModal({
                           name: transaction.account_name || "Unknown Account",
                           mask: transaction.account_mask,
                           type: transaction.account_type || "depository",
-                          subtype:
-                            (transaction as any).account_subtype || null,
+                          subtype: (transaction as any).account_subtype || null,
                           institution_name: transaction.institution_name,
                         }}
                         onPress={handleAccountPress}

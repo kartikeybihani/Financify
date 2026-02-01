@@ -7,7 +7,7 @@ import { Transaction } from "@/src/types/plaid";
 import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 
-export interface UnreviewedTransaction extends Transaction {
+export interface UnreviewedTransaction extends Omit<Transaction, 'merchant_name' | 'category_id'> {
   id: string;
   name: string;
   amount: number;
@@ -61,11 +61,6 @@ export function useUnreviewedTransactions(): UseUnreviewedTransactionsReturn {
 
     try {
       setLoading(true);
-
-      // Only fetch transactions that were inserted after user's onboarding completion
-      // For now, we'll fetch all unreviewed transactions (can be filtered by date later if needed)
-      // The key is: only show transactions from syncs AFTER user signs up
-      // We can use inserted_at timestamp to filter, but for MVP, show all unreviewed
       
       const { data, error } = await supabase
         .from("transactions")
@@ -81,9 +76,16 @@ export function useUnreviewedTransactions(): UseUnreviewedTransactionsReturn {
           inserted_at,
           accounts:account_id (
             name,
-            institution_name
+            mask,
+            type,
+            subtype,
+            item_id,
+            user_items:item_id (
+              institution_name
+            )
           ),
           categories:category_id (
+            id,
             name,
             icon,
             color
@@ -111,7 +113,7 @@ export function useUnreviewedTransactions(): UseUnreviewedTransactionsReturn {
         account_id: tx.account_id,
         inserted_at: tx.inserted_at,
         account_name: tx.accounts?.name,
-        institution_name: tx.accounts?.institution_name,
+        institution_name: tx.accounts?.user_items?.institution_name,
         categories: tx.categories ? {
           id: tx.categories.id,
           name: tx.categories.name,

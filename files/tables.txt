@@ -457,6 +457,7 @@ CREATE TABLE public.transactions (
   linked_goal_id uuid,
   authorized_date date,
   category_id uuid,
+  is_reviewed boolean NOT NULL DEFAULT false,
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
   CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),
   CONSTRAINT transactions_linked_goal_id_fkey FOREIGN KEY (linked_goal_id) REFERENCES public.goals(id),

@@ -50,13 +50,13 @@ export function OnboardingProgressBox({
                 </View>
               </View>
               <View style={styles.rightSection}>
-                <Text style={styles.percentage}>{status.percentage}%</Text>
+                {/* <Text style={styles.percentage}>{status.percentage}%</Text> */}
               </View>
             </View>
             <View style={styles.progressBarContainer}>
               <View style={styles.progressBarBackground}>
                 <LinearGradient
-                  colors={["#5BA3FF", "#4A90E2", "#3A7FD0"]}
+                  colors={["#B8D4F0", "#C5D9F0", "#B8D4F0"]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={[
@@ -71,7 +71,7 @@ export function OnboardingProgressBox({
         <TouchableOpacity
           style={styles.closeButton}
           onPress={onDismiss}
-          hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+          hitSlop={{ top: 25, bottom: 25, left: 25, right: 25 }}
         >
           <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
         </TouchableOpacity>
@@ -83,7 +83,7 @@ export function OnboardingProgressBox({
 const styles = StyleSheet.create({
   container: {
     marginTop: 12,
-    marginBottom: 25,
+    marginBottom: 20,
   },
   touchable: {
     borderRadius: 20,
@@ -160,8 +160,8 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     position: "absolute",
-    top: 8,
-    right: 8,
+    top: 10,
+    right: 15,
     width: 28,
     height: 28,
     borderRadius: 14,
