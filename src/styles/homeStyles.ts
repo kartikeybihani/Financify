@@ -430,6 +430,13 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 5,
   },
+  goalCardHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 14,
+    paddingBottom: 0,
+  },
   goalsTitleContainer: {
     flexDirection: "row",
     alignItems: "center",
@@ -457,7 +464,6 @@ export const styles = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
   },
   goalCard: {
-    marginTop: 4,
     backgroundColor: "#1f1f1f",
     borderRadius: 16,
     padding: 18,
@@ -468,6 +474,13 @@ export const styles = StyleSheet.create({
     elevation: 4,
     borderWidth: 1,
     borderColor: "rgba(74, 144, 226, 0.15)",
+  },
+  goalContentBox: {
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 0,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    backgroundColor: "rgba(255, 255, 255, 0.03)",
   },
   goalHeader: {
     flexDirection: "row",

@@ -111,63 +111,64 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
 
     return (
       <View style={styles.goalsSection}>
-        <View style={styles.goalsSectionHeader}>
-          <View style={styles.goalsTitleContainer}>
-            <Ionicons
-              name="trophy"
-              size={18}
-              style={{ alignSelf: "center" }}
-              color="#4A90E2"
-            />
-            <Text style={styles.sectionTitle}>Your Focus 🎯</Text>
+        <View style={styles.goalCard}>
+          <View style={styles.goalCardHeader}>
+            <View style={styles.goalsTitleContainer}>
+              <Ionicons
+                name="rocket"
+                size={18}
+                style={{ alignSelf: "center" }}
+                color="#4A90E2"
+              />
+              <Text style={styles.sectionTitle}>Active Goal</Text>
+            </View>
+            <TouchableOpacity
+              onPress={() => router.push("/goals")}
+              style={styles.viewAllButton}
+            >
+              <Text style={styles.viewAllText}>View all goals</Text>
+            </TouchableOpacity>
           </View>
-          <TouchableOpacity
-            onPress={() => router.push("/goals")}
-            style={styles.viewAllButton}
-          >
-            <Text style={styles.viewAllText}>View all goals</Text>
-          </TouchableOpacity>
-        </View>
 
-        {closestGoal && (
-          <View style={styles.goalCard}>
+          {closestGoal && (
             <TouchableOpacity onPress={() => router.push("/goals")}>
-              <View style={styles.goalHeader}>
-                <Text style={styles.goalTitle}>{closestGoal.label}</Text>
-                <Text style={styles.goalAmount}>
-                  {new Intl.NumberFormat("en-US", {
-                    style: "currency",
-                    currency: "USD",
-                    minimumFractionDigits: 0,
-                    maximumFractionDigits: 0,
-                  }).format(closestGoal.current_amount || 0)}{" "}
-                  of{" "}
-                  {formatCurrency(closestGoal.target_amount || 0, "USD", {
-                    decimals: 0,
-                    useKM: true,
-                  })}
-                </Text>
-              </View>
-              <View style={styles.progressBarBackground}>
-                <View
-                  style={[
-                    styles.progressBarFill,
-                    {
-                      width: `${
-                        closestGoal.target_amount > 0
-                          ? Math.min(
-                              (closestGoal.current_amount /
-                                closestGoal.target_amount) *
+              <View style={styles.goalContentBox}>
+                <View style={styles.goalHeader}>
+                  <Text style={styles.goalTitle}>{closestGoal.label}</Text>
+                  <Text style={styles.goalAmount}>
+                    {new Intl.NumberFormat("en-US", {
+                      style: "currency",
+                      currency: "USD",
+                      minimumFractionDigits: 0,
+                      maximumFractionDigits: 0,
+                    }).format(closestGoal.current_amount || 0)}{" "}
+                    of{" "}
+                    {formatCurrency(closestGoal.target_amount || 0, "USD", {
+                      decimals: 0,
+                      useKM: true,
+                    })}
+                  </Text>
+                </View>
+                <View style={styles.progressBarBackground}>
+                  <View
+                    style={[
+                      styles.progressBarFill,
+                      {
+                        width: `${
+                          closestGoal.target_amount > 0
+                            ? Math.min(
+                                (closestGoal.current_amount /
+                                  closestGoal.target_amount) *
+                                  100,
                                 100,
-                              100,
-                            )
-                          : 0
-                      }%`,
-                    },
-                  ]}
-                />
-              </View>
-              <View style={styles.goalPercentContainer}>
+                              )
+                            : 0
+                        }%`,
+                      },
+                    ]}
+                  />
+                </View>
+                <View style={styles.goalPercentContainer}>
                 <Ionicons name="trending-up" size={14} color="#4ECDC4" />
                 <Text
                   style={{
@@ -186,10 +187,11 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
                     : 0}
                   % Progress
                 </Text>
+                </View>
               </View>
             </TouchableOpacity>
-          </View>
-        )}
+          )}
+        </View>
       </View>
     );
   },
