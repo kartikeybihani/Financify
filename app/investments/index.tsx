@@ -1557,7 +1557,7 @@ export default function InvestmentsScreen({
             b.account_id === conn.account_id) ||
           (conn.provider === "plaid" &&
             b.item_id === conn.item_id &&
-            b.plaid_account_id === conn.account_id)
+            b.provider === "plaid")
       );
 
       const lastUpdatedTimestamp =
