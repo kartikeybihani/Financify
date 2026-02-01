@@ -7,6 +7,7 @@ import {
   MaterialCommunityIcons,
   FontAwesome,
 } from "@expo/vector-icons";
+import logger from "@/src/utils/core/logger";
 
 export default function TabLayout() {
   // Check if we should use NativeTabs (iOS 26+ only)
@@ -15,7 +16,7 @@ export default function TabLayout() {
   const shouldUseNativeTabs = isIOS && iosVersion >= 26;
 
   // Debug logging
-  console.log(
+  logger.debug(
     `Platform: ${Platform.OS}, iOS Version: ${iosVersion}, Should use NativeTabs: ${shouldUseNativeTabs}`,
   );
 

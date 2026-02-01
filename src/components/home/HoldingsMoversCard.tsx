@@ -281,7 +281,7 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
             <View style={styles.headerLeft}>
               <View style={styles.titleRow}>
                 <Text style={styles.title}>
-                  {isFallback ? "Investments" : "Todays Movers"}
+                  {isFallback ? "Investments" : "Today's Movers"}
                 </Text>
                 {!isFallback && todayPerf.hasData && (
                   <View
@@ -521,11 +521,12 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 16,
-    fontWeight: "700",
+    fontWeight: "600",
     color: COLORS.text,
     fontFamily: "Manrope",
     letterSpacing: 0.2,
     marginBottom: 5,
+    // textTransform: "uppercase",
   },
   heroSection: {
     paddingHorizontal: 16,

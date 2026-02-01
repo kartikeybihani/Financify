@@ -10,6 +10,7 @@ import {
   Animated,
   DeviceEventEmitter,
   Dimensions,
+  Pressable,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
@@ -60,6 +61,8 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
   const [showThankYouMessage, setShowThankYouMessage] = useState(false);
   const [thankYouOpacity] = useState(new Animated.Value(0));
   const previousCountRef = useRef<number>(0);
+  const countRef = useRef<number>(count);
+  countRef.current = count;
 
   // Check if we should show the message (show it 2 times total)
   useEffect(() => {
@@ -97,24 +100,24 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
     };
   }, [refresh]);
 
-  // Listen for event to open review modal after category change
+  // Listen for event to open review modal after category change (event is emitted after detail modal closes)
   useEffect(() => {
     const subscription = DeviceEventEmitter.addListener(
       "openTransactionReviewModal",
       () => {
-        // Open the review modal after a short delay to allow TransactionDetailModal to close
+        // Short delay then open review modal; use countRef so we have latest count
         setTimeout(() => {
-          if (count > 0) {
+          if (countRef.current > 0) {
             setShowAllModal(true);
           }
-        }, 400);
+        }, 150);
       }
     );
 
     return () => {
       subscription.remove();
     };
-  }, [count]);
+  }, []);
 
   // Initialize slide animations for transactions
   useEffect(() => {
@@ -133,11 +136,11 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
   useEffect(() => {
     if (!loading) {
       const previousCount = previousCountRef.current;
-      
+
       // If count went from > 0 to 0, show thank you message
       if (previousCount > 0 && count === 0) {
         setShowThankYouMessage(true);
-        
+
         // Fade in animation
         Animated.sequence([
           Animated.timing(thankYouOpacity, {
@@ -155,11 +158,11 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
           setShowThankYouMessage(false);
         });
       }
-      
+
       // Update previous count
       previousCountRef.current = count;
     }
-    
+
     // Reset when transactions appear again
     if (count > 0 && showThankYouMessage) {
       setShowThankYouMessage(false);
@@ -177,10 +180,7 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
     return (
       <View style={styles.container}>
         <Animated.View
-          style={[
-            styles.thankYouContainer,
-            { opacity: thankYouOpacity },
-          ]}
+          style={[styles.thankYouContainer, { opacity: thankYouOpacity }]}
         >
           <Text style={styles.thankYouText}>Thanks!</Text>
         </Animated.View>
@@ -409,34 +409,15 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
             </View>
           </TouchableOpacity>
 
-          {count === 1 && (
-            <View style={styles.cardActions}>
-              <TouchableOpacity
-                onPress={() =>
-                  handleMarkAsReviewed(
-                    previewTransaction.id,
-                    previewTransaction
-                  )
-                }
-                style={styles.cardActionBoxRight}
-                activeOpacity={0.7}
-                disabled={isAnimating}
-              >
-                <Ionicons name="checkmark-circle" size={18} color="#4ECDC4" />
-                <Text style={styles.cardActionText}>Mark as reviewed</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-
-          {count > 1 && (
-            <TouchableOpacity
-              onPress={() => setShowAllModal(true)}
-              style={styles.viewAllButton}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.viewAllText}>View all transactions →</Text>
-            </TouchableOpacity>
-          )}
+          <TouchableOpacity
+            onPress={() => setShowAllModal(true)}
+            style={styles.viewAllButton}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.viewAllText}>
+              {count === 1 ? "Review transaction →" : "View all transactions →"}
+            </Text>
+          </TouchableOpacity>
         </Animated.View>
       </View>
 
@@ -468,8 +449,14 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
         animationType="slide"
         onRequestClose={() => setShowAllModal(false)}
       >
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+        <Pressable
+          style={styles.modalOverlay}
+          onPress={() => setShowAllModal(false)}
+        >
+          <View
+            style={styles.modalContent}
+            onStartShouldSetResponder={() => true}
+          >
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>Review Transactions</Text>
               <TouchableOpacity
@@ -589,9 +576,7 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
                             size={18}
                             color="#4A90E2"
                           />
-                          <Text style={styles.modalActionText}>
-                            View Details
-                          </Text>
+                          <Text style={styles.modalActionText}>View</Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                           onPress={() =>
@@ -620,13 +605,13 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
                 activeOpacity={0.7}
               >
                 <Text style={styles.modalReviewAllText}>
-                  Review All ({count})
+                  Mark all as reviewed
                 </Text>
                 <Ionicons name="checkmark-circle" size={22} color="#fff" />
               </TouchableOpacity>
             )}
           </View>
-        </View>
+        </Pressable>
       </Modal>
     </>
   );
@@ -902,7 +887,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "rgba(255, 107, 107, 0.3)",
+    borderColor: "rgba(232, 164, 164, 0.25)",
     backgroundColor: "rgba(222, 185, 185, 0.08)",
   },
   modalActionBoxRight: {
@@ -941,13 +926,13 @@ const styles = StyleSheet.create({
   thankYouContainer: {
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 20,
-    paddingHorizontal: 20,
+    paddingVertical: 10,
+    paddingHorizontal: 10,
   },
   thankYouText: {
     fontSize: 18,
     fontWeight: "500",
-    color: "#4A90E2",
+    color: "#fff",
     opacity: 0.8,
   },
 });

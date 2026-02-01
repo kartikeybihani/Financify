@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { supabase } from "@/src/lib/supabase/supabase";
 import AppStorage from "@/src/utils/storage/storage";
+import logger from "@/src/utils/core/logger";
 
 const VERIFICATION_STORAGE_KEY = "email_verification_pending";
 const MAX_VERIFICATION_TIME = 5 * 60 * 1000; // 5 minutes in milliseconds
@@ -44,7 +45,7 @@ export function useEmailVerification() {
           }
         }
       } catch (error) {
-        console.error("Error loading persisted verification state:", error);
+        logger.error("Error loading persisted verification state:", error);
       }
     };
 
@@ -53,7 +54,7 @@ export function useEmailVerification() {
 
   const checkVerification = useCallback(async (email: string): Promise<boolean> => {
     try {
-      console.log("[EmailVerification] Starting verification check for:", email);
+      logger.debug("[EmailVerification] Starting verification check for:", email);
       
       // First, check current session state with timeout
       const sessionPromise = supabase.auth.getSession();
@@ -64,7 +65,7 @@ export function useEmailVerification() {
       const { data: { session: currentSession }, error: sessionError } = 
         await Promise.race([sessionPromise, sessionTimeout]) as any;
       
-      console.log("[EmailVerification] Current session:", {
+      logger.debug("[EmailVerification] Current session:", {
         hasSession: !!currentSession,
         currentEmail: currentSession?.user?.email,
         targetEmail: email,
@@ -81,12 +82,12 @@ export function useEmailVerification() {
           await Promise.race([refreshPromise, refreshTimeout]) as any;
         
         if (refreshError) {
-          console.warn("[EmailVerification] Session refresh failed (might be expected):", refreshError.message);
+          logger.warn("[EmailVerification] Session refresh failed (might be expected):", refreshError.message);
         } else {
-          console.log("[EmailVerification] Session refreshed successfully");
+          logger.debug("[EmailVerification] Session refreshed successfully");
         }
       } catch (refreshErr: any) {
-        console.warn("[EmailVerification] Session refresh error (non-critical):", refreshErr?.message || refreshErr);
+        logger.warn("[EmailVerification] Session refresh error (non-critical):", refreshErr?.message || refreshErr);
         // Continue anyway - refresh failure is not critical
       }
       
@@ -102,16 +103,16 @@ export function useEmailVerification() {
       const { data: { user }, error } = await Promise.race([getUserPromise, getUserTimeout]) as any;
       
       if (error) {
-        console.error("[EmailVerification] Error getting user:", error);
+        logger.error("[EmailVerification] Error getting user:", error);
         throw error;
       }
 
       if (!user) {
-        console.error("[EmailVerification] No user returned from getUser()");
+        logger.error("[EmailVerification] No user returned from getUser()");
         throw new Error("Unable to retrieve user information");
       }
 
-      console.log("[EmailVerification] User data after refresh:", {
+      logger.debug("[EmailVerification] User data after refresh:", {
         userId: user?.id,
         userEmail: user?.email,
         targetEmail: email,
@@ -122,7 +123,7 @@ export function useEmailVerification() {
       // Check if the user's email matches the pending email
       const isVerified = user?.email?.toLowerCase() === email.toLowerCase();
       
-      console.log("[EmailVerification] Verification result:", {
+      logger.debug("[EmailVerification] Verification result:", {
         isVerified,
         userEmail: user?.email,
         targetEmail: email,
@@ -132,15 +133,15 @@ export function useEmailVerification() {
         // Clear AsyncStorage userData cache to force refresh
         try {
           AppStorage.removeItemSync("userData");
-          console.log("[EmailVerification] Cleared userData cache");
+          logger.debug("[EmailVerification] Cleared userData cache");
         } catch (cacheError) {
-          console.warn("[EmailVerification] Failed to clear userData cache:", cacheError);
+          logger.warn("[EmailVerification] Failed to clear userData cache:", cacheError);
         }
       }
       
       return isVerified;
     } catch (error: any) {
-      console.error("[EmailVerification] Error checking verification:", error);
+      logger.error("[EmailVerification] Error checking verification:", error);
       const errorMsg = error?.message || "Failed to check verification status";
       setErrorMessage(errorMsg);
       setStatus("error");
@@ -249,19 +250,19 @@ export function useEmailVerification() {
 
   const manualCheck = useCallback(async (): Promise<boolean> => {
     if (!pendingEmail) {
-      console.warn("[EmailVerification] No pending email to check");
+      logger.warn("[EmailVerification] No pending email to check");
       return false;
     }
 
     try {
       setErrorMessage("");
-      console.log("[EmailVerification] Starting manual check for:", pendingEmail);
+      logger.debug("[EmailVerification] Starting manual check for:", pendingEmail);
       
       // Add overall timeout for the entire check operation
       const checkPromise = checkVerification(pendingEmail);
       const overallTimeout = new Promise<boolean>((resolve) => 
         setTimeout(() => {
-          console.error("[EmailVerification] Manual check timed out after 20 seconds");
+          logger.error("[EmailVerification] Manual check timed out after 20 seconds");
           resolve(false);
         }, 20000)
       );
@@ -269,7 +270,7 @@ export function useEmailVerification() {
       const isVerified = await Promise.race([checkPromise, overallTimeout]);
       
       if (isVerified) {
-        console.log("[EmailVerification] ✅ Verification successful!");
+        logger.info("[EmailVerification] ✅ Verification successful!");
         
         // Verification successful
         if (intervalRef.current !== null) {
@@ -298,21 +299,21 @@ export function useEmailVerification() {
                 action: "invalidate_profile_cache",
               }),
             }).catch((err) => {
-              console.warn("[EmailVerification] Failed to invalidate profile cache:", err);
+              logger.warn("[EmailVerification] Failed to invalidate profile cache:", err);
             });
           }
         } catch (cacheError) {
-          console.warn("[EmailVerification] Failed to invalidate profile cache:", cacheError);
+          logger.warn("[EmailVerification] Failed to invalidate profile cache:", cacheError);
         }
         
         return true;
       } else {
-        console.log("[EmailVerification] ❌ Email not yet verified. Current email doesn't match.");
+        logger.debug("[EmailVerification] ❌ Email not yet verified. Current email doesn't match.");
         // Don't set error status here - just return false so user can try again
         return false;
       }
     } catch (error: any) {
-      console.error("[EmailVerification] Error in manual check:", error);
+      logger.error("[EmailVerification] Error in manual check:", error);
       const errorMsg = error?.message || "Failed to check verification status. Please try again.";
       setErrorMessage(errorMsg);
       setStatus("error");

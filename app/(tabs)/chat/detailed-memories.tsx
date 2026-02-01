@@ -18,6 +18,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import EditMemoryModal from "@/src/components/modals/EditMemoryModal";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
+import logger from "@/src/utils/core/logger";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -121,7 +122,7 @@ export default function DetailedMemoriesScreen({
 
       setProfileMemories(memories);
     } catch (error) {
-      console.error("Error fetching profile memories:", error);
+      logger.error("Error fetching profile memories:", error);
       Alert.alert("Error", "Failed to load memories. Please try again.");
       setProfileMemories([]);
     } finally {
@@ -199,7 +200,7 @@ export default function DetailedMemoriesScreen({
       setEditProfileMemoryText("");
       Alert.alert("Success", "Memory updated successfully");
     } catch (error: any) {
-      console.error("Error updating profile memory:", error);
+      logger.error("Error updating profile memory:", error);
       Alert.alert("Error", error?.message || "Failed to update memory");
     } finally {
       setUpdatingMemoryId(null);
@@ -268,7 +269,7 @@ export default function DetailedMemoriesScreen({
       // (e.g., if deleting a memory linked to a document also deletes other memories linked to that document)
       await fetchProfileMemories();
     } catch (error: any) {
-      console.error("Error deleting profile memory:", error);
+      logger.error("Error deleting profile memory:", error);
       // Restore original state on error using the snapshot captured before deletion
       setProfileMemories(originalMemories);
       Alert.alert("Error", error.message || "Failed to delete memory");

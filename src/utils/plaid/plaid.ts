@@ -1599,7 +1599,7 @@ export const getFilteredTransactions = async (
   try {
     const {
       accountIds = [],
-      timePeriod = "7days",
+      timePeriod = "all", // Default to "all" to match UI default
       categoryIds = [],
       limit = 50,
       offset = 0,
@@ -1626,8 +1626,16 @@ export const getFilteredTransactions = async (
 
 
     // Get date range
-    const { startDate, endDate } = getDateRangeFromTimePeriod(timePeriod);
+    // Ensure timePeriod is valid, fallback to "all" if undefined/null/empty
+    const validTimePeriod = timePeriod || "all";
+    const { startDate, endDate } = getDateRangeFromTimePeriod(validTimePeriod);
     
+    logger.info(`📅 Time filter applied:`, {
+      timePeriod: validTimePeriod,
+      startDate,
+      endDate,
+      daysDiff: Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24))
+    });
 
     // Build query
     // NOTE: INTERNAL_TRANSFER transactions are NOT filtered here - they should be visible in transactions section
@@ -1659,6 +1667,8 @@ export const getFilteredTransactions = async (
         )
       `)
       .eq("user_id", userId)
+      // Filter by date field (posted date) - this is the primary date field in the database
+      // Note: authorized_date is optional and may differ, but we filter by posted date for consistency
       .gte("date", startDate)
       .lte("date", endDate)
       .order("date", { ascending: false })
@@ -1756,8 +1766,24 @@ export const getFilteredTransactions = async (
       account_mask: tx.accounts?.mask,
     }));
 
-
-    logger.info(`📊 Found ${transformedTransactions.length} filtered transactions`);
+    // Log date range of returned transactions for debugging
+    if (transformedTransactions.length > 0) {
+      const dates = transformedTransactions.map(tx => tx.date || tx.authorized_date).filter(Boolean).sort();
+      const earliestDate = dates[0];
+      const latestDate = dates[dates.length - 1];
+      logger.info(`📊 Found ${transformedTransactions.length} filtered transactions`, {
+        dateRange: {
+          earliest: earliestDate,
+          latest: latestDate,
+          expectedStart: startDate,
+          expectedEnd: endDate,
+        },
+        sampleDates: dates.slice(0, 5).concat(dates.slice(-5))
+      });
+    } else {
+      logger.info(`📊 Found 0 filtered transactions for date range ${startDate} to ${endDate}`);
+    }
+    
     return transformedTransactions;
   } catch (err) {
     logger.error("Error fetching filtered transactions:", err);
@@ -1778,7 +1804,7 @@ export const getFilteredTransactionsCount = async (
   try {
     const {
       accountIds = [],
-      timePeriod = "7days",
+      timePeriod = "all", // Default to "all" to match UI default
       categoryIds = [],
       searchQuery = ""
     } = options;
@@ -1800,7 +1826,9 @@ export const getFilteredTransactionsCount = async (
     }
 
     // Get date range
-    const { startDate, endDate } = getDateRangeFromTimePeriod(timePeriod);
+    // Ensure timePeriod is valid, fallback to "all" if undefined/null/empty
+    const validTimePeriod = timePeriod || "all";
+    const { startDate, endDate } = getDateRangeFromTimePeriod(validTimePeriod);
 
     // Build count query
     let query = supabase

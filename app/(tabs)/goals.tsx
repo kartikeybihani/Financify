@@ -16,6 +16,7 @@ import Goals from "@/src/components/goals/Goals";
 import { useGoals } from "@/src/hooks/useGoals";
 import { notificationService } from "@/src/utils/core/notificationService";
 import CleanGoalsHeader from "@/src/components/goals/CleanGoalsHeader";
+import logger from "@/src/utils/core/logger";
 
 const styles = StyleSheet.create({
   safeArea: {
@@ -141,7 +142,7 @@ export default function GoalsScreen() {
       // Send test notification
       await notificationService.sendTestNotification();
     } catch (error) {
-      console.error("Error testing notification:", error);
+      logger.error("Error testing notification:", error);
     } finally {
       setIsTestingNotification(false);
     }
@@ -160,7 +161,7 @@ export default function GoalsScreen() {
       // Send motivational notification
       await notificationService.sendMotivationalNotification();
     } catch (error) {
-      console.error("Error sending motivational notification:", error);
+      logger.error("Error sending motivational notification:", error);
     } finally {
       setIsTestingNotification(false);
     }

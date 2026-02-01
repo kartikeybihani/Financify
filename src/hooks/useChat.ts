@@ -153,7 +153,7 @@ export const useChat = (userName?: string | null) => {
       const storedUserId = AppStorage.getItemSync("currentChatUserId");
       if (storedUserId && storedUserId !== currentUserId) {
         // Different user detected - clear old chat data
-        console.log("🔄 [SECURITY] User changed, clearing previous user's chat data");
+        logger.debug("🔄 [SECURITY] User changed, clearing previous user's chat data");
         AppStorage.removeItemSync("chatMessages");
         AppStorage.removeItemSync("chatId");
         AppStorage.removeItemSync("currentChatUserId");
@@ -214,7 +214,7 @@ export const useChat = (userName?: string | null) => {
       const storedUserId = AppStorage.getItemSync("currentChatUserId");
       if (storedUserId && storedUserId !== currentUserId) {
         // User changed - don't save messages for wrong user
-        console.log("⚠️ [SECURITY] User mismatch detected, not saving chat messages");
+        logger.warn("⚠️ [SECURITY] User mismatch detected, not saving chat messages");
         return;
       }
 
@@ -246,7 +246,7 @@ export const useChat = (userName?: string | null) => {
 
   const clearChat = async () => {
     try {
-      console.log("🧹 [CLEAR_CHAT] Clearing all chat data and context");
+      logger.debug("🧹 [CLEAR_CHAT] Clearing all chat data and context");
       
       // Clear UI immediately for smooth UX
       AppStorage.removeItemSync("chatMessages");
@@ -257,7 +257,7 @@ export const useChat = (userName?: string | null) => {
       
       // 🔥 IMPORTANT: Clear goal flow state
       setGoalFlow(null);
-      console.log("🔥 [CLEAR_CHAT] Goal flow cleared");
+      logger.debug("🔥 [CLEAR_CHAT] Goal flow cleared");
       
       // Generate new chat_id for fresh conversation (backend uses this to clear context)
       const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -270,7 +270,7 @@ export const useChat = (userName?: string | null) => {
         AppStorage.setItemSync("currentChatUserId", user.id);
       }
       
-      console.log("🆕 [CLEAR_CHAT] New chat ID generated:", newChatId);
+      logger.debug("🆕 [CLEAR_CHAT] New chat ID generated:", newChatId);
       
       // Save current session to database in the background (don't await)
       // Note: saveCurrentSession is defined later, but this is fine since it's called asynchronously
@@ -278,7 +278,7 @@ export const useChat = (userName?: string | null) => {
         logger.error("Background database save failed:", error);
       });
       
-      console.log("✅ [CLEAR_CHAT] Chat cleared successfully");
+      logger.debug("✅ [CLEAR_CHAT] Chat cleared successfully");
     } catch (error) {
       logger.error("Error clearing chat:", error);
     }
@@ -386,7 +386,7 @@ export const useChat = (userName?: string | null) => {
   // Start new session
   const startNewSession = async () => {
     try {
-      console.log("🆕 [NEW_SESSION] Starting new session");
+      logger.debug("🆕 [NEW_SESSION] Starting new session");
       
       await saveCurrentSession();
       AppStorage.removeItemSync('chatMessages');
@@ -397,7 +397,7 @@ export const useChat = (userName?: string | null) => {
       
       // 🔥 IMPORTANT: Clear goal flow state for fresh session
       setGoalFlow(null);
-      console.log("🔥 [NEW_SESSION] Goal flow cleared");
+      logger.debug("🔥 [NEW_SESSION] Goal flow cleared");
       
       // Generate new chat_id for fresh conversation
       const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
@@ -410,7 +410,7 @@ export const useChat = (userName?: string | null) => {
         AppStorage.setItemSync("currentChatUserId", user.id);
       }
       
-      console.log("🆕 [NEW_SESSION] New chat ID generated:", newChatId);
+      logger.debug("🆕 [NEW_SESSION] New chat ID generated:", newChatId);
       
       logger.info("Started new chat session");
     } catch (error) {
@@ -905,7 +905,7 @@ export const useChat = (userName?: string | null) => {
         if (timeoutId) clearTimeout(timeoutId);
         timeoutId = setTimeout(() => {
           if (settled) return;
-          console.warn("⚠️ [STREAMING] Timeout reached, aborting XHR");
+          logger.warn("⚠️ [STREAMING] Timeout reached, aborting XHR");
           try {
             xhr.abort();
           } catch {
@@ -1272,7 +1272,7 @@ export const useChat = (userName?: string | null) => {
                 }
               }
             } catch (parseError) {
-              console.error("❌ [STREAMING] JSON parse error:", parseError);
+              logger.error("❌ [STREAMING] JSON parse error:", parseError);
             }
           }
         }
@@ -1331,7 +1331,7 @@ export const useChat = (userName?: string | null) => {
       };
 
       xhr.onerror = () => {
-        console.error("❌ [STREAMING] XHR error");
+        logger.error("❌ [STREAMING] XHR error");
         if (timeoutId) clearTimeout(timeoutId);
         finalizeTyping();
         safeReject(new Error('Streaming request failed'));
@@ -1966,7 +1966,7 @@ export const useChat = (userName?: string | null) => {
       if (startTime) {
         const totalResponseDuration = Date.now() - startTime;
         const ptTime = new Date().toLocaleString("en-US", { timeZone: "America/Los_Angeles" });
-        console.log(`📥 Total response time: ${totalResponseDuration}ms (${(totalResponseDuration / 1000).toFixed(2)}s) at ${ptTime} PT`);
+        logger.debug(`📥 Total response time: ${totalResponseDuration}ms (${(totalResponseDuration / 1000).toFixed(2)}s) at ${ptTime} PT`);
       }
       
       // Note: Finny's response will be logged in pushChat() when it's added to chat

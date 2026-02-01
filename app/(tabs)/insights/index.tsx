@@ -222,7 +222,7 @@ export default function InsightsScreen() {
           }
         }
       } catch (error) {
-        console.error("Error fetching user ID:", error);
+        logger.error("Error fetching user ID:", error);
       }
     };
 
@@ -565,7 +565,7 @@ export default function InsightsScreen() {
     const singleUpdateSubscription = DeviceEventEmitter.addListener(
       "transactionRecurringUpdated",
       async (data) => {
-        console.log("🔄 Transaction recurring status updated:", data);
+        logger.debug("🔄 Transaction recurring status updated:", data);
         await handleRecurringUpdate();
       }
     );
@@ -573,7 +573,7 @@ export default function InsightsScreen() {
     const bulkUpdateSubscription = DeviceEventEmitter.addListener(
       "recurringBulkUpdate",
       async (data) => {
-        console.log(
+        logger.debug(
           `🔄 Bulk recurring update: ${data.count} transactions updated`
         );
         await handleRecurringUpdate();
@@ -1197,7 +1197,7 @@ export default function InsightsScreen() {
         });
       }
     } catch (error) {
-      console.error("Error loading sync status:", error);
+      logger.error("Error loading sync status:", error);
     }
   };
 
@@ -1350,9 +1350,14 @@ export default function InsightsScreen() {
       //   categoryIdsLength: filters.categoryIds?.length || 0,
       // });
 
+      // Ensure timePeriod is always provided (fallback to "all" if undefined)
+      const timePeriodToUse = filters.timePeriod || "all";
+      
+      logger.info(`🔍 Loading filtered transactions with timePeriod: "${timePeriodToUse}" (original: "${filters.timePeriod}")`);
+      
       const newTransactions = await getFilteredTransactions(userId, {
         accountIds: filters.accountIds,
-        timePeriod: filters.timePeriod,
+        timePeriod: timePeriodToUse,
         categoryIds: filters.categoryIds,
         searchQuery: search,
         limit,
@@ -1366,9 +1371,11 @@ export default function InsightsScreen() {
       // Get total count for pagination (only on initial load or when search changes)
       let totalCount = totalFilteredCount;
       if (reset) {
+        // Ensure timePeriod is always provided (fallback to "all" if undefined)
+        const timePeriodToUse = filters.timePeriod || "all";
         totalCount = await getFilteredTransactionsCount(userId, {
           accountIds: filters.accountIds,
-          timePeriod: filters.timePeriod,
+          timePeriod: timePeriodToUse,
           categoryIds: filters.categoryIds,
           searchQuery: search,
         });
@@ -1449,6 +1456,23 @@ export default function InsightsScreen() {
       }
 
       setHasMoreTransactions(updatedTransactions.length < totalCount);
+
+      // Log actual date range of displayed transactions for debugging
+      if (updatedTransactions.length > 0 && reset) {
+        const displayedDates = updatedTransactions
+          .map(tx => tx.date || tx.authorized_date)
+          .filter(Boolean)
+          .sort();
+        const earliestDisplayed = displayedDates[0];
+        const latestDisplayed = displayedDates[displayedDates.length - 1];
+        logger.info(`📅 Displayed transaction date range:`, {
+          earliest: earliestDisplayed,
+          latest: latestDisplayed,
+          totalDisplayed: updatedTransactions.length,
+          totalAvailable: totalCount,
+          timePeriod: filters.timePeriod,
+        });
+      }
 
       logger.info(
         `📊 Loaded ${newTransactions.length} filtered transactions (${
@@ -2377,6 +2401,11 @@ export default function InsightsScreen() {
         onFiltersChange={(newFilters) => {
           // Clear cache when filters change to ensure fresh data
           clearCache();
+          logger.info(`🔄 Filter options changed:`, {
+            timePeriod: newFilters.timePeriod,
+            accountIds: newFilters.accountIds?.length || 0,
+            categoryIds: newFilters.categoryIds?.length || 0,
+          });
           setFilterOptions(newFilters);
         }}
       />

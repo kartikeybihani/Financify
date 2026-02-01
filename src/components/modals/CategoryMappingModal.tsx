@@ -32,8 +32,17 @@ export default function CategoryMappingModal({
   const checkmarkScale = useRef(new Animated.Value(0)).current;
   const [isComplete, setIsComplete] = useState(false);
   const [isAnimatingOut, setIsAnimatingOut] = useState(false);
+  const [subtitleIndex, setSubtitleIndex] = useState(0);
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+
+  const ROTATING_SUBTITLES = [
+    "We're organizing your transactions into your new budget categories...",
+    "Categorizing spending so you can track it better...",
+    "Almost there — matching merchants to your categories...",
+    "This usually takes just a few seconds...",
+    "Your budget will be ready in a moment...",
+  ];
 
   // Animate modal slide up/down - check isAnimatingOut FIRST to avoid resetting when closing
   useEffect(() => {
@@ -55,6 +64,7 @@ export default function CategoryMappingModal({
       spinAnim.setValue(0);
       checkmarkScale.setValue(0);
       setIsComplete(false);
+      setSubtitleIndex(0);
 
       // Slide up animation
       Animated.spring(slideAnim, {
@@ -84,6 +94,15 @@ export default function CategoryMappingModal({
       return () => spinLoop.stop();
     }
   }, [visible, isAnimatingOut, slideAnim, spinAnim]);
+
+  // Rotate subtitle while in progress
+  useEffect(() => {
+    if (!visible || isComplete) return;
+    const interval = setInterval(() => {
+      setSubtitleIndex((i) => (i + 1) % ROTATING_SUBTITLES.length);
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [visible, isComplete]);
 
   // Poll for mapping status - use ref for onComplete to avoid effect restarts from inline callbacks
   useEffect(() => {
@@ -234,7 +253,7 @@ export default function CategoryMappingModal({
               <Text style={styles.title}>Mapping your transactions</Text>
               <Text style={styles.subtitle}>
                 {!isComplete
-                  ? "We're organizing your transactions into your new budget categories..."
+                  ? ROTATING_SUBTITLES[subtitleIndex]
                   : "All done! Your transactions have been mapped."}
               </Text>
             </View>

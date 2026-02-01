@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { notificationService } from '@/src/utils/core/notificationService';
+import logger from '@/src/utils/core/logger';
 
 /**
  * Hook to initialize notification service and load user preferences
@@ -23,9 +24,9 @@ export const useNotificationSetup = () => {
         // Sync preferences to database
         await notificationService.syncPreferencesToDatabase();
         
-        console.log('Notifications initialized with preferences:', preferences);
+        logger.debug('Notifications initialized with preferences:', preferences);
       } catch (error) {
-        console.error('Error initializing notifications:', error);
+        logger.error('Error initializing notifications:', error);
       }
     };
 

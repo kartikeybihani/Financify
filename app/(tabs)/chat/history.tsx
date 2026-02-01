@@ -21,6 +21,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import { ChatSession } from "@/src/types/chatHistory";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 import ChatScreenHeader from "@/src/components/shared/ChatScreenHeader";
+import logger from "@/src/utils/core/logger";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 
@@ -241,20 +242,20 @@ export default function ChatHistoryScreen({
   const fetchSessions = useCallback(async () => {
     // Don't fetch if auth is still loading
     if (isAuthLoading) {
-      console.log("[History] Auth still loading, waiting...");
+      logger.debug("[History] Auth still loading, waiting...");
       return;
     }
 
     try {
       if (!session?.user?.id) {
-        console.log("[History] No session or user ID available");
+        logger.debug("[History] No session or user ID available");
         setError("Not authenticated");
         setLoading(false);
         setRefreshing(false);
         return;
       }
 
-      console.log("[History] Fetching sessions for user:", session.user.id);
+      logger.debug("[History] Fetching sessions for user:", session.user.id);
 
       // Query directly from table - don't load messages JSONB for list view (too slow)
       // Messages will be loaded when user opens a specific session
@@ -270,7 +271,7 @@ export default function ChatHistoryScreen({
         throw fetchError;
       }
 
-      console.log("[History] Fetched sessions:", data?.length || 0);
+      logger.debug("[History] Fetched sessions:", data?.length || 0);
       // Map to ChatSession type (message_count not needed for list view)
       const mappedSessions: ChatSession[] = (data || []).map(
         (session: any) => ({
@@ -314,7 +315,7 @@ export default function ChatHistoryScreen({
       await loadSession(sessionId);
       onBack?.();
     } catch (err) {
-      console.error("Error loading session:", err);
+      logger.error("Error loading session:", err);
       Alert.alert("Error", "Failed to load chat session");
     }
   };

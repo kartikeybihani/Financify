@@ -52,6 +52,11 @@ interface Holding {
   day_change_percent?: number | null;
   total_percent_change?: number | null;
   security_type?: string;
+  account_id?: string;
+  snaptrade_user_id?: string | null;
+  plaid_account_id?: string | null;
+  item_id?: string | null;
+  provider?: string | null;
 }
 
 interface OptionPosition {
@@ -62,6 +67,11 @@ interface OptionPosition {
   units: number;
   price: number;
   market_value: number;
+  account_id?: string;
+  snaptrade_user_id?: string | null;
+  plaid_account_id?: string | null;
+  item_id?: string | null;
+  provider?: string | null;
 }
 
 interface BalanceRow {
@@ -130,6 +140,9 @@ export default function InvestmentsScreen({
   const [selectedSecurityType, setSelectedSecurityType] = useState<
     string | null
   >(null);
+  const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
+    null
+  );
   const [holdingsSortBy, setHoldingsSortBy] =
     useState<string>("total_gain_loss");
   const [showSortModal, setShowSortModal] = useState(false);
@@ -1278,25 +1291,71 @@ export default function InvestmentsScreen({
     setShowSortModal(false);
   };
 
-  // Calculate total portfolio value by summing ALL balances (both Plaid and SnapTrade)
-  // This ensures we include all investment accounts regardless of provider
-  const totalPortfolioValue = balances.reduce(
+  // Helper function to check if a holding/balance belongs to the selected account
+  const belongsToAccount = (
+    item: Holding | OptionPosition | BalanceRow,
+    connection: ConnectionRow
+  ): boolean => {
+    if (connection.provider === "snaptrade") {
+      return (
+        item.account_id === connection.account_id &&
+        (item as any).snaptrade_user_id === connection.snaptrade_user_id
+      );
+    } else if (connection.provider === "plaid") {
+      return (
+        (item as any).plaid_account_id === connection.account_id &&
+        (item as any).item_id === connection.item_id
+      );
+    }
+    return false;
+  };
+
+  // Filter holdings, balances, and options by selected account
+  const filteredHoldings = selectedAccountId
+    ? holdings.filter((h) => {
+        const connection = connections.find(
+          (c) => c.account_id === selectedAccountId
+        );
+        return connection ? belongsToAccount(h, connection) : false;
+      })
+    : holdings;
+
+  const filteredBalances = selectedAccountId
+    ? balances.filter((b) => {
+        const connection = connections.find(
+          (c) => c.account_id === selectedAccountId
+        );
+        return connection ? belongsToAccount(b, connection) : false;
+      })
+    : balances;
+
+  const filteredOptions = selectedAccountId
+    ? options.filter((o) => {
+        const connection = connections.find(
+          (c) => c.account_id === selectedAccountId
+        );
+        return connection ? belongsToAccount(o, connection) : false;
+      })
+    : options;
+
+  // Calculate total portfolio value by summing filtered balances
+  const totalPortfolioValue = filteredBalances.reduce(
     (sum, b) => sum + (b.total_value || 0),
     0
   );
 
   // Available cash = cash + buying_power (includes proceeds from stock sales)
-  const totalCash = balances.reduce(
+  const totalCash = filteredBalances.reduce(
     (sum, b) => sum + (b.cash || 0) + (b.buying_power || 0),
     0
   );
 
   // Calculate total unrealized P&L using new investment_balances columns first, then fallback to holdings
   const calculateTotalUnrealizedPL = () => {
-    // First priority: Sum pre-calculated values from ALL investment_balances (both Plaid and SnapTrade)
-    if (balances.length > 0) {
-      // Sum total_change from all balances
-      const totalChangeSum = balances.reduce(
+    // First priority: Sum pre-calculated values from filtered investment_balances
+    if (filteredBalances.length > 0) {
+      // Sum total_change from filtered balances
+      const totalChangeSum = filteredBalances.reduce(
         (sum, b) => sum + (b.total_change || 0),
         0
       );
@@ -1304,7 +1363,7 @@ export default function InvestmentsScreen({
       // Check if we have valid total_change data
       if (
         totalChangeSum !== 0 ||
-        balances.some(
+        filteredBalances.some(
           (b) => b.total_change !== null && b.total_change !== undefined
         )
       ) {
@@ -1321,8 +1380,8 @@ export default function InvestmentsScreen({
       }
     }
 
-    // Fallback: Calculate from holdings (legacy method)
-    const totalUnrealizedPL = holdings.reduce(
+    // Fallback: Calculate from filtered holdings (legacy method)
+    const totalUnrealizedPL = filteredHoldings.reduce(
       (sum, h) => sum + (h.unrealized_pl || 0),
       0
     );
@@ -1343,10 +1402,10 @@ export default function InvestmentsScreen({
   const totalUnrealizedPL = totalUnrealizedPLData.amount;
   const totalUnrealizedPLPercent = totalUnrealizedPLData.percentage;
 
-  // Get unique security types from holdings
+  // Get unique security types from filtered holdings
   const getUniqueSecurityTypes = () => {
     const securityTypes = new Set<string>();
-    holdings.forEach((holding) => {
+    filteredHoldings.forEach((holding) => {
       if (
         holding.security_type &&
         holding.security_type !== "Open Ended Fund"
@@ -1361,16 +1420,16 @@ export default function InvestmentsScreen({
 
   // Calculate today's portfolio performance using the new investment_balances columns
   const calculateTodayPerformance = () => {
-    // First priority: Use pre-calculated values from investment_balances table
-    if (balances.length > 0) {
-      // Sum day_change from ALL balances (both Plaid and SnapTrade)
-      const dayChangeSum = balances.reduce(
+    // First priority: Use pre-calculated values from filtered investment_balances table
+    if (filteredBalances.length > 0) {
+      // Sum day_change from filtered balances
+      const dayChangeSum = filteredBalances.reduce(
         (sum, b) => sum + (b.day_change || 0),
         0
       );
 
       // Check if we have valid day_change data from any balance
-      const hasValidDayChange = balances.some(
+      const hasValidDayChange = filteredBalances.some(
         (b) =>
           b.day_change !== null &&
           b.day_change !== undefined &&
@@ -1391,11 +1450,11 @@ export default function InvestmentsScreen({
       }
     }
 
-    // Fallback: Calculate from holdings (legacy method)
+    // Fallback: Calculate from filtered holdings (legacy method)
     let totalDailyPerformance = 0;
     let hasValidDayData = false;
 
-    for (const holding of holdings) {
+    for (const holding of filteredHoldings) {
       // STEP 1: First priority - use day_change field from Supabase database if available
       if (
         holding.day_change !== null &&
@@ -1547,6 +1606,29 @@ export default function InvestmentsScreen({
       }
     };
 
+    // Format last updated time in compact format (e.g., "2h ago", "3d ago")
+    const formatLastUpdatedCompact = (
+      timestamp: string | null | undefined
+    ): string => {
+      if (!timestamp) return "Never";
+      try {
+        const date = new Date(timestamp);
+        const now = new Date();
+        const diffMs = now.getTime() - date.getTime();
+        const diffMins = Math.floor(diffMs / (1000 * 60));
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+        if (diffMins < 1) return "Just now";
+        if (diffMins < 60) return `${diffMins}m ago`;
+        if (diffHours < 24) return `${diffHours}h ago`;
+        if (diffDays < 7) return `${diffDays}d ago`;
+        return formatLastUpdated(timestamp);
+      } catch (error) {
+        return "Never";
+      }
+    };
+
     // Create account info array: match each connection to its balance's last_updated
     const accountInfoList = connections.map((conn) => {
       // Find matching balance for this connection
@@ -1562,9 +1644,10 @@ export default function InvestmentsScreen({
 
       const lastUpdatedTimestamp =
         matchingBalance?.last_updated || conn.last_synced_at;
-      const lastUpdatedText = formatLastUpdated(lastUpdatedTimestamp);
+      const lastUpdatedText = formatLastUpdatedCompact(lastUpdatedTimestamp);
 
       return {
+        accountId: conn.account_id,
         brokerageName: conn.brokerage_name || "Investment Account",
         accountName: conn.account_name || conn.brokerage_name || "Account",
         lastUpdated: lastUpdatedText,
@@ -1683,52 +1766,57 @@ export default function InvestmentsScreen({
             )}
           </View>
           <View style={styles.accountInfo}>
-            <View style={styles.brokerageInfo}>
-              {accountInfoList.length > 0 ? (
-                <View style={{ flex: 1 }}>
-                  {accountInfoList.map((account, idx) => (
-                    <View
-                      key={`${account.brokerageName}-${idx}`}
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        marginBottom: idx < accountInfoList.length - 1 ? 8 : 0,
+            {/* Compact Account Chips */}
+            {accountInfoList.length > 0 ? (
+              <View style={styles.accountChipsContainer}>
+                {accountInfoList.map((account) => {
+                  const isSelected = selectedAccountId === account.accountId;
+                  return (
+                    <TouchableOpacity
+                      key={account.accountId}
+                      style={[
+                        styles.accountChip,
+                        isSelected && styles.accountChipSelected,
+                      ]}
+                      onPress={() => {
+                        // Toggle: if already selected, deselect (show all)
+                        setSelectedAccountId(
+                          isSelected ? null : account.accountId
+                        );
                       }}
+                      activeOpacity={0.7}
                     >
                       <Image
                         source={{
                           uri: getBrokerageLogoUrl(account.brokerageName),
                         }}
-                        style={styles.brokerageLogo}
+                        style={styles.accountChipLogo}
                         defaultSource={require("../../assets/images/icon.png")}
                       />
-                      <View style={styles.brokerageDetails}>
-                        <Text style={styles.accountName}>
+                      <View style={styles.accountChipContent}>
+                        <Text
+                          style={[
+                            styles.accountChipName,
+                            isSelected && styles.accountChipNameSelected,
+                          ]}
+                          numberOfLines={1}
+                        >
                           {account.accountName}
                         </Text>
-                        <Text style={styles.lastSyncText}>
-                          Last updated: {account.lastUpdated}
+                        <Text
+                          style={[
+                            styles.accountChipTime,
+                            isSelected && styles.accountChipTimeSelected,
+                          ]}
+                        >
+                          Last synced: {account.lastUpdated}
                         </Text>
                       </View>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <View style={styles.brokerageInfo}>
-                  <Image
-                    source={{
-                      uri: getBrokerageLogoUrl("Investment Account"),
-                    }}
-                    style={styles.brokerageLogo}
-                    defaultSource={require("../../assets/images/icon.png")}
-                  />
-                  <View style={styles.brokerageDetails}>
-                    <Text style={styles.accountName}>Investment Account</Text>
-                    <Text style={styles.lastSyncText}>Last updated: Never</Text>
-                  </View>
-                </View>
-              )}
-            </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            ) : null}
             {/* Button Group with Spacing */}
             <View style={styles.buttonGroup}>
               {/* Sync Button */}
@@ -1786,7 +1874,7 @@ export default function InvestmentsScreen({
     if (isLoading) return null;
 
     // Filter out cash holdings - we already show available cash separately
-    let filteredHoldings = holdings.filter((holding) => {
+    let displayHoldings = filteredHoldings.filter((holding) => {
       // Filter out holdings that are cash or cash equivalents
       const symbol = holding.symbol?.toLowerCase() || "";
       const description = holding.description?.toLowerCase() || "";
@@ -1809,18 +1897,18 @@ export default function InvestmentsScreen({
 
     // Apply security type filter
     if (selectedSecurityType) {
-      filteredHoldings = filteredHoldings.filter(
+      displayHoldings = displayHoldings.filter(
         (holding) => holding.security_type === selectedSecurityType
       );
     }
 
     // Also filter out Open Ended Fund from holdings display
-    filteredHoldings = filteredHoldings.filter(
+    displayHoldings = displayHoldings.filter(
       (holding) => holding.security_type !== "Open Ended Fund"
     );
 
     // Keep the same sequence - don't sort, just use filtered holdings
-    const nonCashHoldings = filteredHoldings;
+    const nonCashHoldings = displayHoldings;
 
     if (nonCashHoldings.length === 0) return null;
 
@@ -1981,13 +2069,15 @@ export default function InvestmentsScreen({
   };
 
   const renderOptions = () => {
-    if (isLoading || options.length === 0) return null;
+    if (isLoading || filteredOptions.length === 0) return null;
 
     return (
       <View style={styles.investmentGroup}>
-        <Text style={styles.sectionHeading}>Options ({options.length})</Text>
+        <Text style={styles.sectionHeading}>
+          Options ({filteredOptions.length})
+        </Text>
         <View style={styles.glassContainer}>
-          {options.map((o, idx) => (
+          {filteredOptions.map((o, idx) => (
             <View key={idx}>
               <View style={styles.holdingRow}>
                 <View style={styles.holdingLeft}>
@@ -2025,7 +2115,9 @@ export default function InvestmentsScreen({
                   </View>
                 </View>
               </View>
-              {idx < options.length - 1 && <View style={styles.divider} />}
+              {idx < filteredOptions.length - 1 && (
+                <View style={styles.divider} />
+              )}
             </View>
           ))}
         </View>

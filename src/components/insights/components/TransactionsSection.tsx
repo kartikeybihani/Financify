@@ -509,6 +509,7 @@ function TransactionsSection(props: Props) {
         <FlatList
           data={displayedTransactions}
           scrollEnabled={false}
+          removeClippedSubviews={false}
           keyExtractor={(item, index) => {
             // Ensure unique keys: use plaid_transaction_id with index fallback
             // This prevents duplicate key errors even if duplicates somehow slip through
@@ -614,30 +615,55 @@ function TransactionsSection(props: Props) {
               </TouchableOpacity>
             );
           }}
-          ListFooterComponent={() => (
-            <View style={loadMoreStyles.container}>
-              {loadingMore && (
-                <View
-                  style={{
-                    alignItems: "center",
-                    justifyContent: "center",
-                    paddingVertical: 20,
-                  }}
-                >
-                  <ActivityIndicator
-                    size="small"
-                    color="#4A90E2"
-                    style={loadMoreStyles.indicator}
-                  />
+          ListFooterComponent={() => {
+            if (loadingMore) {
+              return (
+                <View style={loadMoreStyles.container}>
+                  <View
+                    style={{
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingVertical: 20,
+                    }}
+                  >
+                    <ActivityIndicator
+                      size="small"
+                      color="#4A90E2"
+                      style={loadMoreStyles.indicator}
+                    />
+                  </View>
                 </View>
-              )}
-              {!hasMoreTransactions && filteredTransactions.length > 0 && (
-                <Text style={loadMoreStyles.endText}>
-                  No more transactions to load
-                </Text>
-              )}
-            </View>
-          )}
+              );
+            }
+            
+            if (hasMoreTransactions) {
+              return (
+                <View style={loadMoreStyles.container}>
+                  <TouchableOpacity
+                    onPress={onPressLoadMore}
+                    activeOpacity={0.7}
+                    style={loadMoreStyles.button}
+                  >
+                    <Text style={loadMoreStyles.buttonText}>
+                      Load More
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              );
+            }
+            
+            if (filteredTransactions.length > 0) {
+              return (
+                <View style={loadMoreStyles.container}>
+                  <Text style={loadMoreStyles.endText}>
+                    No more transactions to load
+                  </Text>
+                </View>
+              );
+            }
+            
+            return null;
+          }}
         />
       )}
 

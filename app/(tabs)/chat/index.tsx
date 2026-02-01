@@ -38,6 +38,7 @@ import FeedbackNotification from "@/src/components/chat/FeedbackNotification";
 import { submitLoveIt } from "@/src/utils/analytics/reports";
 import AppStorage from "@/src/utils/storage/storage";
 import CleanChatHeader from "@/src/components/chat/CleanChatHeader";
+import logger from "@/src/utils/core/logger";
 
 interface Suggestion {
   text: string;
@@ -151,7 +152,7 @@ function ChatScreenContent() {
           }
         }
       } catch (error) {
-        console.log("Could not fetch user first name:", error);
+        logger.debug("Could not fetch user first name:", error);
       }
     };
     fetchUserName();
@@ -187,7 +188,7 @@ function ChatScreenContent() {
           }
         } catch (error) {
           // Silently fail if AsyncStorage isn't available or message check fails
-          console.log("Could not check for initial chat message:", error);
+          logger.debug("Could not check for initial chat message:", error);
         }
       })();
 
@@ -347,22 +348,22 @@ function ChatScreenContent() {
     const callId = Math.random().toString(36).substring(2, 8);
     const startTime = Date.now();
     try {
-      console.log(
+      logger.debug(
         `🚀 [CONTEXT_PREBUILD] [${callId}] Starting context pre-building...`,
       );
 
-      console.log(
+      logger.debug(
         `🚀 [CONTEXT_PREBUILD] [${callId}] Getting fresh access token (skipping getUser() to avoid hangs)...`,
       );
       const tokenStartTime = Date.now();
       const accessToken = await getFreshAccessToken();
       const tokenDuration = Date.now() - tokenStartTime;
-      console.log(
+      logger.debug(
         `🚀 [CONTEXT_PREBUILD] [${callId}] getFreshAccessToken() completed in ${tokenDuration}ms - hasToken: ${!!accessToken}`,
       );
 
       if (!accessToken) {
-        console.log(
+        logger.warn(
           `⚠️ [CONTEXT_PREBUILD] [${callId}] No access token, skipping pre-build`,
         );
         return;
@@ -372,7 +373,7 @@ function ChatScreenContent() {
         process.env.EXPO_PUBLIC_APP_BASE_URL ||
         "https://financify-rose.vercel.app";
 
-      console.log(
+      logger.debug(
         `🚀 [CONTEXT_PREBUILD] [${callId}] Making API call to ${BASE_URL}/api/finny...`,
       );
       const apiStartTime = Date.now();
@@ -387,12 +388,12 @@ function ChatScreenContent() {
           const totalDuration = Date.now() - startTime;
           if (response.ok) {
             const result = await response.json();
-            console.log(
+            logger.debug(
               `✅ [CONTEXT_PREBUILD] [${callId}] Context pre-built successfully in ${apiDuration}ms (total: ${totalDuration}ms):`,
               result,
             );
           } else {
-            console.log(
+            logger.warn(
               `⚠️ [CONTEXT_PREBUILD] [${callId}] Pre-build failed in ${apiDuration}ms (total: ${totalDuration}ms), status: ${response.status}, will fallback to on-demand`,
             );
           }
@@ -400,14 +401,14 @@ function ChatScreenContent() {
         .catch((error) => {
           const apiDuration = Date.now() - apiStartTime;
           const totalDuration = Date.now() - startTime;
-          console.log(
+          logger.warn(
             `⚠️ [CONTEXT_PREBUILD] [${callId}] Pre-build error after ${apiDuration}ms (total: ${totalDuration}ms):`,
             error,
           );
         });
     } catch (error) {
       const totalDuration = Date.now() - startTime;
-      console.log(
+      logger.warn(
         `⚠️ [CONTEXT_PREBUILD] [${callId}] Pre-build setup error after ${totalDuration}ms:`,
         error,
       );
@@ -431,7 +432,7 @@ function ChatScreenContent() {
     const mstTime = new Date(messageStartTime).toLocaleString("en-US", {
       timeZone: "America/Los_Angeles",
     });
-    console.log(`📤 Message sent at: ${mstTime} MST`);
+    logger.debug(`📤 Message sent at: ${mstTime} MST`);
 
     pushChat("user", messageText);
     Keyboard.dismiss();
@@ -533,14 +534,14 @@ function ChatScreenContent() {
   // Handle thumb up
   const handleThumbUp = useCallback(
     async (messageId: string) => {
-      console.log("👍 Thumb up for message:", messageId);
+      logger.debug("👍 Thumb up for message:", messageId);
 
       const feedbackId = normalizeFinnyFeedbackId(messageId);
 
       // Find the message to get its content and sender
       const message = chatMessages.find((msg) => msg.id === messageId);
       if (!message) {
-        console.warn("Message not found for thumbs up:", messageId);
+        logger.warn("Message not found for thumbs up:", messageId);
         return;
       }
 
@@ -564,10 +565,10 @@ function ChatScreenContent() {
         if (result.success) {
           setShowFeedbackNotification(true);
         } else {
-          console.error("Failed to submit thumbs up:", result.error);
+          logger.error("Failed to submit thumbs up:", result.error);
         }
       } catch (error) {
-        console.error("Error submitting thumbs up:", error);
+        logger.error("Error submitting thumbs up:", error);
       }
     },
     [
@@ -580,7 +581,7 @@ function ChatScreenContent() {
 
   // Handle thumb down
   const handleThumbDown = useCallback((messageId: string) => {
-    console.log("👎 Thumb down for message:", messageId);
+    logger.debug("👎 Thumb down for message:", messageId);
     setReportedMessageId(messageId);
     setShowReportModal(true);
   }, []);
@@ -606,7 +607,7 @@ function ChatScreenContent() {
   // Memoized action handler to prevent recreation
   const handleMessageAction = useCallback(
     async (action: string, message?: any) => {
-      console.log("🎯 [ACTION] Button clicked:", action);
+      logger.debug("🎯 [ACTION] Button clicked:", action);
 
       // Handle cancel actions immediately without API calls
       if (action === "cancel" || action === "cancel_goal") {
@@ -644,7 +645,7 @@ function ChatScreenContent() {
         try {
           await handleActionButton(action);
         } catch (error) {
-          console.error("❌ [ACTION] Error confirming stock:", error);
+          logger.error("❌ [ACTION] Error confirming stock:", error);
           pushChat("finny", "Something went wrong. Please try again.");
         } finally {
           setIsTyping(false);

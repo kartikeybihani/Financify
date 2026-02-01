@@ -350,7 +350,7 @@ export default function HomeScreen() {
         .single();
 
       if (connectionError || !connection) {
-        console.log(
+        logger.debug(
           "No Snaptrade connection found for account:",
           account.account_id
         );
@@ -370,7 +370,7 @@ export default function HomeScreen() {
         .single();
 
       if (balanceError || !balanceData) {
-        console.log(
+        logger.debug(
           "No investment balance data found for account:",
           account.account_id
         );
@@ -388,7 +388,7 @@ export default function HomeScreen() {
         },
       };
     } catch (error) {
-      console.error("Error fetching investment performance:", error);
+      logger.error("Error fetching investment performance:", error);
       return null;
     }
   };

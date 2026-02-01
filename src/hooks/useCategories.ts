@@ -1,6 +1,7 @@
 // React hook for managing categories from database
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/src/lib/supabase/supabase";
+import logger from "@/src/utils/core/logger";
 
 // Types
 export interface Category {
@@ -30,7 +31,7 @@ export function useCategories(userId?: string) {
       if (!userId) {
         // Only warn if userId was previously set but is now undefined (unexpected state change)
         if (previousUserId.current !== undefined && __DEV__) {
-          console.warn('useCategories - userId became undefined after being set (unexpected state change)');
+          logger.warn('useCategories - userId became undefined after being set (unexpected state change)');
         }
         
         setCategories([]);
@@ -57,7 +58,7 @@ export function useCategories(userId?: string) {
       
       setCategories(data || []);
     } catch (err) {
-      console.error('useCategories - Exception fetching categories:', err);
+      logger.error('useCategories - Exception fetching categories:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch categories');
       setCategories([]);
     } finally {

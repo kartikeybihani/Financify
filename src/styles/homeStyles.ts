@@ -458,7 +458,7 @@ export const styles = StyleSheet.create({
     borderColor: "rgba(74, 144, 226, 0.3)",
   },
   viewAllText: {
-    color: "#4A90E2",
+    color: "#888",
     fontSize: FONTS.sm,
     fontWeight: "500",
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
@@ -470,7 +470,7 @@ export const styles = StyleSheet.create({
     shadowColor: "#4A90E2",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.15,
-    shadowRadius: 12,
+    shadowRadius: 6,
     elevation: 4,
     borderWidth: 1,
     borderColor: "rgba(74, 144, 226, 0.15)",
@@ -478,7 +478,7 @@ export const styles = StyleSheet.create({
   goalContentBox: {
     padding: 12,
     borderRadius: 10,
-    borderWidth: 0,
+    borderWidth: 0.6,
     borderColor: "rgba(255, 255, 255, 0.12)",
     backgroundColor: "rgba(255, 255, 255, 0.03)",
   },

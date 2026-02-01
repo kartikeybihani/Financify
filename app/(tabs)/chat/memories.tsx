@@ -21,6 +21,7 @@ import { MemorySummary, MemoriesScreenProps } from "@/src/types/plaid";
 import DetailedMemoriesScreen from "@/app/(tabs)/chat/detailed-memories";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 import ChatScreenHeader from "@/src/components/shared/ChatScreenHeader";
+import logger from "@/src/utils/core/logger";
 
 const { width: screenWidth } = Dimensions.get("window");
 
@@ -140,7 +141,7 @@ export default function MemoriesScreen({ onBack }: MemoriesScreenProps = {}) {
 
       setMemorySummaries(mappedMemories);
     } catch (error) {
-      console.error("Error fetching memories:", error);
+      logger.error("Error fetching memories:", error);
       setMemorySummaries([]);
     } finally {
       dataFetchedRef.current = true;

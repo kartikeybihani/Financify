@@ -281,7 +281,7 @@ export default function TransactionDetailModal({
               (affected: any) => affected.transactionId === transaction?.id
             ));
 
-        if (isCurrentTransaction && transaction) {
+        if (isCurrentTransaction && transaction?.id) {
           setUpdatedCategory(data.newCategory);
 
           // Apply optimistic update to transaction object immediately
@@ -299,13 +299,14 @@ export default function TransactionDetailModal({
           // Close the CategorySelectorModal first
           setShowCategorySelector(false);
 
-          // Emit event to open review modal after category change
-          DeviceEventEmitter.emit("openTransactionReviewModal");
+          // Close the TransactionDetailModal immediately so it can unmount
+          handleClose();
 
-          // Close the TransactionDetailModal after a short delay to allow UI updates
+          // Emit event to open review modal only after detail modal has had time to close
+          // (avoids overlay blocking the review modal / button)
           setTimeout(() => {
-            handleClose();
-          }, 300);
+            DeviceEventEmitter.emit("openTransactionReviewModal");
+          }, 550);
         }
       }
     );
