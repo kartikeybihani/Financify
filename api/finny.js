@@ -1077,6 +1077,52 @@ function initializeCacheCleanup() {
 
 // Memory extraction helper functions removed - migrating to Supermemory for memory extraction
 // Conversation logging functionality with retry logic
+// Helper function to extract base packs summary for logging
+function extractBasePacksSummary(packs) {
+  if (!packs || !packs.base) {
+    return null;
+  }
+
+  const base = packs.base;
+  const summary = {
+    // Financial summary
+    netWorth: base.netWorth || null,
+    liquidAssets: base.liquidAssets || null,
+    investmentsTotal: base.investmentsTotal || null,
+    totalLiabilities: base.totalLiabilities || null,
+    
+    // Account counts and types
+    accountsCount: Array.isArray(base.accounts) ? base.accounts.length : 0,
+    accountTypes: Array.isArray(base.accounts)
+      ? [...new Set(base.accounts.map((acc) => acc.type).filter(Boolean))]
+      : [],
+    
+    // Transaction data
+    recentTransactionsCount: Array.isArray(base.recentTransactions)
+      ? base.recentTransactions.length
+      : 0,
+    
+    // Spending data
+    spendByCategoryCount: Array.isArray(base.spendByCategory)
+      ? base.spendByCategory.length
+      : 0,
+    spendByCategoryCurrentMonthCount: Array.isArray(base.spendByCategoryCurrentMonth)
+      ? base.spendByCategoryCurrentMonth.length
+      : 0,
+    spendByCategoryLastMonthCount: Array.isArray(base.spendByCategoryLastMonth)
+      ? base.spendByCategoryLastMonth.length
+      : 0,
+    
+    // Budget data
+    hasBudget: !!base.budget,
+    
+    // Other packs available
+    otherPacksAvailable: Object.keys(packs).filter((key) => key !== "base"),
+  };
+
+  return summary;
+}
+
 async function logConversation(conversationData) {
   const maxRetries = 3;
   const retryDelay = 1000; // 1 second
@@ -1101,6 +1147,8 @@ async function logConversation(conversationData) {
         web_research: conversationData.web_research || false,
         metrics: conversationData.metrics || null,
         request_id: conversationData.request_id || null,
+        base_packs: conversationData.base_packs || null,
+        classification_details: conversationData.classification_result || conversationData.classification_details || null,
       };
 
       const insertResult = await withTimeout(
@@ -1120,9 +1168,11 @@ async function logConversation(conversationData) {
           msg.includes("column") &&
           (msg.includes("metrics") ||
             msg.includes("request_id") ||
-            msg.includes("chat_id"));
+            msg.includes("chat_id") ||
+            msg.includes("base_packs") ||
+            msg.includes("classification_details"));
         if (missingCols) {
-          const { metrics, request_id, chat_id, ...fallbackRow } = baseRow;
+          const { metrics, request_id, chat_id, base_packs, classification_details, ...fallbackRow } = baseRow;
           const retry = await withTimeout(
             supabase.from("conversation_logs").insert([fallbackRow]),
             5000,
@@ -1629,9 +1679,14 @@ export default async function handler(req, res) {
         break;
       }
       case "off_topic": {
+        // Pass classification result to off-topic handler for logging
+        const offTopicContext = {
+          ...safeContext,
+          classification_result: classification,
+        };
         response = await handleOffTopic(
           message,
-          safeContext,
+          offTopicContext,
           wantsStreaming, // Pass streaming preference
           wantsStreaming ? res : null, // Pass response object for progress updates if streaming
         );
@@ -2893,6 +2948,8 @@ async function handleAsk(
               ].filter(Boolean),
               cached: false,
               request_id: generateRequestId(),
+              base_packs: extractBasePacksSummary(packs),
+              classification_details: classificationResult || null,
               metrics: {
                 intent: "ask_personalized",
                 latency_ms: { total: Date.now() - startTime },
@@ -2978,6 +3035,8 @@ async function handleAsk(
               sources_used: ["fallback_analysis"],
               cached: false,
               request_id: generateRequestId(),
+              base_packs: extractBasePacksSummary(packs),
+              classification_details: classificationResult || null,
               metrics: {
                 intent: "ask_personalized",
                 latency_ms: { total: Date.now() - startTime },
@@ -3207,26 +3266,6 @@ async function handleAsk(
     const promptSize = Math.round(system.length / 100) / 10;
     logInfo(`📝 [PROMPT] Ready (system: ${promptSize}k chars)`);
 
-    // Log complete system prompt with clear dividers (only for ask_personalized)
-    // Only log in debug mode (dev) - not in production for efficiency
-    if (intent === "ask_personalized") {
-      console.log("\n" + "=".repeat(100));
-      console.log(
-        "📋 [PROMPT_ENGINE] COMPLETE SYSTEM PROMPT SENT TO LLM (ask_personalized)",
-      );
-      console.log("=".repeat(100));
-      console.log(system);
-      console.log("=".repeat(100));
-      console.log("📋 [PROMPT_ENGINE] USER MESSAGE");
-      console.log("=".repeat(100));
-      console.log(userMessage);
-      console.log("=".repeat(100));
-      console.log("📋 [PROMPT_ENGINE] RECENT TURNS");
-      console.log("=".repeat(100));
-      console.log(JSON.stringify(recentTurns, null, 2));
-      console.log("=".repeat(100) + "\n");
-    }
-
     // Memory extraction removed - migrating to Supermemory
     let memoryExtraction = [];
 
@@ -3454,7 +3493,9 @@ async function handleAsk(
       request_id: generateRequestId(),
       web_research: webResults.length > 0,
       classification_result: classificationResult,
+      classification_details: classificationResult, // Alias for clarity
       validation_issues: validationIssues.length > 0 ? validationIssues : null,
+      base_packs: extractBasePacksSummary(packs),
       metrics: {
         intent: "ask_personalized",
         latency_ms: {
@@ -6412,17 +6453,6 @@ async function handleOffTopic(
 
     const userMessage = userContextParts.join("\n\n");
 
-    // Log complete prompt with clear dividers (similar to handleAsk)
-    console.log("\n" + "=".repeat(100));
-    console.log("📋 [OFF_TOPIC] COMPLETE SYSTEM PROMPT SENT TO LLM");
-    console.log("=".repeat(100));
-    console.log(systemPrompt);
-    console.log("=".repeat(100));
-    console.log("📋 [OFF_TOPIC] USER MESSAGE");
-    console.log("=".repeat(100));
-    console.log(userMessage);
-    console.log("=".repeat(100) + "\n");
-
     async function callMainLLM(model, options = {}) {
       const resp = await fetch(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -6532,6 +6562,11 @@ async function handleOffTopic(
         sources_used: [],
         cached: false,
         category: category,
+        classification_details: context?.classification_result || {
+          intent: "off_topic",
+          confidence: 1.0,
+          emotional_state: isVenting ? "venting" : "neutral",
+        },
       }),
     );
 

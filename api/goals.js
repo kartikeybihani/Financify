@@ -99,7 +99,10 @@ function logConversation(logData) {
           await supabase.from("conversation_logs").insert([fallback]);
           return;
         } catch (e2) {
-          console.error("❌ [LOGGING] Failed to log conversation (fallback):", e2);
+          console.error(
+            "❌ [LOGGING] Failed to log conversation (fallback):",
+            e2
+          );
           return;
         }
       }
@@ -671,9 +674,7 @@ RULES:
         error: errorDetails,
       });
       // Return generic error message to client (sanitized)
-      throw new Error(
-        `Failed to extract goal information. Please try again.`
-      );
+      throw new Error(`Failed to extract goal information. Please try again.`);
     }
 
     const data = await response.json();
@@ -801,9 +802,7 @@ RULES:
         error: errorDetails,
       });
       // Return generic error message to client (sanitized)
-      throw new Error(
-        `Failed to analyze goal. Please try again.`
-      );
+      throw new Error(`Failed to analyze goal. Please try again.`);
     }
 
     const data = await response.json();
@@ -2203,11 +2202,11 @@ async function analyzeGoalWithLLM(goalData, userId) {
     // Build prompt
     const prompt = buildGoalAnalysisPrompt(goalData, userContext);
 
-    console.log("📝 [GOAL ANALYSIS] Prompt built, length:", prompt.length);
-    console.log("📋 [GOAL ANALYSIS] COMPLETE PROMPT SENT TO LLM:");
-    console.log("=".repeat(80));
-    console.log(prompt);
-    console.log("=".repeat(80));
+    // console.log("📝 [GOAL ANALYSIS] Prompt built, length:", prompt.length);
+    // console.log("📋 [GOAL ANALYSIS] COMPLETE PROMPT SENT TO LLM:");
+    // console.log("=".repeat(80));
+    // console.log(prompt);
+    // console.log("=".repeat(80));
 
     // Call LLM
     const llmModels = [
