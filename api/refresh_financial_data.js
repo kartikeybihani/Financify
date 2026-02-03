@@ -16,6 +16,7 @@ const BIGGEST_MOVER_CRON_SECRET = process.env.BIGGEST_MOVER_CRON_SECRET;
 export default async function handler(req, res) {
   // GET ?mode=biggest_mover — cron-only (Finnhub refresh + create triggers + send). Weekdays 4PM ET via Supabase pg_cron.
   // Optional: ?user_id=UUID to run for a single user (for testing).
+  // Optional: ?force_send=1 when testing with user_id to create and send a trigger even if one already exists today.
   if (req.method === "GET" && req.query?.mode === "biggest_mover") {
     const secret =
       req.headers["x-cron-secret"] ||
@@ -27,7 +28,10 @@ export default async function handler(req, res) {
       typeof req.query?.user_id === "string" && req.query.user_id.trim()
         ? req.query.user_id.trim()
         : null;
-    return runBiggestMoverDaily(res, { testUserId });
+    const forceSend =
+      testUserId &&
+      (req.query?.force_send === "1" || req.query?.force_send === "true");
+    return runBiggestMoverDaily(res, { testUserId, forceSend });
   }
 
   if (req.method !== "POST")
@@ -855,14 +859,15 @@ export default async function handler(req, res) {
 /**
  * Cron-only: Finnhub batch refresh (no SnapTrade), then create one biggest-mover trigger per user (weekday 4PM ET).
  * One trigger per user per day; only for users with at least one active holding.
- * @param {Object} options - Optional. testUserId: run only for this user (for testing).
+ * @param {Object} options - Optional. testUserId: run only for this user (for testing). forceSend: create/send trigger even if one exists today (manual test only).
  */
 async function runBiggestMoverDaily(res, options = {}) {
-  const { testUserId } = options;
+  const { testUserId, forceSend } = options;
   const startedAt = new Date().toISOString();
   const result = {
     message: "Biggest mover daily completed",
     test_user_id: testUserId || undefined,
+    force_send: forceSend || undefined,
     holdings_updated: 0,
     triggers_created: 0,
     users_sent: 0,
@@ -929,7 +934,7 @@ async function runBiggestMoverDaily(res, options = {}) {
     for (let i = 0; i < symbolsToFetch.length; i++) {
       const symbol = symbolsToFetch[i];
       try {
-        const snapshot = await fetchStockSnapshot(symbol);
+        const snapshot = await fetchStockSnapshot(symbol, { quiet: true });
         if (snapshot?.current != null) priceMap.set(symbol, snapshot.current);
         else finnhubSkipped++;
         if (i < symbolsToFetch.length - 1)
@@ -1118,16 +1123,18 @@ async function runBiggestMoverDaily(res, options = {}) {
 
       if (withPriceMap.length === 0) continue;
 
-      const { data: existingToday } = await supabase
-        .from("notification_triggers")
-        .select("id")
-        .eq("user_id", userId)
-        .eq("trigger_type", "custom")
-        .eq("trigger_metadata->>pattern_type", "biggest_mover")
-        .gte("detected_at", todayStart)
-        .limit(1);
+      if (!forceSend) {
+        const { data: existingToday } = await supabase
+          .from("notification_triggers")
+          .select("id")
+          .eq("user_id", userId)
+          .eq("trigger_type", "custom")
+          .eq("trigger_metadata->>pattern_type", "biggest_mover")
+          .gte("detected_at", todayStart)
+          .limit(1);
 
-      if (existingToday && existingToday.length > 0) continue;
+        if (existingToday && existingToday.length > 0) continue;
+      }
 
       const best = withPriceMap.reduce((a, b) =>
         Math.abs(a.newDayChangePercent) >= Math.abs(b.newDayChangePercent)
