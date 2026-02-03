@@ -77,7 +77,8 @@ export interface UnifiedFinancialData {
   
   // Investments
   investmentHoldings: any[];
-  
+  investmentBalances: any[];
+
   // Totals (memoized)
   accountsTotal: number;
   investmentsTotal: number;
@@ -587,6 +588,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     goals,
     cashEntries,
     investmentHoldings,
+    investmentBalances,
     accountsTotal,
     investmentsTotal,
     liabilitiesTotal,

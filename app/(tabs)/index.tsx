@@ -127,6 +127,7 @@ export default function HomeScreen() {
     goals,
     cashEntries,
     investmentHoldings,
+    investmentBalances,
 
     // Categorized
     categorizedDeposits,
@@ -1038,6 +1039,7 @@ export default function HomeScreen() {
 
           <HoldingsMoversCard
             holdings={investmentHoldings}
+            balances={investmentBalances}
             onPress={() => {
               router.push("/(tabs)/insights");
               setTimeout(() => {

@@ -2074,57 +2074,69 @@ export default function InvestmentsScreen({
             )}
           </View>
           <View style={styles.accountInfo}>
-            {/* Compact Account Chips */}
-            {accountInfoList.length > 0 ? (
-              <View style={styles.accountChipsContainer}>
-                {accountInfoList.map((account) => {
-                  const isSelected = selectedAccountId === account.accountId;
-                  return (
-                    <TouchableOpacity
-                      key={account.accountId}
-                      style={[
-                        styles.accountChip,
-                        isSelected && styles.accountChipSelected,
-                      ]}
-                      onPress={() => {
-                        // Toggle: if already selected, deselect (show all)
-                        setSelectedAccountId(
-                          isSelected ? null : account.accountId
-                        );
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Image
-                        source={{
-                          uri: getBrokerageLogoUrl(account.brokerageName),
-                        }}
-                        style={styles.accountChipLogo}
-                        defaultSource={require("../../assets/images/icon.png")}
-                      />
-                      <View style={styles.accountChipContent}>
-                        <Text
-                          style={[
-                            styles.accountChipName,
-                            isSelected && styles.accountChipNameSelected,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {account.accountName}
-                        </Text>
-                        <Text
-                          style={[
-                            styles.accountChipTime,
-                            isSelected && styles.accountChipTimeSelected,
-                          ]}
-                        >
-                          Last synced: {account.lastUpdated}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  );
-                })}
+            {/* When syncing/refreshing: show pulling box and hide account display */}
+            {isSyncing || isRefreshing ? (
+              <View style={styles.pullingBox}>
+                <ActivityIndicator size="small" color="#4A90E2" />
+                <Text style={styles.pullingBoxText}>
+                  Pulling your investments now...
+                </Text>
               </View>
-            ) : null}
+            ) : (
+              <>
+                {/* Compact Account Chips */}
+                {accountInfoList.length > 0 ? (
+                  <View style={styles.accountChipsContainer}>
+                    {accountInfoList.map((account) => {
+                      const isSelected =
+                        selectedAccountId === account.accountId;
+                      return (
+                        <TouchableOpacity
+                          key={account.accountId}
+                          style={[
+                            styles.accountChip,
+                            isSelected && styles.accountChipSelected,
+                          ]}
+                          onPress={() => {
+                            setSelectedAccountId(
+                              isSelected ? null : account.accountId
+                            );
+                          }}
+                          activeOpacity={0.7}
+                        >
+                          <Image
+                            source={{
+                              uri: getBrokerageLogoUrl(account.brokerageName),
+                            }}
+                            style={styles.accountChipLogo}
+                            defaultSource={require("../../assets/images/icon.png")}
+                          />
+                          <View style={styles.accountChipContent}>
+                            <Text
+                              style={[
+                                styles.accountChipName,
+                                isSelected && styles.accountChipNameSelected,
+                              ]}
+                              numberOfLines={1}
+                            >
+                              {account.accountName}
+                            </Text>
+                            <Text
+                              style={[
+                                styles.accountChipTime,
+                                isSelected && styles.accountChipTimeSelected,
+                              ]}
+                            >
+                              Last synced: {account.lastUpdated}
+                            </Text>
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </View>
+                ) : null}
+              </>
+            )}
             {/* Button Group with Spacing */}
             <View style={styles.buttonGroup}>
               {/* Sync Button */}

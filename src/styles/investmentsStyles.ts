@@ -723,6 +723,27 @@ export const styles = StyleSheet.create({
     fontWeight: "500",
   },
   
+  // Pulling investments overlay (replaces account display while syncing/refreshing)
+  pullingBox: {
+    flex: 1,
+    marginRight: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    paddingVertical: 14,
+    paddingHorizontal: 20,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  pullingBoxText: {
+    fontSize: FONTS.base,
+    color: "rgba(255, 255, 255, 0.85)",
+    fontWeight: "500",
+    marginLeft: 10,
+  },
+
   // Portfolio Loading State
   portfolioLoadingContainer: {
     flexDirection: "row",

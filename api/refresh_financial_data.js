@@ -8,8 +8,23 @@ import {
   checkRateLimit,
   formatRetryAfterSeconds,
 } from "../lib/api/rateLimiter.js";
+import { getTriggersForUser } from "../lib/notificationDecisionEngine.js";
+import { sendNotificationsForUser } from "../lib/notificationSender.js";
+
+const BIGGEST_MOVER_CRON_SECRET = process.env.BIGGEST_MOVER_CRON_SECRET;
 
 export default async function handler(req, res) {
+  // GET ?mode=biggest_mover — cron-only (Finnhub refresh + create triggers + send). Weekdays 4PM ET via Supabase pg_cron.
+  if (req.method === "GET" && req.query?.mode === "biggest_mover") {
+    const secret =
+      req.headers["x-cron-secret"] ||
+      (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+    if (!BIGGEST_MOVER_CRON_SECRET || secret !== BIGGEST_MOVER_CRON_SECRET) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    return runBiggestMoverDaily(res);
+  }
+
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
@@ -829,5 +844,344 @@ export default async function handler(req, res) {
     return res.status(500).json({
       error: plaidError?.error_message || error.message,
     });
+  }
+}
+
+/**
+ * Cron-only: Finnhub batch refresh (no SnapTrade), then create one biggest-mover trigger per user (weekday 4PM ET).
+ * One trigger per user per day; only for users with at least one active holding.
+ */
+async function runBiggestMoverDaily(res) {
+  const startedAt = new Date().toISOString();
+  const result = {
+    message: "Biggest mover daily completed",
+    holdings_updated: 0,
+    triggers_created: 0,
+    users_sent: 0,
+    total_sent: 0,
+    total_failed: 0,
+    errors: [],
+    started_at: startedAt,
+    completed_at: null,
+  };
+
+  try {
+    console.log("🔄 [biggest_mover] Starting Finnhub batch refresh...");
+
+    // 1) Fetch all active holdings (all users)
+    const { data: allHoldings, error: holdingsError } = await supabase
+      .from("investment_holdings")
+      .select(
+        "id, user_id, snaptrade_user_id, account_id, symbol, symbol_id, units, price, market_value, previous_market_value, day_change, day_change_percent, last_updated, security_type, description"
+      )
+      .eq("is_active", true)
+      .not("symbol", "is", null)
+      .neq("symbol", "");
+
+    if (holdingsError) {
+      result.errors.push(`Holdings fetch failed: ${holdingsError.message}`);
+      result.completed_at = new Date().toISOString();
+      return res.status(500).json(result);
+    }
+
+    if (!allHoldings || allHoldings.length === 0) {
+      result.completed_at = new Date().toISOString();
+      return res.status(200).json(result);
+    }
+
+    const cashEquivalentSymbols = ["SPAXX", "SPRXX", "FZFXX", "FDRXX", "SNAXX"];
+    const isCashEquivalent = (h) => {
+      const symbol = h.symbol?.toUpperCase();
+      const st = (h.security_type || "").toLowerCase();
+      const desc = (h.description || "").toLowerCase();
+      if (cashEquivalentSymbols.includes(symbol)) return true;
+      if (
+        st.includes("money market") ||
+        st.includes("cash") ||
+        desc.includes("money market") ||
+        desc.includes("cash equivalent")
+      )
+        return true;
+      return false;
+    };
+
+    const symbolsToFetch = [
+      ...new Set(
+        allHoldings
+          .filter((h) => !isCashEquivalent(h))
+          .map((h) => h.symbol)
+          .filter(Boolean)
+      ),
+    ];
+
+    const priceMap = new Map();
+    const BATCH_DELAY = 1100;
+    for (let i = 0; i < symbolsToFetch.length; i++) {
+      const symbol = symbolsToFetch[i];
+      try {
+        const snapshot = await fetchStockSnapshot(symbol);
+        if (snapshot?.current != null) priceMap.set(symbol, snapshot.current);
+        if (i < symbolsToFetch.length - 1)
+          await new Promise((r) => setTimeout(r, BATCH_DELAY));
+      } catch (e) {
+        console.warn(`[biggest_mover] Finnhub skip ${symbol}:`, e?.message);
+      }
+    }
+
+    const now = new Date();
+    const todayUTC = Date.UTC(
+      now.getUTCFullYear(),
+      now.getUTCMonth(),
+      now.getUTCDate()
+    );
+    const isSameCalendarDayUTC = (dateStr) => {
+      if (!dateStr) return false;
+      const d = new Date(dateStr);
+      return (
+        Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()) ===
+        todayUTC
+      );
+    };
+    const EPSILON = 0.01;
+    const updatesByAccount = new Map();
+    let updatedCount = 0;
+
+    for (const holding of allHoldings) {
+      const newPrice = priceMap.get(holding.symbol);
+      if (newPrice == null) continue;
+      const currentMarketValue =
+        holding.units && newPrice ? holding.units * newPrice : null;
+      if (currentMarketValue == null) continue;
+
+      const existingMarketValue = holding.market_value;
+      const isUnchanged =
+        existingMarketValue != null &&
+        Number.isFinite(existingMarketValue) &&
+        Number.isFinite(currentMarketValue) &&
+        Math.abs(currentMarketValue - existingMarketValue) < EPSILON;
+
+      let dayChange = holding.day_change;
+      let dayChangePercent = holding.day_change_percent;
+      let previousForStorage = holding.previous_market_value;
+
+      if (!isUnchanged) {
+        const baseline =
+          holding.previous_market_value ?? holding.market_value ?? null;
+        if (baseline != null && Number.isFinite(baseline)) {
+          dayChange = currentMarketValue - baseline;
+          dayChangePercent = baseline !== 0 ? (dayChange / baseline) * 100 : 0;
+        }
+        if (!isSameCalendarDayUTC(holding.last_updated)) {
+          previousForStorage = holding.market_value ?? currentMarketValue;
+        }
+      }
+
+      const { error: updateError } = await supabase
+        .from("investment_holdings")
+        .update({
+          price: newPrice,
+          market_value: currentMarketValue,
+          day_change: dayChange,
+          day_change_percent: dayChangePercent,
+          previous_market_value: previousForStorage,
+          last_updated: now.toISOString(),
+        })
+        .eq("id", holding.id);
+
+      if (!updateError) {
+        updatedCount++;
+        if (holding.snaptrade_user_id && holding.account_id) {
+          const key = `${holding.user_id}:${holding.snaptrade_user_id}:${holding.account_id}`;
+          if (!updatesByAccount.has(key))
+            updatesByAccount.set(key, {
+              user_id: holding.user_id,
+              snaptrade_user_id: holding.snaptrade_user_id,
+              account_id: holding.account_id,
+            });
+        }
+      }
+    }
+
+    result.holdings_updated = updatedCount;
+    console.log(`✅ [biggest_mover] Updated ${updatedCount} holdings`);
+
+    // Recalculate investment_balances for SnapTrade accounts that were updated
+    for (const acc of updatesByAccount.values()) {
+      try {
+        const { data: holdings } = await supabase
+          .from("investment_holdings")
+          .select("market_value, symbol, security_type, description")
+          .eq("user_id", acc.user_id)
+          .eq("snaptrade_user_id", acc.snaptrade_user_id)
+          .eq("account_id", acc.account_id)
+          .eq("is_active", true);
+        const { data: options } = await supabase
+          .from("investment_options")
+          .select("market_value")
+          .eq("user_id", acc.user_id)
+          .eq("snaptrade_user_id", acc.snaptrade_user_id)
+          .eq("account_id", acc.account_id)
+          .eq("is_active", true);
+        const cashEq = ["SPAXX", "SPRXX", "FZFXX", "FDRXX", "SNAXX"];
+        const isCashEq = (h) =>
+          cashEq.includes((h.symbol || "").toUpperCase()) ||
+          (h.security_type || "").toLowerCase().includes("money market") ||
+          (h.description || "").toLowerCase().includes("cash");
+        let totalHoldings = 0;
+        let cashInHoldings = 0;
+        holdings?.forEach((h) => {
+          totalHoldings += h.market_value || 0;
+          if (isCashEq(h)) cashInHoldings += h.market_value || 0;
+        });
+        options?.forEach((o) => (totalHoldings += o.market_value || 0));
+        const { data: balance } = await supabase
+          .from("investment_balances")
+          .select("total_value, cash, previous_total_value, last_updated")
+          .eq("user_id", acc.user_id)
+          .eq("snaptrade_user_id", acc.snaptrade_user_id)
+          .eq("account_id", acc.account_id)
+          .eq("is_current", true)
+          .maybeSingle();
+        if (!balance) continue;
+        const cash = Math.max(
+          0,
+          (parseFloat(balance.cash) || 0) - cashInHoldings
+        );
+        const newTotal = totalHoldings + cash;
+        const sameDay =
+          balance.last_updated && isSameCalendarDayUTC(balance.last_updated);
+        const prev =
+          sameDay && balance.previous_total_value != null
+            ? balance.previous_total_value
+            : balance.total_value ?? newTotal;
+        const dayCh = prev != null ? newTotal - prev : null;
+        const dayChPct =
+          prev != null && prev !== 0 ? (dayCh / prev) * 100 : null;
+        await supabase
+          .from("investment_balances")
+          .update({
+            total_value: newTotal,
+            previous_total_value: prev,
+            day_change: dayCh,
+            day_change_percent: dayChPct,
+            last_updated: now.toISOString(),
+          })
+          .eq("user_id", acc.user_id)
+          .eq("snaptrade_user_id", acc.snaptrade_user_id)
+          .eq("account_id", acc.account_id)
+          .eq("is_current", true);
+      } catch (e) {
+        result.errors.push(`Balance recalc ${acc.account_id}: ${e?.message}`);
+      }
+    }
+
+    // 2) Distinct users with holdings
+    const userIds = [...new Set(allHoldings.map((h) => h.user_id))];
+    const todayStart = new Date(todayUTC).toISOString();
+
+    // 3) For each user: already have biggest_mover today? Pick biggest mover, create trigger
+    const usersWithNewTrigger = [];
+    for (const userId of userIds) {
+      const userHoldings = allHoldings.filter((h) => h.user_id === userId);
+      const withPriceMap = userHoldings
+        .map((h) => ({
+          ...h,
+          newPrice: priceMap.get(h.symbol),
+          newDayChangePercent: (() => {
+            const p = priceMap.get(h.symbol);
+            if (p == null) return h.day_change_percent;
+            const mv = h.units && p ? h.units * p : null;
+            if (mv == null) return h.day_change_percent;
+            const base = h.previous_market_value ?? h.market_value ?? null;
+            if (base == null || base === 0) return h.day_change_percent;
+            return ((mv - base) / base) * 100;
+          })(),
+        }))
+        .filter((r) => r.newPrice != null && r.newDayChangePercent != null);
+
+      if (withPriceMap.length === 0) continue;
+
+      const { data: existingToday } = await supabase
+        .from("notification_triggers")
+        .select("id")
+        .eq("user_id", userId)
+        .eq("trigger_type", "custom")
+        .eq("trigger_metadata->>pattern_type", "biggest_mover")
+        .gte("detected_at", todayStart)
+        .limit(1);
+
+      if (existingToday && existingToday.length > 0) continue;
+
+      const best = withPriceMap.reduce((a, b) =>
+        Math.abs(a.newDayChangePercent) >= Math.abs(b.newDayChangePercent)
+          ? a
+          : b
+      );
+      const direction = best.newDayChangePercent >= 0 ? "up" : "down";
+      const pct = Math.abs(
+        Number.isFinite(best.newDayChangePercent) ? best.newDayChangePercent : 0
+      ).toFixed(1);
+      const priceStr = (
+        Number.isFinite(best.newPrice) ? best.newPrice : best.price
+      ).toFixed(2);
+      const patternDescription = `Your ${best.symbol} closed ${direction} ${pct}% today at $${priceStr}.`;
+
+      const { data: inserted, error: insertErr } = await supabase
+        .from("notification_triggers")
+        .insert({
+          user_id: userId,
+          trigger_type: "custom",
+          trigger_metadata: {
+            pattern_type: "biggest_mover",
+            symbol: best.symbol,
+            direction,
+            day_change_percent: best.newDayChangePercent,
+            price: best.newPrice ?? best.price,
+            pattern_description: patternDescription,
+          },
+          priority: 6,
+          status: "pending",
+        })
+        .select("id")
+        .single();
+
+      if (insertErr) {
+        result.errors.push(`Trigger create ${userId}: ${insertErr.message}`);
+        continue;
+      }
+      result.triggers_created++;
+      usersWithNewTrigger.push(userId);
+    }
+
+    // 4) Send notifications for users we just created triggers for
+    for (const userId of usersWithNewTrigger) {
+      try {
+        const triggersToSend = await getTriggersForUser(userId);
+        const sendResult = await sendNotificationsForUser(
+          userId,
+          triggersToSend
+        );
+        result.users_sent++;
+        result.total_sent += sendResult.sent;
+        result.total_failed += sendResult.failed;
+        if (sendResult.errors?.length)
+          result.errors.push(
+            ...sendResult.errors.map((e) => `${userId}: ${e.error || e}`)
+          );
+      } catch (e) {
+        result.errors.push(`Send ${userId}: ${e?.message}`);
+      }
+    }
+
+    result.completed_at = new Date().toISOString();
+    console.log(
+      `✅ [biggest_mover] Done. triggers=${result.triggers_created} sent=${result.total_sent} failed=${result.total_failed}`
+    );
+    return res.status(200).json(result);
+  } catch (err) {
+    result.completed_at = new Date().toISOString();
+    result.errors.push(err?.message || String(err));
+    console.error("❌ [biggest_mover] Error:", err);
+    return res.status(500).json(result);
   }
 }

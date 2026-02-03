@@ -41,9 +41,18 @@ interface Mover {
   isTotalReturn?: boolean;
 }
 
+/** Minimal shape for today's performance (matches Investments screen source). */
+interface InvestmentBalanceRow {
+  day_change?: number | null;
+  day_change_percent?: number | null;
+  total_value?: number | null;
+}
+
 interface HoldingsMoversCardProps {
   onPress: () => void;
-  holdings?: any[]; // Receive holdings as props (like GoalsSection receives goals)
+  holdings?: any[];
+  /** When provided, today's performance uses balance-level data first (same as Investments screen). */
+  balances?: InvestmentBalanceRow[];
 }
 
 const COLORS = {
@@ -103,7 +112,7 @@ const computeDayImpact = (h: InvestmentHoldingRow): number => {
   return 0;
 };
 
-const computeTodayTotalPerformance = (
+const computeTodayTotalPerformanceFromHoldings = (
   holdings: InvestmentHoldingRow[]
 ): { amount: number; percentage: number; hasData: boolean } => {
   let total = 0;
@@ -131,6 +140,68 @@ const computeTodayTotalPerformance = (
   }
   const percentage = totalMv > 0 && hasData ? (total / totalMv) * 100 : 0;
   return { amount: total, percentage, hasData };
+};
+
+/**
+ * Today's performance using same logic as Investments screen: balance-level
+ * day_change first, then weighted day_change_percent; fallback to holdings.
+ */
+const computeTodayTotalPerformance = (
+  balances: InvestmentBalanceRow[],
+  holdings: InvestmentHoldingRow[]
+): { amount: number; percentage: number; hasData: boolean } => {
+  const totalPortfolioValue = balances.reduce(
+    (sum, b) => sum + (b.total_value || 0),
+    0
+  );
+
+  if (balances.length > 0) {
+    const dayChangeSum = balances.reduce(
+      (sum, b) => sum + (b.day_change || 0),
+      0
+    );
+    const hasValidDayChange = balances.some(
+      (b) =>
+        b.day_change !== null &&
+        b.day_change !== undefined &&
+        !isNaN(b.day_change)
+    );
+    if (hasValidDayChange) {
+      let weightedPercentSum = 0;
+      let totalWeight = 0;
+      balances.forEach((b) => {
+        if (
+          b.day_change_percent != null &&
+          b.day_change_percent !== undefined &&
+          !isNaN(b.day_change_percent) &&
+          b.total_value != null &&
+          b.total_value > 0
+        ) {
+          weightedPercentSum += b.day_change_percent * (b.total_value || 0);
+          totalWeight += b.total_value || 0;
+        }
+      });
+      const percentage =
+        totalWeight > 0
+          ? weightedPercentSum / totalWeight
+          : totalPortfolioValue > 0
+          ? (dayChangeSum / totalPortfolioValue) * 100
+          : 0;
+      return { amount: dayChangeSum, percentage, hasData: true };
+    }
+  }
+
+  const fromHoldings = computeTodayTotalPerformanceFromHoldings(holdings);
+  if (!fromHoldings.hasData) return fromHoldings;
+  const percentageOfPortfolio =
+    totalPortfolioValue > 0
+      ? (fromHoldings.amount / totalPortfolioValue) * 100
+      : fromHoldings.percentage;
+  return {
+    amount: fromHoldings.amount,
+    percentage: percentageOfPortfolio,
+    hasData: true,
+  };
 };
 
 const pickTopMovers = (holdings: InvestmentHoldingRow[]): Mover[] => {
@@ -242,10 +313,9 @@ const TickerAvatar = React.memo(function TickerAvatar({
 });
 
 export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
-  ({ onPress, holdings: propHoldings = [] }) => {
-    // Use holdings from props (loaded synchronously by useUnifiedFinancialData)
-    // This matches the pattern used by GoalsSection
+  ({ onPress, holdings: propHoldings = [], balances: propBalances = [] }) => {
     const holdings = (propHoldings as InvestmentHoldingRow[]) || [];
+    const balances = (propBalances as InvestmentBalanceRow[]) || [];
 
     const dayMovers = useMemo(() => pickTopMovers(holdings), [holdings]);
     const fallbackMovers = useMemo(
@@ -257,8 +327,8 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
     const isFallback = !useDayData && fallbackMovers.length > 0;
 
     const todayPerf = useMemo(
-      () => computeTodayTotalPerformance(holdings),
-      [holdings]
+      () => computeTodayTotalPerformance(balances, holdings),
+      [balances, holdings]
     );
     const hero = displayMovers[0];
     const runners = displayMovers.slice(1);
@@ -441,7 +511,7 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
                           <Text style={styles.runnerImpact}>
                             {formatSignedMoney(mover.dayImpact)}
                           </Text>
-                          <View style={styles.runnerBarTrack}>
+                          {/* <View style={styles.runnerBarTrack}>
                             <View
                               style={[
                                 styles.runnerBarFill,
@@ -451,7 +521,7 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
                                 },
                               ]}
                             />
-                          </View>
+                          </View> */}
                         </View>
                       );
                     })}
