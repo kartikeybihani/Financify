@@ -435,56 +435,193 @@ export default async function handler(req, res) {
             snaptradeUserId,
             accountId
           ) => {
+            // Fetch holdings with market_value and unrealized_pl
             const { data: holdings } = await supabase
               .from("investment_holdings")
-              .select("unrealized_pl")
+              .select("market_value, unrealized_pl")
               .eq("user_id", userId)
               .eq("snaptrade_user_id", snaptradeUserId)
               .eq("account_id", accountId)
               .eq("is_active", true);
 
+            // Fetch options with market_value and unrealized_pl
             const { data: options } = await supabase
               .from("investment_options")
-              .select("unrealized_pl")
+              .select("market_value, unrealized_pl")
               .eq("user_id", userId)
               .eq("snaptrade_user_id", snaptradeUserId)
               .eq("account_id", accountId)
               .eq("is_active", true);
 
-            let totalUnrealizedPL = 0;
-            holdings?.forEach(
-              (h) => (totalUnrealizedPL += h.unrealized_pl || 0)
-            );
-            options?.forEach(
-              (o) => (totalUnrealizedPL += o.unrealized_pl || 0)
-            );
+            // Calculate total holdings value (sum of all market_values)
+            let totalHoldingsValue = 0;
+            holdings?.forEach((h) => {
+              totalHoldingsValue += h.market_value || 0;
+            });
+            options?.forEach((o) => {
+              totalHoldingsValue += o.market_value || 0;
+            });
 
-            const { data: balance } = await supabase
+            // Calculate total unrealized P/L
+            let totalUnrealizedPL = 0;
+            holdings?.forEach((h) => {
+              totalUnrealizedPL += h.unrealized_pl || 0;
+            });
+            options?.forEach((o) => {
+              totalUnrealizedPL += o.unrealized_pl || 0;
+            });
+
+            // Fetch existing balance with all needed fields
+            const { data: balance, error: balanceError } = await supabase
               .from("investment_balances")
-              .select("total_value")
+              .select(
+                "total_value, cash, buying_power, previous_total_value, day_change, day_change_percent, last_updated"
+              )
               .eq("user_id", userId)
               .eq("snaptrade_user_id", snaptradeUserId)
               .eq("account_id", accountId)
               .eq("is_current", true)
-              .single();
+              .maybeSingle();
 
-            const totalValue = balance?.total_value || 0;
+            // If no balance exists, skip recalculation (account may not have been synced yet)
+            if (balanceError || !balance) {
+              console.warn(
+                `⚠️ No balance found for account ${accountId}, skipping balance recalculation`
+              );
+              return;
+            }
+
+            // Get cash and buying_power from existing balance (preserve from SnapTrade sync)
+            const cash = balance?.cash || 0;
+            const buyingPower = balance?.buying_power || 0;
+
+            // Calculate new total_value = holdings + cash + buying_power
+            const newTotalValue = totalHoldingsValue + cash + buyingPower;
+
+            // Apply day-boundary logic (same as SnapTrade sync)
+            const now = new Date();
+            const todayUTC = Date.UTC(
+              now.getUTCFullYear(),
+              now.getUTCMonth(),
+              now.getUTCDate()
+            );
+            const isSameCalendarDayUTC = (dateStr) => {
+              if (!dateStr) return false;
+              const d = new Date(dateStr);
+              const dayUTC = Date.UTC(
+                d.getUTCFullYear(),
+                d.getUTCMonth(),
+                d.getUTCDate()
+              );
+              return dayUTC === todayUTC;
+            };
+
+            const existingLastUpdated = balance?.last_updated;
+            const sameDay = isSameCalendarDayUTC(existingLastUpdated);
+
+            // Determine previous_total_value for day_change calculation (same logic as SnapTrade sync)
+            // CRITICAL: previous_total_value must include cash + buying_power, not just holdings
+            // Only update previous_total_value when rolling to a new day (same logic as holdings)
+            // When a new day starts, set previous_total_value to PREVIOUS day's total_value (preserve baseline)
+            let previousTotalValue;
+            let previousTotalValueForStorage;
+
+            if (sameDay) {
+              // Same day: preserve baseline
+              previousTotalValue =
+                balance.previous_total_value ??
+                balance.total_value ??
+                newTotalValue;
+              previousTotalValueForStorage = previousTotalValue;
+            } else {
+              // New day: use previous day's total_value as new baseline
+              previousTotalValue = balance.total_value ?? newTotalValue;
+              previousTotalValueForStorage = previousTotalValue;
+            }
+
+            // CRITICAL: Preserve day_change if total_value hasn't changed (prevents overwriting with 0 on repeated updates)
+            const EPSILON = 0.01; // Small threshold for floating point comparison
+            const existingTotalValue = balance?.total_value;
+            const isTotalValueUnchanged =
+              existingTotalValue != null &&
+              Number.isFinite(existingTotalValue) &&
+              Number.isFinite(newTotalValue) &&
+              Math.abs(newTotalValue - existingTotalValue) < EPSILON;
+
+            // Calculate day_change and day_change_percent
+            let dayChange = balance?.day_change ?? null;
+            let dayChangePercent = balance?.day_change_percent ?? null;
+
+            // Only calculate day_change if we have a previous_total_value baseline
+            if (
+              previousTotalValue != null &&
+              previousTotalValue !== undefined &&
+              newTotalValue > 0
+            ) {
+              // Only compute new day_change if total_value actually changed
+              if (isTotalValueUnchanged) {
+                // Data unchanged: preserve existing day_change values
+                dayChange = balance?.day_change ?? null;
+                dayChangePercent = balance?.day_change_percent ?? null;
+                console.log(
+                  `🔄 Total value unchanged (${newTotalValue.toFixed(
+                    2
+                  )}), preserving day_change: $${(dayChange || 0).toFixed(
+                    2
+                  )} (${(dayChangePercent || 0).toFixed(2)}%)`
+                );
+              } else {
+                // Data changed: calculate new day_change
+                dayChange = newTotalValue - previousTotalValue;
+                dayChangePercent =
+                  previousTotalValue !== 0
+                    ? (dayChange / previousTotalValue) * 100
+                    : 0;
+                console.log(
+                  `✅ Calculated day_change: $${dayChange.toFixed(
+                    2
+                  )} (${dayChangePercent.toFixed(2)}%)`
+                );
+              }
+            } else {
+              // No previous value, preserve existing or set to null
+              dayChange = balance?.day_change ?? null;
+              dayChangePercent = balance?.day_change_percent ?? null;
+              console.log(
+                `⚠️ No previous value for day_change calculation. Using existing: $${
+                  dayChange || 0
+                }`
+              );
+            }
+
+            // Calculate total_change_percent
             const totalChangePercent =
-              totalValue > 0 ? (totalUnrealizedPL / totalValue) * 100 : 0;
+              newTotalValue > 0 ? (totalUnrealizedPL / newTotalValue) * 100 : 0;
 
-            await supabase
+            // Update balance with all calculated values
+            const { error: updateError } = await supabase
               .from("investment_balances")
               .update({
+                total_value: newTotalValue,
+                day_change: dayChange,
+                day_change_percent: dayChangePercent,
+                previous_total_value: previousTotalValueForStorage,
                 total_change: totalUnrealizedPL,
                 total_change_percent: totalChangePercent,
-                // NOTE: day_change/day_change_percent preserved (from balance sync)
-                // NOTE: total_value preserved (includes cash from balance sync)
-                last_updated: new Date().toISOString(),
+                last_updated: now.toISOString(),
               })
               .eq("user_id", userId)
               .eq("snaptrade_user_id", snaptradeUserId)
               .eq("account_id", accountId)
               .eq("is_current", true);
+
+            if (updateError) {
+              console.error(
+                `❌ Failed to update balance for account ${accountId}:`,
+                updateError
+              );
+              throw updateError;
+            }
           };
 
           let recalculatedCount = 0;

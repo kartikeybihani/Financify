@@ -704,13 +704,56 @@ export default function InvestmentsScreen({
         `🔄 Starting investment refresh for ${snaptradeConnections.length} SnapTrade account(s)...`
       );
 
-      // Sync all SnapTrade accounts sequentially
+      // Check last_synced_at and split connections into recent (< 3 hours) and stale
+      const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+      const now = new Date();
+      const recentConnections: ConnectionRow[] = [];
+      const staleConnections: ConnectionRow[] = [];
+
+      for (const conn of snaptradeConnections) {
+        if (!conn.last_synced_at) {
+          // Never synced - treat as stale
+          staleConnections.push(conn);
+          logger.info(
+            `📅 Connection ${conn.account_id?.substring(
+              0,
+              8
+            )}... never synced - will sync`
+          );
+        } else {
+          const lastSynced = new Date(conn.last_synced_at);
+          const hoursSinceSync =
+            (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60);
+
+          if (hoursSinceSync < 3) {
+            recentConnections.push(conn);
+            logger.info(
+              `⏰ Connection ${conn.account_id?.substring(
+                0,
+                8
+              )}... synced ${hoursSinceSync.toFixed(
+                1
+              )} hours ago - skipping SnapTrade sync`
+            );
+          } else {
+            staleConnections.push(conn);
+            logger.info(
+              `📅 Connection ${conn.account_id?.substring(
+                0,
+                8
+              )}... synced ${hoursSinceSync.toFixed(1)} hours ago - will sync`
+            );
+          }
+        }
+      }
+
+      // Sync all SnapTrade accounts sequentially (only stale ones)
       const syncErrors: string[] = [];
-      for (let i = 0; i < snaptradeConnections.length; i++) {
-        const conn = snaptradeConnections[i];
+      for (let i = 0; i < staleConnections.length; i++) {
+        const conn = staleConnections[i];
         try {
           logger.info(
-            `🔄 Syncing account ${i + 1}/${snaptradeConnections.length}: ${
+            `🔄 Syncing account ${i + 1}/${staleConnections.length}: ${
               conn.brokerage_name || conn.account_name || conn.account_id
             }`
           );
@@ -741,9 +784,7 @@ export default function InvestmentsScreen({
           }
 
           logger.info(
-            `✅ Successfully synced account ${i + 1}/${
-              snaptradeConnections.length
-            }`
+            `✅ Successfully synced account ${i + 1}/${staleConnections.length}`
           );
         } catch (err: any) {
           const errorMsg = `Failed to sync ${
@@ -767,14 +808,27 @@ export default function InvestmentsScreen({
         }
       }
 
+      // Log summary of sync strategy
+      if (recentConnections.length > 0) {
+        logger.info(
+          `⏭️ Skipped SnapTrade sync for ${recentConnections.length} recent connection(s) - will update prices only`
+        );
+      }
+      if (staleConnections.length > 0) {
+        logger.info(
+          `✅ Completed SnapTrade sync for ${staleConnections.length} stale connection(s)`
+        );
+      }
+
       // Clear cache to ensure fresh data (after all syncs)
       await clearInvestmentCache(user.id);
 
       if (
         syncErrors.length > 0 &&
-        syncErrors.length === snaptradeConnections.length
+        syncErrors.length === staleConnections.length &&
+        staleConnections.length > 0
       ) {
-        // All syncs failed
+        // All stale syncs failed
         throw new Error(syncErrors.join("; "));
       } else if (syncErrors.length > 0) {
         // Some syncs failed but not all
@@ -797,8 +851,9 @@ export default function InvestmentsScreen({
       await new Promise((resolve) => setTimeout(resolve, 500));
       await populateInvestmentAccountsInDB();
 
-      // Step 6: Update stock prices from Finnhub (runs in background, non-blocking)
+      // Step 6: Update stock prices from Finnhub (runs for all connections)
       logger.info("📈 Updating stock prices from Finnhub...");
+      let finhubSyncTime: string | null = null;
       try {
         const priceUpdateRes = await authenticatedFetch(
           `${API_BASE_URL}/api/refresh_financial_data`,
@@ -814,17 +869,83 @@ export default function InvestmentsScreen({
 
         if (priceUpdateRes.ok) {
           const priceData = await priceUpdateRes.json();
+          finhubSyncTime = new Date().toISOString();
           logger.info(
             `✅ Stock prices updated: ${
               priceData.results?.stock_prices?.holdingsUpdated || 0
-            } holdings`
+            } holdings at ${finhubSyncTime}`
           );
         } else {
           logger.warn("⚠️ Stock price update failed (non-critical)");
+
+          // Fallback: If FinHub update failed for recent connections, run full sync
+          if (recentConnections.length > 0) {
+            logger.warn(
+              "⚠️ FinHub update failed for recent connections - falling back to full SnapTrade sync"
+            );
+            // Fallback to full sync for recent connections
+            for (const conn of recentConnections) {
+              try {
+                logger.info(
+                  `🔄 Fallback: Full sync for recent connection ${conn.account_id?.substring(
+                    0,
+                    8
+                  )}...`
+                );
+                await refreshSnaptradeInvestments(user.id, conn.account_id);
+                await new Promise((resolve) => setTimeout(resolve, 5000));
+                await syncSnaptradeInvestments(user.id, conn.account_id);
+                await recalculateInvestmentBalances(user.id, conn.account_id);
+                logger.info("✅ Fallback sync completed successfully");
+              } catch (fallbackError: any) {
+                logger.error(
+                  `❌ Fallback sync failed for ${conn.account_id}:`,
+                  fallbackError
+                );
+                syncErrors.push(
+                  `Fallback sync failed: ${
+                    fallbackError.message || "Unknown error"
+                  }`
+                );
+              }
+            }
+          }
         }
       } catch (priceError) {
-        // Non-critical: stock price update failure shouldn't break sync
-        logger.warn("⚠️ Stock price update error (non-critical):", priceError);
+        logger.warn("⚠️ Stock price update error:", priceError);
+
+        // Fallback: If FinHub update failed for recent connections, run full sync
+        if (recentConnections.length > 0) {
+          logger.warn(
+            "⚠️ FinHub update error for recent connections - falling back to full SnapTrade sync"
+          );
+          // Fallback to full sync for recent connections
+          for (const conn of recentConnections) {
+            try {
+              logger.info(
+                `🔄 Fallback: Full sync for recent connection ${conn.account_id?.substring(
+                  0,
+                  8
+                )}...`
+              );
+              await refreshSnaptradeInvestments(user.id, conn.account_id);
+              await new Promise((resolve) => setTimeout(resolve, 5000));
+              await syncSnaptradeInvestments(user.id, conn.account_id);
+              await recalculateInvestmentBalances(user.id, conn.account_id);
+              logger.info("✅ Fallback sync completed successfully");
+            } catch (fallbackError: any) {
+              logger.error(
+                `❌ Fallback sync failed for ${conn.account_id}:`,
+                fallbackError
+              );
+              syncErrors.push(
+                `Fallback sync failed: ${
+                  fallbackError.message || "Unknown error"
+                }`
+              );
+            }
+          }
+        }
       }
 
       logger.info(
