@@ -1193,7 +1193,10 @@ async function runBiggestMoverDaily(res, options = {}) {
         for (const trigger of triggersToSend) {
           const { title, body } = generateNotificationContent(trigger);
           console.log(
-            `[biggest_mover] notification user=${userId.substring(0, 8)}... title="${title}" body="${body}"`
+            `[biggest_mover] notification user=${userId.substring(
+              0,
+              8
+            )}... title="${title}" body="${body}"`
           );
         }
         const sendResult = await sendNotificationsForUser(
