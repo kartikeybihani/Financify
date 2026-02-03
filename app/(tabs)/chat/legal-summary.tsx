@@ -130,7 +130,6 @@ export default function LegalSummaryScreen({
   const insets = useSafeAreaInsets();
   const [contactVisible, setContactVisible] = useState(false);
 
-
   const openLink = async (url: string) => {
     try {
       await WebBrowser.openBrowserAsync(url);
@@ -221,22 +220,14 @@ export default function LegalSummaryScreen({
               complete terms of service, please refer to our{" "}
               <Text
                 style={styles.clickableLink}
-                onPress={() =>
-                  openLink(
-                    "https://www.notion.so/Privacy-Policy-for-Financify-20d42b8a2179800682afdf5dc000fcdd?source=copy_link"
-                  )
-                }
+                onPress={() => openLink("https://www.usefinny.com/privacy")}
               >
                 Privacy Policy
               </Text>{" "}
               and{" "}
               <Text
                 style={styles.clickableLink}
-                onPress={() =>
-                  openLink(
-                    "https://www.notion.so/Terms-Conditions-for-Financify-20d42b8a217980cea19ceda310df47c1?pvs=4"
-                  )
-                }
+                onPress={() => openLink("https://www.usefinny.com/terms")}
               >
                 Terms of Service
               </Text>

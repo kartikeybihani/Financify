@@ -192,10 +192,10 @@ export interface PaywallModalProps {
 export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
   const insets = useSafeAreaInsets();
   const [selectedPlan, setSelectedPlan] = useState<"annual" | "monthly">(
-    "annual",
+    "annual"
   );
   const [expandedFeatureId, setExpandedFeatureId] = useState<string | null>(
-    null,
+    null
   );
   const [toggleWidth, setToggleWidth] = useState(0);
   const [scrollContentHeight, setScrollContentHeight] = useState(0);
@@ -205,7 +205,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
     SCREEN_HEIGHT - Math.max(insets.top, 12) - 12 - Math.max(insets.bottom, 0);
   const sheetHeight = Math.min(
     Math.max(scrollContentHeight + SHEET_HANDLE_HEIGHT + 16, 320),
-    maxSheetHeight,
+    maxSheetHeight
   );
 
   const toggleAnim = useRef(new Animated.Value(1)).current;
@@ -226,8 +226,13 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
   const handleFeaturePress = (featureId: string) => {
     LayoutAnimation.configureNext(featureTransitionAnimation);
     setExpandedFeatureId((current) =>
-      current === featureId ? null : featureId,
+      current === featureId ? null : featureId
     );
+  };
+
+  const handlePlanSelect = (plan: "annual" | "monthly") => {
+    if (plan === selectedPlan) return;
+    setSelectedPlan(plan);
   };
 
   useEffect(() => {
@@ -493,7 +498,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                           )}
                           <TouchableOpacity
                             style={styles.toggleOption}
-                            onPress={() => setSelectedPlan("monthly")}
+                            onPress={() => handlePlanSelect("monthly")}
                             activeOpacity={0.9}
                           >
                             <Text
@@ -508,7 +513,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                           </TouchableOpacity>
                           <TouchableOpacity
                             style={styles.toggleOption}
-                            onPress={() => setSelectedPlan("annual")}
+                            onPress={() => handlePlanSelect("annual")}
                             activeOpacity={0.9}
                           >
                             <Text
@@ -533,7 +538,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                             styles.pricingCardAnnual,
                             styles.pricingCardSelected,
                           ]}
-                          onPress={() => setSelectedPlan("annual")}
+                          onPress={() => handlePlanSelect("annual")}
                           activeOpacity={0.9}
                         >
                           <LinearGradient
@@ -573,7 +578,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                               <Text style={styles.savingsText}>
                                 Save{" "}
                                 {Math.round(
-                                  ((11.99 - 99.99 / 12) / 11.99) * 100,
+                                  ((11.99 - 99.99 / 12) / 11.99) * 100
                                 )}
                                 %
                               </Text>
@@ -587,7 +592,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                             styles.pricingCardMonthly,
                             styles.pricingCardSelected,
                           ]}
-                          onPress={() => setSelectedPlan("monthly")}
+                          onPress={() => handlePlanSelect("monthly")}
                           activeOpacity={0.9}
                         >
                           <LinearGradient
@@ -618,7 +623,6 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                       )}
                     </View>
 
-                    {/* CTA Button */}
                     <TouchableOpacity
                       style={styles.ctaButton}
                       onPress={handleSubscribe}

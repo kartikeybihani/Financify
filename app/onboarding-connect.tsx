@@ -18,6 +18,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid/plaid";
 import { BlurView } from "expo-blur";
+import * as WebBrowser from "expo-web-browser";
 import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import AppStorage from "@/src/utils/storage/storage";
@@ -574,59 +575,121 @@ export default function AccountConnectionScreen() {
         edges={["top", "left", "right", "bottom"]}
       >
         {!hasConnectedBank ? (
-          <View
-            style={[
-              styles.content,
-              { paddingBottom: Platform.OS === "ios" ? 24 : 24 },
-            ]}
+          <ScrollView
+            style={[styles.preConnectScrollView, { paddingBottom: 10 }]}
+            contentContainerStyle={styles.preConnectScrollContent}
+            showsVerticalScrollIndicator={false}
           >
+            {/* Header - Clear and direct */}
             <View style={styles.header}>
               <Text style={styles.title}>Connect your accounts</Text>
-              {/* <Text style={styles.subtitle}>Real growth needs real data</Text> */}
               <Text style={styles.description}>
-                This helps finny understand your spending better and provide you
-                with personalized insights.
+                Add your accounts to get started!
               </Text>
             </View>
 
-            <View style={styles.trustSection}>
-              <View style={styles.trustCard}>
-                <View style={styles.trustIconContainer}>
-                  <Ionicons name="shield-checkmark" size={24} color="#00D4AA" />
+            {/* Transparency - What we can/cannot do */}
+            <View style={styles.transparencySection}>
+              <Text style={styles.sectionLabel}>HOW IT WORKS</Text>
+              <View style={styles.transparencyCard}>
+                <View style={styles.dataFlowRow}>
+                  <View style={styles.dataFlowItem}>
+                    <MaterialCommunityIcons
+                      name="bank"
+                      size={20}
+                      color="#fff"
+                    />
+                    <Text style={styles.dataFlowLabel}>Your Bank</Text>
+                  </View>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={16}
+                    color="rgba(255,255,255,0.4)"
+                  />
+                  <View style={styles.dataFlowItem}>
+                    <View style={styles.plaidBadge}>
+                      <Text style={styles.plaidBadgeText}>Plaid</Text>
+                    </View>
+                    <Text style={styles.dataFlowLabel}>Encrypted</Text>
+                  </View>
+                  <Ionicons
+                    name="arrow-forward"
+                    size={16}
+                    color="rgba(255,255,255,0.4)"
+                  />
+                  <View style={styles.dataFlowItem}>
+                    <Text style={styles.finnyEmoji}>🐬</Text>
+                    <Text style={styles.dataFlowLabel}>Read-only</Text>
+                  </View>
                 </View>
-                <View style={styles.trustContent}>
-                  <Text style={styles.trustTitle}>Bank-level security</Text>
-                  <Text style={styles.trustSubtitle}>
-                    Used by Chase, Venmo, Robinhood • Read-only • Encrypted
-                  </Text>
+
+                <View style={styles.permissionsList}>
+                  <View style={styles.permissionRow}>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={16}
+                      color="#00D4AA"
+                    />
+                    <Text style={styles.permissionText}>
+                      Finny can see transaction history & balances
+                    </Text>
+                  </View>
+                  <View style={styles.permissionRow}>
+                    <Ionicons name="close-circle" size={16} color="#FF6B6B" />
+                    <Text style={styles.permissionText}>
+                      Finny cannot move money or make payments
+                    </Text>
+                  </View>
+                  <View style={styles.permissionRow}>
+                    <Ionicons name="close-circle" size={16} color="#FF6B6B" />
+                    <Text style={styles.permissionText}>
+                      Finny never sees your bank password
+                    </Text>
+                  </View>
                 </View>
               </View>
+            </View>
 
-              <View style={styles.trustCard}>
-                <View style={styles.trustIconContainer}>
-                  <Ionicons name="time-outline" size={24} color="#4A90E2" />
-                </View>
-                <View style={styles.trustContent}>
-                  <Text style={styles.trustTitle}>Takes ~60 seconds</Text>
-                  <Text style={styles.trustSubtitle}>
-                    See insights right after connecting
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.trustCard}>
-                <View style={styles.trustIconContainer}>
-                  <Ionicons name="lock-closed" size={24} color="#00D4AA" />
-                </View>
-                <View style={styles.trustContent}>
-                  <Text style={styles.trustTitle}>Your data is never sold</Text>
-                  <Text style={styles.trustSubtitle}>
-                    Never shared with advertisers • You can delete anytime
+            {/* Control section - You're in control */}
+            <View style={styles.controlSection}>
+              <View style={styles.controlCard}>
+                <Ionicons name="settings-outline" size={20} color="#4A90E2" />
+                <View style={styles.controlContent}>
+                  <Text style={styles.controlTitle}>You're in control</Text>
+                  <Text style={styles.controlSubtitle}>
+                    Disconnect anytime • Delete all data with one tap
                   </Text>
                 </View>
               </View>
             </View>
 
+            {/* Plaid credibility - Emphasized */}
+            <View style={styles.plaidSection}>
+              <View style={styles.plaidCard}>
+                <View style={styles.plaidHeader}>
+                  <View style={styles.plaidLogoBadge}>
+                    <Text style={styles.plaidLogoText}>Plaid</Text>
+                  </View>
+                  <View style={styles.plaidVerified}>
+                    <Ionicons
+                      name="shield-checkmark"
+                      size={12}
+                      color="#00D4AA"
+                    />
+                    <Text style={styles.plaidVerifiedText}>
+                      Verified Partner
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.plaidDescription}>
+                  Plaid powers bank connections for Venmo, Robinhood, Coinbase,
+                  and 8,000+ apps. Your credentials go directly to your bank—we
+                  never see them.
+                </Text>
+              </View>
+            </View>
+
+            {/* Connect button */}
             <View style={styles.buttonContainer}>
               <TouchableOpacity
                 style={[
@@ -641,34 +704,38 @@ export default function AccountConnectionScreen() {
                 ) : (
                   <>
                     <Text style={styles.connectButtonText}>
-                      Connect account
+                      Connect my bank
                     </Text>
-                    <MaterialCommunityIcons
-                      name="bank"
-                      size={20}
-                      color="#fff"
-                      style={styles.buttonIcon}
-                    />
+                    <Ionicons name="arrow-forward" size={18} color="#fff" />
                   </>
                 )}
               </TouchableOpacity>
-              <View style={styles.securityMessage}>
-                <View style={styles.securityRow}>
-                  <Ionicons
-                    name="shield-checkmark-outline"
-                    size={14}
-                    color="#A0A0A0"
-                  />
-                  <Text style={styles.securityText}>
-                    We securely connect via Plaid
-                  </Text>
-                </View>
-                <Text style={styles.securitySubtext}>
-                  Used by 8000+ Institutions
+              <Text style={styles.timeEstimate}>Takes about 60 seconds</Text>
+              <TouchableOpacity
+                style={styles.safetyLinkButton}
+                onPress={async () => {
+                  try {
+                    await WebBrowser.openBrowserAsync(
+                      "https://www.usefinny.com/safety",
+                      {
+                        presentationStyle:
+                          WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+                        controlsColor: "#4A90E2",
+                        showTitle: true,
+                      }
+                    );
+                  } catch (error) {
+                    Alert.alert("Error", "Cannot open safety page");
+                    logger.error("Failed to open safety page:", error);
+                  }
+                }}
+              >
+                <Text style={styles.safetyLinkText}>
+                  Learn more about Finny's safety commitment
                 </Text>
-              </View>
+              </TouchableOpacity>
             </View>
-          </View>
+          </ScrollView>
         ) : (
           <View style={styles.content}>
             <View style={styles.header}>
@@ -870,16 +937,24 @@ const styles = StyleSheet.create({
     paddingTop: 50,
     justifyContent: "space-between",
   },
+  preConnectScrollView: {
+    flex: 1,
+  },
+  preConnectScrollContent: {
+    padding: 24,
+    paddingTop: 16,
+    paddingBottom: 40,
+  },
   header: {
     marginBottom: 24,
   },
   title: {
-    fontSize: 28,
+    fontSize: 26,
     fontWeight: "700",
     color: "#fff",
-    marginBottom: 8,
+    marginBottom: 10,
     textAlign: "left",
-    lineHeight: 34,
+    lineHeight: 32,
   },
   subtitle: {
     fontSize: 18,
@@ -889,12 +964,199 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   description: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.8)",
-    lineHeight: 24,
+    fontSize: 15,
+    color: "rgba(255, 255, 255, 0.75)",
+    lineHeight: 22,
     textAlign: "left",
-    marginTop: 4,
   },
+  // Section label style
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.5)",
+    letterSpacing: 1,
+    marginBottom: 10,
+  },
+  // What You'll Discover section
+  discoverSection: {
+    marginBottom: 20,
+  },
+  discoverCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    gap: 14,
+  },
+  discoverItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  discoverIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  discoverText: {
+    fontSize: 14,
+    color: "rgba(255, 255, 255, 0.9)",
+    flex: 1,
+    lineHeight: 20,
+  },
+  // Transparency section
+  transparencySection: {
+    marginBottom: 16,
+  },
+  transparencyCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  dataFlowRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 8,
+    marginBottom: 14,
+  },
+  dataFlowItem: {
+    alignItems: "center",
+    gap: 6,
+  },
+  dataFlowLabel: {
+    fontSize: 10,
+    color: "rgba(255, 255, 255, 0.6)",
+    fontWeight: "500",
+  },
+  plaidBadge: {
+    backgroundColor: "#000",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 4,
+  },
+  plaidBadgeText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#fff",
+  },
+  finnyEmoji: {
+    fontSize: 20,
+  },
+  permissionsList: {
+    gap: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.08)",
+    paddingTop: 14,
+  },
+  permissionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  permissionText: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.8)",
+  },
+  // Control section
+  controlSection: {
+    marginBottom: 16,
+  },
+  controlCard: {
+    backgroundColor: "rgba(74, 144, 226, 0.08)",
+    borderRadius: 12,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.15)",
+  },
+  controlContent: {
+    flex: 1,
+  },
+  controlTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#fff",
+    marginBottom: 2,
+  },
+  controlSubtitle: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.6)",
+  },
+  // Plaid credibility section
+  plaidSection: {
+    marginBottom: 24,
+  },
+  plaidCard: {
+    backgroundColor: "rgba(0, 0, 0, 0.3)",
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  plaidHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  plaidLogoBadge: {
+    backgroundColor: "#fff",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 6,
+  },
+  plaidLogoText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#000",
+  },
+  plaidVerified: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  plaidVerifiedText: {
+    fontSize: 11,
+    color: "#00D4AA",
+    fontWeight: "500",
+  },
+  plaidDescription: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.7)",
+    lineHeight: 19,
+  },
+  // Time estimate
+  timeEstimate: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.5)",
+    textAlign: "center",
+    // marginTop: 12,
+  },
+  // Safety link button
+  safetyLinkButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    // marginTop: 16,
+    paddingVertical: 1,
+  },
+  safetyLinkText: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.6)",
+    textDecorationLine: "underline",
+  },
+  // Legacy trust styles (keeping for reference, can remove later)
   trustSection: {
     gap: 16,
     marginBottom: 40,
@@ -1012,6 +1274,7 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     gap: 12,
+    marginTop: 20,
   },
   connectButton: {
     backgroundColor: "#4A90E2",

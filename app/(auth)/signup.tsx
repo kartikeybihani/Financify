@@ -593,8 +593,7 @@ export default function SignupScreen() {
   }, [showVerificationOverlay, pendingVerificationEmail]);
 
   const handlePrivacyPolicy = async () => {
-    const url =
-      "https://www.notion.so/Privacy-Policy-for-Finny-20d42b8a2179800682afdf5dc000fcdd";
+    const url = "https://www.usefinny.com/privacy";
     try {
       await WebBrowser.openBrowserAsync(url, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
@@ -608,8 +607,7 @@ export default function SignupScreen() {
   };
 
   const handleTermsConditions = async () => {
-    const url =
-      "https://www.notion.so/Terms-Conditions-for-Finny-20d42b8a217980cea19ceda310df47c1";
+    const url = "https://www.usefinny.com/terms";
     try {
       await WebBrowser.openBrowserAsync(url, {
         presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,

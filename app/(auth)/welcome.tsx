@@ -64,7 +64,7 @@ export default function WelcomeScreen() {
             duration: 1600,
             useNativeDriver: true,
           }),
-        ]),
+        ])
       ),
     ]).start();
 
@@ -203,7 +203,7 @@ export default function WelcomeScreen() {
             >
               <View style={styles.brandContainer}>
                 <Text style={styles.brandName}>Finny</Text>
-                <Text style={styles.aiTagline}>Powered by Next Gen AI</Text>
+                {/* <Text style={styles.aiTagline}>built to grow!</Text> */}
                 <LinearGradient
                   colors={[
                     "rgba(74, 144, 226, 0.3)",
@@ -347,6 +347,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 8,
     letterSpacing: 0.5,
+    fontFamily: "Manrope",
   },
   brandUnderline: {
     height: 3,
