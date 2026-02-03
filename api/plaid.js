@@ -1008,26 +1008,30 @@ async function handleSnapTradeSync(res, userId, accountId) {
         let computedDayChange = null;
         let dayChangePercent = null;
 
-        // CRITICAL: previous_total_value MUST include cash (total account value), no buying_power
+        // CRITICAL: previous_total_value must use same no-double-count logic (cash - cashEquivalentInHoldings)
         // If previous_total_value exists but seems incomplete (holdings-only), reconstruct it
-        // by adding the cash from the previous balance record
+        // by adding only the non-double-counted cash (avoid adding cash that's already SPAXX in holdings)
         let adjustedPreviousTotalValue = previousTotalValue;
         if (previousTotalValue !== null && existingBalance) {
-          const previousCash = existingBalance.cash || 0;
+          const previousCash = parseFloat(existingBalance.cash || 0) || 0;
+          const previousCashToAdd = Math.max(
+            0,
+            previousCash - cashEquivalentInHoldings
+          );
 
-          // Reconstruct: previous_total_value should be total account value (holdings + cash)
-          const reconstructedPrevious = previousTotalValue + previousCash;
+          // Reconstruct: previous_total_value = previous holdings total + cash not already in holdings
+          const reconstructedPrevious = previousTotalValue + previousCashToAdd;
           const diffOriginal = Math.abs(previousTotalValue - totalValue);
           const diffReconstructed = Math.abs(
             reconstructedPrevious - totalValue
           );
 
           // Use reconstructed value if:
-          // 1. There's significant cash (> $1)
+          // 1. There's significant cash to add (> $1)
           // 2. Reconstructed is closer to current total (or original is way off)
           // 3. Reconstructed makes sense (not negative, reasonable)
           if (
-            previousCash > 1 &&
+            previousCashToAdd > 1 &&
             (diffReconstructed < diffOriginal * 0.9 ||
               diffOriginal > totalValue * 0.1) &&
             reconstructedPrevious > 0 &&
@@ -1035,20 +1039,21 @@ async function handleSnapTradeSync(res, userId, accountId) {
           ) {
             adjustedPreviousTotalValue = reconstructedPrevious;
             console.log(
-              "🔧 Reconstructed previous_total_value to include cash:",
+              "🔧 Reconstructed previous_total_value (no double-count):",
               {
                 original_previous_total_value: previousTotalValue.toFixed(2),
-                previous_cash: previousCash.toFixed(2),
+                previous_cash_to_add: previousCashToAdd.toFixed(2),
                 reconstructed_previous_total_value:
                   adjustedPreviousTotalValue.toFixed(2),
                 current_total_value: totalValue.toFixed(2),
-                reason: "previous_total_value was missing cash",
+                reason:
+                  "previous_total_value was missing cash (no SPAXX double-count)",
               }
             );
-          } else if (previousCash > 1) {
+          } else if (previousCashToAdd > 1) {
             console.log("⚠️ previous_total_value reconstruction check:", {
               original: previousTotalValue.toFixed(2),
-              previous_cash: previousCash.toFixed(2),
+              previous_cash_to_add: previousCashToAdd.toFixed(2),
               reconstructed: reconstructedPrevious.toFixed(2),
               current_total: totalValue.toFixed(2),
               diff_original: diffOriginal.toFixed(2),
