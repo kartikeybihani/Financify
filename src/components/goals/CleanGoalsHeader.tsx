@@ -3,9 +3,11 @@ import { View, Text, StyleSheet, Platform } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 
 export default function CleanGoalsHeader() {
   const insets = useSafeAreaInsets();
+  const { isDemoMode } = useDemoMode();
 
   return (
     <LinearGradient
@@ -21,7 +23,11 @@ export default function CleanGoalsHeader() {
       style={[
         styles.gradientContainer,
         {
-          paddingTop: insets.top + (Platform.OS === "ios" ? 0 : 8),
+          paddingTop: isDemoMode
+            ? Platform.OS === "ios"
+              ? 8
+              : 12
+            : insets.top + (Platform.OS === "ios" ? 0 : 8),
         },
       ]}
     >

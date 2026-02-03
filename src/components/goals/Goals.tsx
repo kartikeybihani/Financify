@@ -31,6 +31,7 @@ import { GoalInput } from "@/src/types/addGoalModalTypes";
 import { GoalsProps, GoalsState } from "@/src/types/goalsTypes";
 import { useRouter } from "expo-router";
 import logger from "@/src/utils/core/logger";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 import { supabase } from "@/src/lib/supabase/supabase";
 import AppStorage from "@/src/utils/storage/storage";
 import { getAccountBalance } from "@/src/utils/accountBalance";
@@ -46,6 +47,7 @@ const Goals: React.FC<GoalsProps> = ({
   onGoalAdded,
 }) => {
   const insets = useSafeAreaInsets();
+  const { isDemoMode } = useDemoMode();
   const [state, setState] = useState<GoalsState>({
     showAddGoalModal: false,
     notification: {
@@ -392,8 +394,12 @@ const Goals: React.FC<GoalsProps> = ({
         contentContainerStyle={[
           styles.goalsWrapper,
           !sortedGoalsData.length && styles.emptyGoalsWrapper,
-          !sortedGoalsData.length && { paddingBottom: Math.max(insets.bottom, 16) },
-          sortedGoalsData.length > 0 && { paddingBottom: Math.max(insets.bottom, 16) + 120 },
+          !sortedGoalsData.length && {
+            paddingBottom: Math.max(insets.bottom, 16),
+          },
+          sortedGoalsData.length > 0 && {
+            paddingBottom: Math.max(insets.bottom, 16) + 120,
+          },
         ]}
         refreshControl={
           <RefreshControl
@@ -425,8 +431,7 @@ const Goals: React.FC<GoalsProps> = ({
             {/* Supporting subtext - remove fear */}
             <Text style={styles.emptyStateSupportingText}>
               You don't need a perfect goal.
-              {"\n"}
-              A thought, a worry, or a rough idea is enough.
+              {"\n"}A thought, a worry, or a rough idea is enough.
             </Text>
 
             {/* Primary CTA button */}
@@ -490,7 +495,8 @@ const Goals: React.FC<GoalsProps> = ({
         ) : (
           <>
             <Text style={styles.transactionLinkTipLabel}>
-              Tip: Link transactions to goals to automatically add to your goal amount
+              Tip: Link transactions to goals to automatically add to your goal
+              amount
             </Text>
             {sortedGoalsData.map((item, index) => (
               <GoalItem
@@ -521,15 +527,23 @@ const Goals: React.FC<GoalsProps> = ({
           style={[
             styles.addGoalButton,
             { bottom: Math.max(insets.bottom, 16) + 72 },
+            isDemoMode && { opacity: 0.5 },
           ]}
-          onPress={() =>
+          onPress={() => {
+            if (isDemoMode) return;
             setState((prev: GoalsState) => ({
               ...prev,
               showAddGoalModal: true,
-            }))
-          }
+            }));
+          }}
+          disabled={isDemoMode}
+          activeOpacity={isDemoMode ? 1 : 0.8}
         >
-          <Ionicons name="add-circle" size={24} color="#4A90E2" />
+          <Ionicons
+            name="add-circle"
+            size={24}
+            color={isDemoMode ? "#666" : "#4A90E2"}
+          />
           <Text style={styles.addGoalText}>Add New Goal</Text>
         </TouchableOpacity>
       )}

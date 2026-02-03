@@ -6,6 +6,8 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import { Transaction } from "@/src/types/plaid";
 import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
+import { useDemoMode } from "@/src/contexts/DemoContext";
+import { demoTransactions, demoAccounts } from "@/src/data/demo";
 
 export interface UnreviewedTransaction extends Omit<Transaction, 'merchant_name' | 'category_id'> {
   id: string;
@@ -33,6 +35,7 @@ export interface UseUnreviewedTransactionsReturn {
  * Uses real-time subscriptions for automatic updates
  */
 export function useUnreviewedTransactions(): UseUnreviewedTransactionsReturn {
+  const { isDemoMode } = useDemoMode();
   const [transactions, setTransactions] = useState<UnreviewedTransaction[]>([]);
   const [loading, setLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
@@ -54,6 +57,29 @@ export function useUnreviewedTransactions(): UseUnreviewedTransactionsReturn {
 
   // Fetch unreviewed transactions
   const fetchUnreviewedTransactions = useCallback(async () => {
+    if (isDemoMode) {
+      const getAccountName = (accountId: string) =>
+        demoAccounts.find((a) => a.account_id === accountId)?.name ?? "Account";
+      const getInstitutionName = (accountId: string) =>
+        demoAccounts.find((a) => a.account_id === accountId)?.institution_name ?? "Chase";
+      const demoUnreviewed: UnreviewedTransaction[] = demoTransactions
+        .slice(0, 15)
+        .map((tx) => ({
+          id: tx.id,
+          name: tx.name || tx.merchant_name || "Transaction",
+          amount: tx.amount,
+          date: tx.date,
+          merchant_name: tx.merchant_name,
+          category_id: null,
+          account_id: tx.account_id,
+          inserted_at: tx.inserted_at || tx.date + "T12:00:00Z",
+          account_name: getAccountName(tx.account_id),
+          institution_name: getInstitutionName(tx.account_id),
+        }));
+      setTransactions(demoUnreviewed);
+      setLoading(false);
+      return;
+    }
     if (!userId) {
       setLoading(false);
       return;
@@ -129,7 +155,7 @@ export function useUnreviewedTransactions(): UseUnreviewedTransactionsReturn {
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [userId, isDemoMode]);
 
   // Mark single transaction as reviewed
   const markAsReviewed = useCallback(
@@ -191,12 +217,16 @@ export function useUnreviewedTransactions(): UseUnreviewedTransactionsReturn {
     }
   }, [userId, transactions, fetchUnreviewedTransactions]);
 
-  // Initial fetch
+  // Initial fetch (and when entering demo mode)
   useEffect(() => {
+    if (isDemoMode) {
+      fetchUnreviewedTransactions();
+      return;
+    }
     if (userId) {
       fetchUnreviewedTransactions();
     }
-  }, [userId, fetchUnreviewedTransactions]);
+  }, [userId, isDemoMode, fetchUnreviewedTransactions]);
 
   // Set up real-time subscription for new transactions
   useEffect(() => {

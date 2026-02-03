@@ -38,6 +38,11 @@ import {
 import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
 import { styles } from "@/src/styles/investmentsStyles";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
+import { useDemoMode } from "@/src/contexts/DemoContext";
+import {
+  demoInvestmentHoldings,
+  demoInvestmentBalances,
+} from "@/src/data/demo";
 import IconButton from "@/src/components/shared/IconButton";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 
@@ -112,6 +117,43 @@ const getCompanyLogoUrl = (symbol: string): string => {
   return `https://img.logo.dev/ticker/${symbol.toUpperCase()}?token=pk_VDL82EqXQlGEUFN2v4q7Vg&retina=true`;
 };
 
+// Map demo holdings/balances to screen shape
+function getDemoHoldingsForScreen(): Holding[] {
+  return demoInvestmentHoldings.map((h) => ({
+    symbol: h.symbol,
+    description: h.description || h.symbol,
+    units: h.units,
+    price: h.price,
+    market_value: h.market_value,
+    unrealized_pl: h.unrealized_pl,
+    day_change: h.day_change ?? null,
+    day_change_percent: h.day_change_percent ?? null,
+    total_percent_change: h.total_percent_change ?? null,
+    security_type: h.security_type,
+    account_id: h.account_id,
+    provider: h.provider ?? null,
+    plaid_account_id: h.plaid_account_id ?? null,
+    item_id: h.item_id ?? null,
+  }));
+}
+function getDemoBalancesForScreen(): BalanceRow[] {
+  return demoInvestmentBalances.map((b) => ({
+    cash: b.cash ?? 0,
+    buying_power: b.buying_power ?? 0,
+    currency_code: b.currency_code,
+    day_change: b.day_change ?? null,
+    day_change_percent: b.day_change_percent ?? null,
+    total_change: b.total_change ?? null,
+    total_change_percent: b.total_change_percent ?? null,
+    total_value: b.total_value ?? null,
+    last_updated: b.last_updated ?? null,
+    provider: b.provider ?? null,
+    account_id: b.account_id,
+    plaid_account_id: b.plaid_account_id ?? null,
+    item_id: b.item_id ?? null,
+  }));
+}
+
 export default function InvestmentsScreen({
   preloadedData,
 }: {
@@ -123,6 +165,7 @@ export default function InvestmentsScreen({
   };
 }) {
   const router = useRouter();
+  const { isDemoMode } = useDemoMode();
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>(
@@ -138,7 +181,7 @@ export default function InvestmentsScreen({
     preloadedData?.connections || []
   );
   const [showInstitutionModal, setShowInstitutionModal] = useState(false);
-  const [isLoading, setIsLoading] = useState(!preloadedData);
+  const [isLoading, setIsLoading] = useState(!preloadedData && !isDemoMode);
   const [selectedSecurityType, setSelectedSecurityType] = useState<
     string | null
   >(null);
@@ -178,6 +221,26 @@ export default function InvestmentsScreen({
   // Internal function to load data without triggering auto-sync (prevents infinite loops)
   const loadFromDbWithoutAutoSync = async () => {
     try {
+      if (isDemoMode) {
+        setHoldings(getDemoHoldingsForScreen());
+        setOptions([]);
+        setBalances(getDemoBalancesForScreen());
+        setConnections([
+          {
+            account_id: demoInvestmentBalances[0]?.account_id ?? "demo",
+            brokerage_name: "Chase",
+            account_name: "Plaid IRA",
+            last_synced_at: new Date().toISOString(),
+            connection_status: "active",
+            is_active: true,
+            provider: "plaid",
+          } as ConnectionRow,
+        ]);
+        setHasCheckedConnections(true);
+        hasData.current = true;
+        setIsLoading(false);
+        return true;
+      }
       logger.info("Investments: Loading data from Supabase (no auto-sync)...");
 
       const [h, o, b, c] = await Promise.all([
@@ -266,6 +329,25 @@ export default function InvestmentsScreen({
 
   const loadFromDb = async () => {
     try {
+      if (isDemoMode) {
+        setHoldings(getDemoHoldingsForScreen());
+        setOptions([]);
+        setBalances(getDemoBalancesForScreen());
+        setConnections([
+          {
+            account_id: demoInvestmentBalances[0]?.account_id ?? "demo",
+            brokerage_name: "Chase",
+            account_name: "Plaid IRA",
+            last_synced_at: new Date().toISOString(),
+            connection_status: "active",
+            is_active: true,
+            provider: "plaid",
+          } as ConnectionRow,
+        ]);
+        setHasCheckedConnections(true);
+        hasData.current = true;
+        return true;
+      }
       logger.info("Investments: Loading data from Supabase...");
 
       const [h, o, b, c] = await Promise.all([
@@ -1455,6 +1537,7 @@ export default function InvestmentsScreen({
   };
 
   const handleAddInvestmentAccount = () => {
+    if (isDemoMode) return;
     logger.info("Add Investment Account button pressed");
     setShowInstitutionModal(true);
   };
@@ -1787,9 +1870,10 @@ export default function InvestmentsScreen({
             see your holdings in one place.
           </Text>
           <TouchableOpacity
-            style={styles.emptyStateButton}
+            style={[styles.emptyStateButton, isDemoMode && { opacity: 0.5 }]}
             onPress={handleAddInvestmentAccount}
-            activeOpacity={0.8}
+            activeOpacity={isDemoMode ? 1 : 0.8}
+            disabled={isDemoMode}
           >
             <Ionicons
               name="add-circle"
@@ -1890,12 +1974,14 @@ export default function InvestmentsScreen({
 
     return (
       <View style={styles.portfolioSummaryContainer}>
-        <IconButton
-          onPress={handleAddInvestmentAccount}
-          icon="add-outline"
-          size={19}
-          style={styles.addAccountTopRight}
-        />
+        {!isDemoMode && (
+          <IconButton
+            onPress={handleAddInvestmentAccount}
+            icon="add-outline"
+            size={19}
+            style={styles.addAccountTopRight}
+          />
+        )}
         <View style={styles.portfolioSummaryContent}>
           <View style={styles.portfolioInfo}>
             <Text style={styles.portfolioLabel}>Total Portfolio Value</Text>
@@ -2455,13 +2541,16 @@ export default function InvestmentsScreen({
             )}
 
             {isLoading && hasCheckedConnections && connections.length > 0 ? (
-              // User has investment account and we're loading, show loading screen
               renderLoadingState()
-            ) : isLoading && !hasCheckedConnections ? (
-              // Initial load, haven't checked connections yet - show loading screen
+            ) : (isLoading || (isDemoMode && !hasCheckedConnections)) &&
+              !hasCheckedConnections ? (
+              // Initial load or demo data not yet loaded - show loading
               renderLoadingState()
-            ) : hasNoInvestments() && !isLoading && hasCheckedConnections ? (
-              // No investments (either no accounts or accounts with no investments), show empty state
+            ) : hasNoInvestments() &&
+              !isDemoMode &&
+              !isLoading &&
+              hasCheckedConnections ? (
+              // No investments - show empty state (never in demo; demo always has data)
               renderEmptyState()
             ) : (
               // Data loaded, show content

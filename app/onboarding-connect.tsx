@@ -22,6 +22,7 @@ import * as WebBrowser from "expo-web-browser";
 import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import AppStorage from "@/src/utils/storage/storage";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 
 interface ConnectedAccount {
   account_id: string;
@@ -56,6 +57,7 @@ interface AccountAnalysisResult {
 export default function AccountConnectionScreen() {
   const params = useLocalSearchParams();
   const router = useRouter();
+  const { enterDemoMode } = useDemoMode();
   const [isLoading, setIsLoading] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isClosingPlaid, setIsClosingPlaid] = useState(false);
@@ -575,167 +577,181 @@ export default function AccountConnectionScreen() {
         edges={["top", "left", "right", "bottom"]}
       >
         {!hasConnectedBank ? (
-          <ScrollView
-            style={[styles.preConnectScrollView, { paddingBottom: 10 }]}
-            contentContainerStyle={styles.preConnectScrollContent}
-            showsVerticalScrollIndicator={false}
-          >
-            {/* Header - Clear and direct */}
-            <View style={styles.header}>
-              <Text style={styles.title}>Connect your accounts</Text>
-              <Text style={styles.description}>
-                Add your accounts to get started!
-              </Text>
+          <>
+            <View style={styles.topBar}>
+              <View style={styles.topBarSpacer} />
+              <TouchableOpacity
+                style={styles.skipButton}
+                onPress={() => {
+                  logOnboardingEvent({ stage: "plaid", action: "skip_demo" });
+                  enterDemoMode();
+                }}
+              >
+                <Text style={styles.skipButtonText}>Skip</Text>
+              </TouchableOpacity>
             </View>
+            <ScrollView
+              style={[styles.preConnectScrollView, { paddingBottom: 10 }]}
+              contentContainerStyle={styles.preConnectScrollContent}
+              showsVerticalScrollIndicator={false}
+            >
+              {/* Header - Clear and direct */}
+              <View style={styles.header}>
+                <Text style={styles.title}>Connect your accounts</Text>
+                <Text style={styles.description}>
+                  Add your accounts to get started!
+                </Text>
+              </View>
 
-            {/* Transparency - What we can/cannot do */}
-            <View style={styles.transparencySection}>
-              <Text style={styles.sectionLabel}>HOW IT WORKS</Text>
-              <View style={styles.transparencyCard}>
-                <View style={styles.dataFlowRow}>
-                  <View style={styles.dataFlowItem}>
-                    <MaterialCommunityIcons
-                      name="bank"
-                      size={20}
-                      color="#fff"
-                    />
-                    <Text style={styles.dataFlowLabel}>Your Bank</Text>
-                  </View>
-                  <Ionicons
-                    name="arrow-forward"
-                    size={16}
-                    color="rgba(255,255,255,0.4)"
-                  />
-                  <View style={styles.dataFlowItem}>
-                    <View style={styles.plaidBadge}>
-                      <Text style={styles.plaidBadgeText}>Plaid</Text>
+              {/* Transparency - What we can/cannot do */}
+              <View style={styles.transparencySection}>
+                <Text style={styles.sectionLabel}>HOW IT WORKS</Text>
+                <View style={styles.transparencyCard}>
+                  <View style={styles.dataFlowRow}>
+                    <View style={styles.dataFlowItem}>
+                      <MaterialCommunityIcons
+                        name="bank"
+                        size={20}
+                        color="#fff"
+                      />
+                      <Text style={styles.dataFlowLabel}>Your Bank</Text>
                     </View>
-                    <Text style={styles.dataFlowLabel}>Encrypted</Text>
+                    <Ionicons
+                      name="arrow-forward"
+                      size={16}
+                      color="rgba(255,255,255,0.4)"
+                    />
+                    <View style={styles.dataFlowItem}>
+                      <View style={styles.plaidBadge}>
+                        <Text style={styles.plaidBadgeText}>Plaid</Text>
+                      </View>
+                      <Text style={styles.dataFlowLabel}>Encrypted</Text>
+                    </View>
+                    <Ionicons
+                      name="arrow-forward"
+                      size={16}
+                      color="rgba(255,255,255,0.4)"
+                    />
+                    <View style={styles.dataFlowItem}>
+                      <Text style={styles.finnyEmoji}>🐬</Text>
+                      <Text style={styles.dataFlowLabel}>Read-only</Text>
+                    </View>
                   </View>
-                  <Ionicons
-                    name="arrow-forward"
-                    size={16}
-                    color="rgba(255,255,255,0.4)"
-                  />
-                  <View style={styles.dataFlowItem}>
-                    <Text style={styles.finnyEmoji}>🐬</Text>
-                    <Text style={styles.dataFlowLabel}>Read-only</Text>
+
+                  <View style={styles.permissionsList}>
+                    <View style={styles.permissionRow}>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={16}
+                        color="#00D4AA"
+                      />
+                      <Text style={styles.permissionText}>
+                        Finny can see transaction history & balances
+                      </Text>
+                    </View>
+                    <View style={styles.permissionRow}>
+                      <Ionicons name="close-circle" size={16} color="#FF6B6B" />
+                      <Text style={styles.permissionText}>
+                        Finny cannot move money or make payments
+                      </Text>
+                    </View>
+                    <View style={styles.permissionRow}>
+                      <Ionicons name="close-circle" size={16} color="#FF6B6B" />
+                      <Text style={styles.permissionText}>
+                        Finny never sees your bank password
+                      </Text>
+                    </View>
                   </View>
                 </View>
+              </View>
 
-                <View style={styles.permissionsList}>
-                  <View style={styles.permissionRow}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={16}
-                      color="#00D4AA"
-                    />
-                    <Text style={styles.permissionText}>
-                      Finny can see transaction history & balances
-                    </Text>
-                  </View>
-                  <View style={styles.permissionRow}>
-                    <Ionicons name="close-circle" size={16} color="#FF6B6B" />
-                    <Text style={styles.permissionText}>
-                      Finny cannot move money or make payments
-                    </Text>
-                  </View>
-                  <View style={styles.permissionRow}>
-                    <Ionicons name="close-circle" size={16} color="#FF6B6B" />
-                    <Text style={styles.permissionText}>
-                      Finny never sees your bank password
+              {/* Control section - You're in control */}
+              <View style={styles.controlSection}>
+                <View style={styles.controlCard}>
+                  <Ionicons name="settings-outline" size={20} color="#4A90E2" />
+                  <View style={styles.controlContent}>
+                    <Text style={styles.controlTitle}>You're in control</Text>
+                    <Text style={styles.controlSubtitle}>
+                      Disconnect anytime • Delete all data with one tap
                     </Text>
                   </View>
                 </View>
               </View>
-            </View>
 
-            {/* Control section - You're in control */}
-            <View style={styles.controlSection}>
-              <View style={styles.controlCard}>
-                <Ionicons name="settings-outline" size={20} color="#4A90E2" />
-                <View style={styles.controlContent}>
-                  <Text style={styles.controlTitle}>You're in control</Text>
-                  <Text style={styles.controlSubtitle}>
-                    Disconnect anytime • Delete all data with one tap
+              {/* Plaid credibility - Emphasized */}
+              <View style={styles.plaidSection}>
+                <View style={styles.plaidCard}>
+                  <View style={styles.plaidHeader}>
+                    <View style={styles.plaidLogoBadge}>
+                      <Text style={styles.plaidLogoText}>Plaid</Text>
+                    </View>
+                    <View style={styles.plaidVerified}>
+                      <Ionicons
+                        name="shield-checkmark"
+                        size={12}
+                        color="#00D4AA"
+                      />
+                      <Text style={styles.plaidVerifiedText}>
+                        Verified Partner
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.plaidDescription}>
+                    Plaid powers bank connections for Venmo, Robinhood,
+                    Coinbase, and 8,000+ apps. Your credentials go directly to
+                    your bank—we never see them.
                   </Text>
                 </View>
               </View>
-            </View>
 
-            {/* Plaid credibility - Emphasized */}
-            <View style={styles.plaidSection}>
-              <View style={styles.plaidCard}>
-                <View style={styles.plaidHeader}>
-                  <View style={styles.plaidLogoBadge}>
-                    <Text style={styles.plaidLogoText}>Plaid</Text>
-                  </View>
-                  <View style={styles.plaidVerified}>
-                    <Ionicons
-                      name="shield-checkmark"
-                      size={12}
-                      color="#00D4AA"
-                    />
-                    <Text style={styles.plaidVerifiedText}>
-                      Verified Partner
-                    </Text>
-                  </View>
-                </View>
-                <Text style={styles.plaidDescription}>
-                  Plaid powers bank connections for Venmo, Robinhood, Coinbase,
-                  and 8,000+ apps. Your credentials go directly to your bank—we
-                  never see them.
-                </Text>
+              {/* Connect button */}
+              <View style={styles.buttonContainer}>
+                <TouchableOpacity
+                  style={[
+                    styles.connectButton,
+                    isLoading && styles.connectButtonDisabled,
+                  ]}
+                  onPress={handleConnect}
+                  disabled={isLoading}
+                >
+                  {isLoading ? (
+                    <ActivityIndicator color="#fff" />
+                  ) : (
+                    <>
+                      <Text style={styles.connectButtonText}>
+                        Connect my accounts
+                      </Text>
+                      {/* <Ionicons name="arrow-forward" size={18} color="#fff" /> */}
+                    </>
+                  )}
+                </TouchableOpacity>
+                <Text style={styles.timeEstimate}>Takes about 60 seconds</Text>
+                <TouchableOpacity
+                  style={styles.safetyLinkButton}
+                  onPress={async () => {
+                    try {
+                      await WebBrowser.openBrowserAsync(
+                        "https://www.usefinny.com/safety",
+                        {
+                          presentationStyle:
+                            WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+                          controlsColor: "#4A90E2",
+                          showTitle: true,
+                        }
+                      );
+                    } catch (error) {
+                      Alert.alert("Error", "Cannot open safety page");
+                      logger.error("Failed to open safety page:", error);
+                    }
+                  }}
+                >
+                  <Text style={styles.safetyLinkText}>
+                    Learn more about Finny's safety commitment
+                  </Text>
+                </TouchableOpacity>
               </View>
-            </View>
-
-            {/* Connect button */}
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.connectButton,
-                  isLoading && styles.connectButtonDisabled,
-                ]}
-                onPress={handleConnect}
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <>
-                    <Text style={styles.connectButtonText}>
-                      Connect my bank
-                    </Text>
-                    <Ionicons name="arrow-forward" size={18} color="#fff" />
-                  </>
-                )}
-              </TouchableOpacity>
-              <Text style={styles.timeEstimate}>Takes about 60 seconds</Text>
-              <TouchableOpacity
-                style={styles.safetyLinkButton}
-                onPress={async () => {
-                  try {
-                    await WebBrowser.openBrowserAsync(
-                      "https://www.usefinny.com/safety",
-                      {
-                        presentationStyle:
-                          WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
-                        controlsColor: "#4A90E2",
-                        showTitle: true,
-                      }
-                    );
-                  } catch (error) {
-                    Alert.alert("Error", "Cannot open safety page");
-                    logger.error("Failed to open safety page:", error);
-                  }
-                }}
-              >
-                <Text style={styles.safetyLinkText}>
-                  Learn more about Finny's safety commitment
-                </Text>
-              </TouchableOpacity>
-            </View>
-          </ScrollView>
+            </ScrollView>
+          </>
         ) : (
           <View style={styles.content}>
             <View style={styles.header}>
@@ -927,6 +943,26 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "transparent",
   },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-end",
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === "ios" ? 8 : 12,
+    paddingBottom: 8,
+  },
+  topBarSpacer: {
+    flex: 1,
+  },
+  skipButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 4,
+  },
+  skipButtonText: {
+    fontSize: 16,
+    color: "rgba(255, 255, 255, 0.8)",
+    fontWeight: "500",
+  },
   container: {
     flex: 1,
     paddingTop: Platform.OS === "ios" ? 40 : 20,
@@ -942,8 +978,8 @@ const styles = StyleSheet.create({
   },
   preConnectScrollContent: {
     padding: 24,
-    paddingTop: 16,
-    paddingBottom: 40,
+    paddingTop: 5,
+    paddingBottom: 20,
   },
   header: {
     marginBottom: 24,
@@ -1068,6 +1104,7 @@ const styles = StyleSheet.create({
   // Control section
   controlSection: {
     marginBottom: 16,
+    marginTop: 10,
   },
   controlCard: {
     backgroundColor: "rgba(74, 144, 226, 0.08)",
@@ -1094,7 +1131,8 @@ const styles = StyleSheet.create({
   },
   // Plaid credibility section
   plaidSection: {
-    marginBottom: 24,
+    marginBottom: 14,
+    marginTop: 15,
   },
   plaidCard: {
     backgroundColor: "rgba(0, 0, 0, 0.3)",
@@ -1131,7 +1169,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   plaidDescription: {
-    fontSize: 13,
+    fontSize: 12,
     color: "rgba(255, 255, 255, 0.7)",
     lineHeight: 19,
   },

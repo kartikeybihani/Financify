@@ -21,6 +21,7 @@ import IconButton from "@/src/components/shared/IconButton";
 import { BlurView } from "expo-blur";
 import { addNewBankAccount } from "@/src/utils/plaid/plaid";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 import logger from "@/src/utils/core/logger";
 
 interface CategoryData {
@@ -80,6 +81,7 @@ export default function FinancialBottomSheet({
     new Set()
   );
 
+  const { isDemoMode } = useDemoMode();
   const [isAddingAccount, setIsAddingAccount] = useState(false);
   const [showInstitutionModal, setShowInstitutionModal] = useState(false);
   const [shouldReopenSheet, setShouldReopenSheet] = useState(false);
@@ -152,7 +154,7 @@ export default function FinancialBottomSheet({
   };
 
   const handleAddNewAccount = async (categoryTitle?: string) => {
-    if (isAddingAccount) return;
+    if (isAddingAccount || isDemoMode) return;
 
     // If this is for cash, close the bottom sheet first, then trigger cash modal from parent
     const isCashCategory = categoryTitle?.toLowerCase().includes("cash");
@@ -248,7 +250,7 @@ export default function FinancialBottomSheet({
     setShowInstitutionModal(false);
     setShouldReopenSheet(false); // Don't reopen after selection
 
-    if (isAddingAccount) return;
+    if (isAddingAccount || isDemoMode) return;
     setIsAddingAccount(true);
 
     try {
@@ -468,11 +470,12 @@ export default function FinancialBottomSheet({
                                 onPress={() =>
                                   handleAddNewAccount(category.title)
                                 }
-                                disabled={isAddingAccount}
+                                disabled={isAddingAccount || isDemoMode}
                                 style={{
                                   flexDirection: "row",
                                   alignItems: "center",
-                                  opacity: isAddingAccount ? 0.6 : 1,
+                                  opacity:
+                                    isAddingAccount || isDemoMode ? 0.5 : 1,
                                 }}
                               >
                                 <Text
@@ -486,7 +489,7 @@ export default function FinancialBottomSheet({
                                 <AntDesign
                                   name="right"
                                   size={13}
-                                  color="#4A90E2"
+                                  color={isDemoMode ? "#666" : "#4A90E2"}
                                   style={{ marginLeft: 6 }}
                                 />
                               </TouchableOpacity>
@@ -510,12 +513,15 @@ export default function FinancialBottomSheet({
                                     <TouchableOpacity
                                       style={{
                                         flexDirection: "row",
-                                        opacity: isAddingAccount ? 0.6 : 1,
+                                        opacity:
+                                          isAddingAccount || isDemoMode
+                                            ? 0.5
+                                            : 1,
                                       }}
                                       onPress={() =>
                                         handleAddNewAccount(category.title)
                                       }
-                                      disabled={isAddingAccount}
+                                      disabled={isAddingAccount || isDemoMode}
                                     >
                                       <Ionicons
                                         name={
@@ -524,14 +530,16 @@ export default function FinancialBottomSheet({
                                             : "add-circle-outline"
                                         }
                                         size={16}
-                                        color="#4A90E2"
+                                        color={isDemoMode ? "#666" : "#4A90E2"}
                                         style={{ marginRight: 4 }}
                                       />
                                       <Text
                                         style={{
                                           fontSize: isSmallScreen ? 11 : 12,
                                           fontWeight: "600",
-                                          color: "#4A90E2",
+                                          color: isDemoMode
+                                            ? "#666"
+                                            : "#4A90E2",
                                           fontFamily:
                                             Platform.OS === "ios"
                                               ? "System"
@@ -564,13 +572,13 @@ export default function FinancialBottomSheet({
                       style={[
                         styles.addAccountButton,
                         {
-                          opacity: isAddingAccount ? 0.6 : 1,
+                          opacity: isAddingAccount || isDemoMode ? 0.5 : 1,
                           paddingVertical: isSmallScreen ? 12 : 14,
                           paddingHorizontal: isSmallScreen ? 18 : 22,
                         },
                       ]}
                       onPress={() => handleAddNewAccount()}
-                      disabled={isAddingAccount}
+                      disabled={isAddingAccount || isDemoMode}
                     >
                       <Ionicons
                         name={
@@ -579,7 +587,7 @@ export default function FinancialBottomSheet({
                             : "add-circle-outline"
                         }
                         size={responsiveDimensions.iconSize}
-                        color="#4A90E2"
+                        color={isDemoMode ? "#666" : "#4A90E2"}
                         style={styles.addIcon}
                       />
                       <Text

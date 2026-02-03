@@ -15,6 +15,7 @@ import { useFonts } from "expo-font";
 import AuthNavigationProvider, {
   useAuthNavigation,
 } from "@/src/contexts/AuthNavigationContext";
+import { DemoProvider } from "@/src/contexts/DemoContext";
 import { runStorageMigrationV2 } from "@/src/utils/core/migrate";
 import { runCacheMigration } from "@/src/shared/utils/cacheMigration";
 import logger from "@/src/utils/core/logger";
@@ -152,18 +153,20 @@ export default function RootLayout() {
   const appContent = (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthNavigationProvider>
-        {postHogReady && <PostHogScreenTracker />}
-        <NavigationReadyTracker onReady={() => setNavigationReady(true)} />
-        <ActionSheetProvider>
-          <>
-            <RootLayoutNav />
-            <StatusBar
-              style="light"
-              backgroundColor="transparent"
-              translucent
-            />
-          </>
-        </ActionSheetProvider>
+        <DemoProvider>
+          {postHogReady && <PostHogScreenTracker />}
+          <NavigationReadyTracker onReady={() => setNavigationReady(true)} />
+          <ActionSheetProvider>
+            <>
+              <RootLayoutNav />
+              <StatusBar
+                style="light"
+                backgroundColor="transparent"
+                translucent
+              />
+            </>
+          </ActionSheetProvider>
+        </DemoProvider>
       </AuthNavigationProvider>
     </GestureHandlerRootView>
   );

@@ -10,9 +10,14 @@ import {
   Image,
   Dimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Goals from "@/src/components/goals/Goals";
+import DemoBanner from "@/src/components/demo/DemoBanner";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 import { useGoals } from "@/src/hooks/useGoals";
 import { notificationService } from "@/src/utils/core/notificationService";
 import CleanGoalsHeader from "@/src/components/goals/CleanGoalsHeader";
@@ -100,8 +105,10 @@ const styles = StyleSheet.create({
 });
 
 export default function GoalsScreen() {
+  const { isDemoMode } = useDemoMode();
+  const insets = useSafeAreaInsets();
   const { goalsData, loading, deleteGoal, updateGoal, refreshGoals } = useGoals(
-    () => {},
+    () => {}
   );
   // Use only initial-load header spinner; pull-to-refresh spinner is handled inside Goals via RefreshControl
   const [hasInitialData, setHasInitialData] = useState(false);
@@ -109,7 +116,7 @@ export default function GoalsScreen() {
   const goalsAnimations = React.useRef<Animated.Value[]>(
     Array(10)
       .fill(0)
-      .map(() => new Animated.Value(0)),
+      .map(() => new Animated.Value(0))
   ).current;
 
   React.useEffect(() => {
@@ -169,6 +176,11 @@ export default function GoalsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+      {isDemoMode && (
+        <View style={{ paddingTop: insets.top }}>
+          <DemoBanner />
+        </View>
+      )}
       {/* Clean Header with Gradient */}
       <CleanGoalsHeader />
       {loading && !hasInitialData && (

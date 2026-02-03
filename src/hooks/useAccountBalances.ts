@@ -11,6 +11,8 @@ import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 import { getAccountBalance } from "@/src/utils/accountBalance";
+import { useDemoMode } from "@/src/contexts/DemoContext";
+import { demoAccounts } from "@/src/data/demo";
 
 const CACHE_DURATION = 5 * 60 * 1000; // 5 minutes in milliseconds
 
@@ -24,7 +26,18 @@ interface CachedBalances {
   timestamp: number;
 }
 
+const demoAccountsWithBalances: Account[] = demoAccounts.map((a) => ({
+  ...a,
+  current_balance: a.current_balance ?? undefined,
+  available_balance: a.available_balance ?? undefined,
+  balances: {
+    current: a.current_balance ?? 0,
+    available: a.available_balance ?? 0,
+  },
+}));
+
 export function useAccountBalances() {
+  const { isDemoMode } = useDemoMode();
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [loading, setLoading] = useState(false);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -124,6 +137,12 @@ export function useAccountBalances() {
 
   const loadBalancesWithCache = async (): Promise<void> => {
     try {
+      if (isDemoMode) {
+        setAccounts(demoAccountsWithBalances);
+        setLoading(false);
+        setIsInitialLoad(false);
+        return;
+      }
       const authResult = await getAuthenticatedUser();
       if (!authResult?.user?.id) {
         logger.error("❌ [BALANCES CACHE] User not authenticated");
@@ -159,6 +178,12 @@ export function useAccountBalances() {
 
   const refreshBalancesFromServer = async (hasCache: boolean = false): Promise<void> => {
     try {
+      if (isDemoMode) {
+        setAccounts(demoAccountsWithBalances);
+        setLoading(false);
+        setIsInitialLoad(false);
+        return;
+      }
       logger.info("🔄 [BALANCES] Refreshing account balances from database...");
       if (!hasCache) {
         setLoading(true);
@@ -228,10 +253,10 @@ export function useAccountBalances() {
     }
   };
 
-  // Initialize on mount
+  // Initialize on mount (and when entering demo mode)
   useEffect(() => {
     loadBalancesWithCache();
-  }, []);
+  }, [isDemoMode]);
 
   // Listen for auth state changes (token refresh)
   useEffect(() => {

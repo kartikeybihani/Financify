@@ -7,6 +7,8 @@ import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import AppStorage from "@/src/utils/storage/storage";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
+import { useDemoMode } from "@/src/contexts/DemoContext";
+import { demoTransactions } from "@/src/data/demo";
 
 // Cache keys
 const SPENDING_CACHE_KEY = "spending_data";
@@ -31,6 +33,8 @@ export function useSpendingData(
   loading: boolean;
   refresh: () => Promise<void>;
 } {
+  const { isDemoMode } = useDemoMode();
+
   // Load cache synchronously before first render (MMKV advantage)
   const initialCache = (() => {
     try {
@@ -126,6 +130,54 @@ export function useSpendingData(
   const calculateSpendingData = useCallback(
     async (userId: string, hasCache: boolean = false) => {
       try {
+        if (isDemoMode) {
+          const txList = demoTransactions as Transaction[];
+          const now = new Date();
+          const today = formatDate(now);
+          const lastMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+          const lastMonthStartStr = formatDate(lastMonthStart);
+          const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          const prevMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+          const prevMonthStartStr = formatDate(prevMonthStart);
+          const prevMonthEndStr = formatDate(prevMonthEnd);
+          const lastMonthSpending = calculateSpending(txList, lastMonthStartStr, today);
+          const prevMonthSpending = calculateSpending(txList, prevMonthStartStr, prevMonthEndStr);
+          const month1Start = new Date(now.getFullYear(), now.getMonth() - 2, 1);
+          const month1End = new Date(now.getFullYear(), now.getMonth() - 1, 0);
+          const month2Start = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+          const month2End = new Date(now.getFullYear(), now.getMonth(), 0);
+          const month3Start = new Date(now.getFullYear(), now.getMonth(), 1);
+          const month1Spending = calculateSpending(txList, formatDate(month1Start), formatDate(month1End));
+          const month2Spending = calculateSpending(txList, formatDate(month2Start), formatDate(month2End));
+          const month3Spending = lastMonthSpending;
+          const lastThreeMonthsAverage = (month1Spending + month2Spending + month3Spending) / 3;
+          const month4Start = new Date(now.getFullYear(), now.getMonth() - 5, 1);
+          const month4End = new Date(now.getFullYear(), now.getMonth() - 4, 0);
+          const month5Start = new Date(now.getFullYear(), now.getMonth() - 4, 1);
+          const month5End = new Date(now.getFullYear(), now.getMonth() - 3, 0);
+          const month6Start = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+          const month6End = new Date(now.getFullYear(), now.getMonth() - 2, 0);
+          const month4Spending = calculateSpending(txList, formatDate(month4Start), formatDate(month4End));
+          const month5Spending = calculateSpending(txList, formatDate(month5Start), formatDate(month5End));
+          const month6Spending = calculateSpending(txList, formatDate(month6Start), formatDate(month6End));
+          const prevThreeMonthsAverage = (month4Spending + month5Spending + month6Spending) / 3;
+          const threeMonthsChange = prevThreeMonthsAverage > 0
+            ? ((lastThreeMonthsAverage - prevThreeMonthsAverage) / prevThreeMonthsAverage) * 100
+            : 0;
+          const lastMonthChange = prevMonthSpending > 0
+            ? ((lastMonthSpending - prevMonthSpending) / prevMonthSpending) * 100
+            : 0;
+          setSpendingData({
+            threeMonths: lastThreeMonthsAverage,
+            lastMonth: lastMonthSpending,
+            threeMonthsChange,
+            lastMonthChange,
+            netWorthChange: 0,
+          });
+          setLoading(false);
+          return;
+        }
+
         if (!hasCache) {
           setLoading(true);
         }
@@ -296,7 +348,7 @@ export function useSpendingData(
         setLoading(false);
       }
     },
-    [calculateSpending, saveToCache]
+    [calculateSpending, saveToCache, isDemoMode]
   );
 
   // Fetch and calculate spending data
@@ -313,22 +365,22 @@ export function useSpendingData(
     }
   }, [calculateSpendingData]);
 
-  // Initialize on mount
+  // Initialize on mount (and when entering demo mode)
   useEffect(() => {
+    if (isDemoMode) {
+      refresh(false); // Will use demo transactions inside calculateSpendingData
+      return;
+    }
     if (!hasInitializedRef.current) {
-      // Cache is already loaded synchronously before render
-      // So we only need to fetch fresh data in background
       if (initialCache) {
-        // We have cache - fetch fresh data in background (non-blocking)
         refresh(true);
       } else {
-        // No cache - fetch immediately (first load or cache expired)
         refresh(false);
       }
       hasInitializedRef.current = true;
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []); // Only run on mount
+  }, [isDemoMode]); // Run on mount and when demo mode changes
 
   // Calculate net worth change for current month
   // This is calculated by estimating net worth at start of month

@@ -12,20 +12,23 @@ import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 import { invalidateGoalsCache } from "@/src/shared/utils/cacheInvalidation";
+import { useDemoMode } from "@/src/contexts/DemoContext";
+import { demoGoals } from "@/src/data/demo";
 
 const GOALS_CACHE_KEY = CACHE_CONFIG.KEYS.GOALS;
 const GOALS_CACHE_TIMESTAMP_KEY = CACHE_CONFIG.KEYS.GOALS_TIMESTAMP;
 const CACHE_DURATION = CACHE_CONFIG.DURATIONS.VERY_LONG; // 1 day in milliseconds
 
 export function useGoals(pushChat: (sender: "user" | "finny", message: string) => void) {
-  const [goalsData, setGoalsData] = useState<Goal[]>([]);
+  const { isDemoMode } = useDemoMode();
+  const [goalsData, setGoalsData] = useState<Goal[]>(isDemoMode ? demoGoals : []);
   const [loading, setLoading] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isInitialLoad, setIsInitialLoad] = useState(!isDemoMode);
 
-  // Load cached goals immediately, then refresh from server
+  // Load cached goals immediately, then refresh from server (or demo goals when in demo mode)
   useEffect(() => {
     loadGoalsWithCache();
-  }, []);
+  }, [isDemoMode]);
 
   // Listen for auth state changes (token refresh)
   useEffect(() => {
@@ -98,6 +101,12 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
 
   const loadGoalsWithCache = async (): Promise<void> => {
     try {
+      if (isDemoMode) {
+        setGoalsData(demoGoals);
+        setLoading(false);
+        setIsInitialLoad(false);
+        return;
+      }
       // Always try to load from cache first for immediate UI update
       const cachedGoals = await loadGoalsFromCache();
       if (cachedGoals && cachedGoals.length > 0) {
@@ -122,6 +131,12 @@ export function useGoals(pushChat: (sender: "user" | "finny", message: string) =
 
   const refreshGoalsFromServer = async (hasCache: boolean = false): Promise<void> => {
     try {
+      if (isDemoMode) {
+        setGoalsData(demoGoals);
+        setLoading(false);
+        setIsInitialLoad(false);
+        return;
+      }
       // Only log server refresh when there's no cache (first load or forced refresh)
       if (!hasCache) {
         logger.info("🔄 [GOALS] Loading from database...");

@@ -11,6 +11,7 @@ import {
 import { MaterialIcons, Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 import { SyncStatus } from "@/src/types/insights";
 
 interface CleanInsightsHeaderProps {
@@ -25,6 +26,7 @@ export default function CleanInsightsHeader({
   onRefresh,
 }: CleanInsightsHeaderProps) {
   const insets = useSafeAreaInsets();
+  const { isDemoMode } = useDemoMode();
   const rotateAnim = React.useRef(new Animated.Value(0)).current;
 
   // Animate rotation when syncing
@@ -35,7 +37,7 @@ export default function CleanInsightsHeader({
           toValue: 1,
           duration: 1000,
           useNativeDriver: true,
-        }),
+        })
       );
       rotation.start();
       return () => rotation.stop();
@@ -63,7 +65,7 @@ export default function CleanInsightsHeader({
       Alert.alert(
         "Sync Status",
         `Last sync: ${syncStatus.lastSync}\nNext sync: ${syncStatus.nextSync}\n\nData syncs automatically every day at 8 AM ET.`,
-        [{ text: "OK" }],
+        [{ text: "OK" }]
       );
     }
   };
@@ -82,7 +84,11 @@ export default function CleanInsightsHeader({
       style={[
         styles.gradientContainer,
         {
-          paddingTop: insets.top + (Platform.OS === "ios" ? 0 : 8),
+          paddingTop: isDemoMode
+            ? Platform.OS === "ios"
+              ? 8
+              : 12
+            : insets.top + (Platform.OS === "ios" ? 0 : 8),
         },
       ]}
     >

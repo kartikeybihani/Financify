@@ -14,6 +14,14 @@ import { getSnaptradeBalancesFromDB, getSnaptradeHoldingsFromDB } from "@/src/ut
 import { getAccountBalance } from "@/src/utils/accountBalance";
 import { loadInvestmentFromCacheSync } from "@/src/shared/utils/investmentCache";
 import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
+import { useDemoMode } from "@/src/contexts/DemoContext";
+import {
+  demoAccounts,
+  demoGoals,
+  demoCashEntries,
+  demoInvestmentHoldings,
+  demoInvestmentBalances,
+} from "@/src/data/demo";
 
 // Cache keys
 const UNIFIED_CACHE_KEY = "unified_financial_data";
@@ -28,6 +36,18 @@ interface CachedFinancialData {
   investmentBalances: any[];
   investmentHoldings: any[];
   timestamp: number;
+}
+
+/** Treat empty cache as no cache so we always fetch from DB (e.g. after reinstall). */
+function hasMeaningfulCache(c: CachedFinancialData | null): boolean {
+  if (!c) return false;
+  return (
+    (c.accounts?.length ?? 0) > 0 ||
+    (c.goals?.length ?? 0) > 0 ||
+    (c.cashEntries?.length ?? 0) > 0 ||
+    (c.investmentHoldings?.length ?? 0) > 0 ||
+    (c.investmentBalances?.length ?? 0) > 0
+  );
 }
 
 export interface CashEntry {
@@ -81,6 +101,8 @@ export interface UnifiedFinancialData {
  * with smart caching for optimal performance
  */
 export function useUnifiedFinancialData(): UnifiedFinancialData {
+  const { isDemoMode } = useDemoMode();
+
   // Load unified cache synchronously before first render (MMKV advantage)
   const initialCache = (() => {
     try {
@@ -107,6 +129,25 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     }
   })();
 
+  // Demo mode: use demo data as initial state
+  const demoInitialState = isDemoMode
+    ? {
+        accounts: demoAccounts.map((a) => ({
+          ...a,
+          current_balance: a.current_balance ?? undefined,
+          available_balance: a.available_balance ?? undefined,
+          balances: {
+            current: a.current_balance ?? 0,
+            available: a.available_balance ?? 0,
+          },
+        })) as Account[],
+        goals: demoGoals,
+        cashEntries: demoCashEntries,
+        investmentBalances: demoInvestmentBalances,
+        investmentHoldings: demoInvestmentHoldings,
+      }
+    : null;
+
   // Load investment holdings cache synchronously (separate cache system)
   const initialInvestmentCache = (() => {
     try {
@@ -120,14 +161,26 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     }
   })();
 
-  // Initialize state with cached data if available (instant UI)
-  const [accounts, setAccounts] = useState<Account[]>(initialCache?.accounts || []);
-  const [goals, setGoals] = useState<Goal[]>(initialCache?.goals || []);
-  const [cashEntries, setCashEntries] = useState<CashEntry[]>(initialCache?.cashEntries || []);
-  const [investmentBalances, setInvestmentBalances] = useState<any[]>(initialCache?.investmentBalances || []);
-  const [investmentHoldings, setInvestmentHoldings] = useState<any[]>(initialInvestmentCache || initialCache?.investmentHoldings || []);
+  // Initialize state with cached data if available (instant UI), or demo data when in demo mode
+  const [accounts, setAccounts] = useState<Account[]>(
+    demoInitialState?.accounts ?? initialCache?.accounts ?? []
+  );
+  const [goals, setGoals] = useState<Goal[]>(
+    demoInitialState?.goals ?? initialCache?.goals ?? []
+  );
+  const [cashEntries, setCashEntries] = useState<CashEntry[]>(
+    demoInitialState?.cashEntries ?? initialCache?.cashEntries ?? []
+  );
+  const [investmentBalances, setInvestmentBalances] = useState<any[]>(
+    demoInitialState?.investmentBalances ?? initialCache?.investmentBalances ?? []
+  );
+  const [investmentHoldings, setInvestmentHoldings] = useState<any[]>(
+    demoInitialState?.investmentHoldings ?? initialInvestmentCache ?? initialCache?.investmentHoldings ?? []
+  );
   const [loading, setLoading] = useState(false);
-  const [isInitialLoad, setIsInitialLoad] = useState(!initialCache && !initialInvestmentCache); // If we have cache, not initial load
+  const [isInitialLoad, setIsInitialLoad] = useState(
+    !isDemoMode && !hasMeaningfulCache(initialCache) && !initialInvestmentCache?.length
+  );
 
   // Removed verbose initial state logging
 
@@ -187,6 +240,27 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
   // Parallel data fetching
   const fetchAllData = useCallback(async (hasCache: boolean = false): Promise<void> => {
     try {
+      if (isDemoMode) {
+        setAccounts(
+          demoAccounts.map((a) => ({
+            ...a,
+            current_balance: a.current_balance ?? undefined,
+            available_balance: a.available_balance ?? undefined,
+            balances: {
+              current: a.current_balance ?? 0,
+              available: a.available_balance ?? 0,
+            },
+          })) as Account[]
+        );
+        setGoals(demoGoals);
+        setCashEntries(demoCashEntries);
+        setInvestmentBalances(demoInvestmentBalances);
+        setInvestmentHoldings(demoInvestmentHoldings);
+        setLoading(false);
+        setIsInitialLoad(false);
+        return;
+      }
+
       if (!hasCache) {
         setLoading(true);
       }
@@ -282,7 +356,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       setLoading(false);
       setIsInitialLoad(false);
     }
-  }, [saveToCache]);
+  }, [saveToCache, isDemoMode]);
 
   // Load data with cache - synchronous cache read for instant UI
   const loadDataWithCache = useCallback(async (): Promise<void> => {
@@ -344,25 +418,50 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     }
   }, []);
 
+  // When entering demo mode, set state to demo data
+  useEffect(() => {
+    if (isDemoMode) {
+      setAccounts(
+        demoAccounts.map((a) => ({
+          ...a,
+          current_balance: a.current_balance ?? undefined,
+          available_balance: a.available_balance ?? undefined,
+          balances: {
+            current: a.current_balance ?? 0,
+            available: a.available_balance ?? 0,
+          },
+        })) as Account[]
+      );
+      setGoals(demoGoals);
+      setCashEntries(demoCashEntries);
+      setInvestmentBalances(demoInvestmentBalances);
+      setInvestmentHoldings(demoInvestmentHoldings);
+      setIsInitialLoad(false);
+      setLoading(false);
+      return;
+    }
+  }, [isDemoMode]);
+
   // Initialize on mount
   useEffect(() => {
-      // Cache is already loaded synchronously before render
-      // So we only need to fetch fresh data in background
-      if (initialCache) {
-        // We have cache - check if we need background sync
+      if (isDemoMode) {
+        return; // No fetch in demo mode
+      }
+      // Only skip fetch when we have meaningful cache (avoids zero net worth after reinstall)
+      const meaningful = hasMeaningfulCache(initialCache);
+      if (meaningful) {
+        // We have real data in cache - check if we need background sync
         if (shouldBackgroundSync()) {
-          // Last sync was > 1 hour ago, sync in background
           fetchAllData(true).then(() => {
             saveLastSyncTime();
           }).catch((error) => {
             logger.error("❌ [UNIFIED] Background data fetch failed:", error);
           });
         } else {
-          // Recently synced, skip background sync
           logger.info("✅ [UNIFIED] Recently synced, skipping background sync");
         }
       } else {
-        // No cache - fetch immediately (first load or cache expired)
+        // No cache or empty cache (e.g. after reinstall) - fetch from DB immediately
         fetchAllData(false).then(() => {
           saveLastSyncTime();
         });
@@ -404,7 +503,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       goalsSubscription.remove();
       authSubscription.remove();
     };
-  }, [fetchAllData, shouldBackgroundSync, saveLastSyncTime]);
+  }, [fetchAllData, shouldBackgroundSync, saveLastSyncTime, isDemoMode]);
 
   // Memoized categorized data
   const categorizedLiabilities = useMemo(

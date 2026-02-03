@@ -23,7 +23,10 @@ import PagerView from "react-native-pager-view";
 import TopChips, {
   SectionConfig,
 } from "@/src/components/insights/components/TopChips";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { styles } from "@/src/styles/insightsStyles";
 import {
   transactionInfoStyles,
@@ -127,6 +130,13 @@ import {
   CategoryDetailData,
   InitialCache,
 } from "@/src/types/insights";
+import { useDemoMode } from "@/src/contexts/DemoContext";
+import {
+  demoTransactions,
+  demoAccounts,
+  demoInvestmentHoldings,
+  demoInvestmentBalances,
+} from "@/src/data/demo";
 import {
   getUserIdSync,
   loadInitialCache,
@@ -144,6 +154,7 @@ import {
   dismissReAuthBanner,
 } from "@/src/utils/insights";
 import CleanInsightsHeader from "@/src/components/insights/CleanInsightsHeader";
+import DemoBanner from "@/src/components/demo/DemoBanner";
 import InsightsFAB from "@/src/components/insights/InsightsFAB";
 import RecurringPage from "@/src/components/insights/pages/RecurringPage";
 import TransactionsPage from "@/src/components/insights/pages/TransactionsPage";
@@ -165,7 +176,27 @@ const SECTIONS: SectionConfig[] = [
 // Default to "spending" section (index 2)
 const DEFAULT_SECTION_INDEX = 2;
 
+// Shape demo transactions for insights (add account info like getRecentTransactions)
+function getDemoTransactionsForInsights() {
+  const byAccountId = Object.fromEntries(
+    demoAccounts.map((a) => [
+      a.account_id,
+      { name: a.name, type: a.type, subtype: a.subtype },
+    ])
+  );
+  return demoTransactions.map((tx) => ({
+    ...tx,
+    accounts: byAccountId[tx.account_id] || {
+      name: "Account",
+      type: "depository",
+      subtype: "other",
+    },
+  })) as Transaction[];
+}
+
 export default function InsightsScreen() {
+  const { isDemoMode } = useDemoMode();
+  const insets = useSafeAreaInsets();
   // Get userId synchronously for initial cache load
   const initialUserId = getUserIdSync();
 
@@ -672,11 +703,52 @@ export default function InsightsScreen() {
     setupPreloaders();
   }, [userId, activeSectionKey]);
 
+  // When in demo mode, set transactions, accounts, and investment data immediately (no async)
+  useEffect(() => {
+    if (isDemoMode) {
+      const demoTx = getDemoTransactionsForInsights();
+      setTransactions(demoTx);
+      processTransactionsData(demoTx);
+      setAccounts(
+        demoAccounts.map((a) => ({
+          account_id: a.account_id,
+          name: a.name,
+          mask: a.mask,
+          institution_name: a.institution_name,
+          type: a.type,
+          subtype: a.subtype,
+        }))
+      );
+      setFilteredTransactions(demoTx);
+      setTotalFilteredCount(demoTx.length);
+      setHasMoreTransactions(false);
+      setMightHaveTransactions(true);
+      unfilteredTransactionsRef.current = demoTx;
+      hasData.current = true;
+      hasCachedData.current = true;
+      setInvestmentHoldings(demoInvestmentHoldings);
+      setInvestmentOptions([]);
+      setInvestmentBalances(demoInvestmentBalances);
+      setInvestmentConnections([
+        {
+          account_id: demoInvestmentBalances[0]?.account_id ?? "demo",
+          brokerage_name: "Chase",
+          account_name: "Plaid IRA",
+          last_synced_at: new Date().toISOString(),
+          connection_status: "active",
+          is_active: true,
+          provider: "plaid",
+        },
+      ]);
+    }
+  }, [isDemoMode]);
+
   // Load cached data immediately on mount to prevent flinching and show instant UI
   // Skip if we already loaded from initial synchronous cache
   useEffect(() => {
     const loadCachedData = async () => {
       try {
+        if (isDemoMode) return; // Demo data already set above
         // If we already loaded cache synchronously, skip this
         if (initialCache.hasCache && transactions.length > 0) {
           hasData.current = true;
@@ -776,6 +848,13 @@ export default function InsightsScreen() {
       let isCancelled = false;
 
       const initializeScreen = async () => {
+        if (isDemoMode) {
+          hasCachedData.current = true;
+          hasData.current = true;
+          setIsInitialLoad(false);
+          setIsLoading(false);
+          return;
+        }
         // If we already have cached data from synchronous load, skip initial load state
         if (initialCache.hasCache && transactions.length > 0) {
           hasCachedData.current = true;
@@ -846,7 +925,7 @@ export default function InsightsScreen() {
           clearTimeout(timer);
         }
       };
-    }, [getUserId])
+    }, [getUserId, isDemoMode])
   );
 
   // Auto-refresh stale investment data (>24 hours old)
@@ -1081,6 +1160,13 @@ export default function InsightsScreen() {
 
   const loadData = async () => {
     try {
+      if (isDemoMode) {
+        const demoTx = getDemoTransactionsForInsights();
+        setTransactions(demoTx);
+        processTransactionsData(demoTx);
+        hasData.current = true;
+        return true;
+      }
       const currentUserId = userId || (await getUserId());
       if (!currentUserId) {
         logger.error("No authenticated user");
@@ -1130,6 +1216,13 @@ export default function InsightsScreen() {
 
   const fetchFreshData = async () => {
     try {
+      if (isDemoMode) {
+        const demoTx = getDemoTransactionsForInsights();
+        setTransactions(demoTx);
+        processTransactionsData(demoTx);
+        hasData.current = true;
+        return;
+      }
       // Only show loading state if we don't have cached data
       if (!hasCachedData.current) {
         setIsLoading(true);
@@ -1891,6 +1984,23 @@ export default function InsightsScreen() {
   // Load investment data from database and update cache
   const loadInvestmentDataFromDB = async () => {
     try {
+      if (isDemoMode) {
+        setInvestmentHoldings(demoInvestmentHoldings);
+        setInvestmentOptions([]);
+        setInvestmentBalances(demoInvestmentBalances);
+        setInvestmentConnections([
+          {
+            account_id: demoInvestmentBalances[0]?.account_id ?? "demo",
+            brokerage_name: "Chase",
+            account_name: "Plaid IRA",
+            last_synced_at: new Date().toISOString(),
+            connection_status: "active",
+            is_active: true,
+            provider: "plaid",
+          },
+        ]);
+        return true;
+      }
       logger.info("Insights: Loading investment data from Supabase...");
 
       const userId = await getUserId();
@@ -2357,6 +2467,11 @@ export default function InsightsScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+      {isDemoMode && (
+        <View style={{ paddingTop: insets.top }}>
+          <DemoBanner />
+        </View>
+      )}
       {/* Clean Header with Gradient */}
       <CleanInsightsHeader
         isSyncing={isSyncing}

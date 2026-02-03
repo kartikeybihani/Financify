@@ -3,12 +3,19 @@ import {
   useAuthNavigation,
   NavigationState,
 } from "@/src/contexts/AuthNavigationContext";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 
 export default function Index() {
   const { isLoading, navigationState, onboardingStep } = useAuthNavigation();
+  const { isDemoMode } = useDemoMode();
 
   if (isLoading) {
     return null;
+  }
+
+  // Demo mode: always show main app (tabs)
+  if (isDemoMode) {
+    return <Redirect href={"/(tabs)" as any} />;
   }
 
   let href: string;

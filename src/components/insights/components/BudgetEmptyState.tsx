@@ -2,6 +2,7 @@ import React from "react";
 import { View, Text, StyleSheet, TouchableOpacity, Image } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 
 interface BudgetEmptyStateProps {
   onCreateWithFinny: () => void;
@@ -12,6 +13,7 @@ export default function BudgetEmptyState({
   onCreateWithFinny,
   onCreateManually,
 }: BudgetEmptyStateProps) {
+  const { isDemoMode } = useDemoMode();
   return (
     <View style={styles.container}>
       <View style={styles.content}>
@@ -31,8 +33,9 @@ export default function BudgetEmptyState({
         <View style={styles.buttonsContainer}>
           <TouchableOpacity
             onPress={onCreateWithFinny}
-            activeOpacity={0.85}
-            style={styles.finnyButtonWrapper}
+            activeOpacity={isDemoMode ? 1 : 0.85}
+            style={[styles.finnyButtonWrapper, isDemoMode && { opacity: 0.5 }]}
+            disabled={isDemoMode}
           >
             <LinearGradient
               colors={["#5B8DEF", "#4A90E2", "#3A7FD1"]}
@@ -53,8 +56,9 @@ export default function BudgetEmptyState({
 
           <TouchableOpacity
             onPress={onCreateManually}
-            activeOpacity={0.8}
-            style={styles.manualButtonWrapper}
+            activeOpacity={isDemoMode ? 1 : 0.8}
+            style={[styles.manualButtonWrapper, isDemoMode && { opacity: 0.5 }]}
+            disabled={isDemoMode}
           >
             <View style={styles.manualButtonInner}>
               <Ionicons

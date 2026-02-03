@@ -15,9 +15,8 @@ export default function TabLayout() {
   const iosVersion = isIOS ? parseInt(Platform.Version as string, 10) : 0;
   const shouldUseNativeTabs = isIOS && iosVersion >= 26;
 
-  // Debug logging
   logger.debug(
-    `Platform: ${Platform.OS}, iOS Version: ${iosVersion}, Should use NativeTabs: ${shouldUseNativeTabs}`,
+    `Platform: ${Platform.OS}, iOS Version: ${iosVersion}, Should use NativeTabs: ${shouldUseNativeTabs}`
   );
 
   const tabs = [
@@ -27,12 +26,7 @@ export default function TabLayout() {
       icon: "home-outline",
       iconCategory: "Ionicons",
     },
-    {
-      name: "chat",
-      label: "Finny",
-      icon: "fire",
-      iconCategory: "FontAwesome",
-    },
+    { name: "chat", label: "Finny", icon: "fire", iconCategory: "FontAwesome" },
     {
       name: "goals",
       label: "Goals",
@@ -70,10 +64,6 @@ export default function TabLayout() {
     );
   }
 
-  // Fallback to standard Tabs for iOS < 26 and other platforms
-  // Note: expo-router handles lazy loading automatically via file-based routing
-  // Setting initialRouteName to "index" ensures Home loads first
-  // Moving providers to screens (ChatProvider) and using useFocusEffect achieves lazy loading
   return (
     <Tabs
       initialRouteName="index"
@@ -81,7 +71,6 @@ export default function TabLayout() {
         headerShown: false,
         tabBarActiveTintColor: "#4A90E2",
         tabBarLabelStyle: { fontSize: 13 },
-        contentStyle: { backgroundColor: "#121212" }, // Dark background to match app theme
       }}
     >
       {tabs.map((tab) => (
@@ -95,8 +84,8 @@ export default function TabLayout() {
                 tab.iconCategory === "Ionicons"
                   ? Ionicons
                   : tab.iconCategory === "MaterialCommunityIcons"
-                    ? MaterialCommunityIcons
-                    : FontAwesome;
+                  ? MaterialCommunityIcons
+                  : FontAwesome;
               return (
                 <IconComponent
                   name={tab.icon as any}

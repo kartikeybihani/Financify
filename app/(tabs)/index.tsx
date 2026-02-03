@@ -12,8 +12,12 @@ import {
   InteractionManager,
   Animated,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import DemoBanner from "@/src/components/demo/DemoBanner";
 import { useRouter, useFocusEffect } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { getPrimaryItemId, addNewBankAccount } from "@/src/utils/plaid/plaid";
@@ -21,6 +25,7 @@ import { getAccountBalance } from "@/src/utils/accountBalance";
 import { Goal } from "@/src/types/finny";
 import { useUnifiedFinancialData } from "@/src/hooks/useUnifiedFinancialData";
 import { useSpendingData } from "@/src/hooks/useSpendingData";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 import logger from "@/src/utils/core/logger";
 
 // New optimized components
@@ -193,8 +198,11 @@ export default function HomeScreen() {
     refresh: refreshSpendingData,
   } = useSpendingData(totalBalance);
 
-  // Unreviewed transactions for notification badge
-  const { count: unreviewedCount } = useUnreviewedTransactions();
+  // Unreviewed transactions for notification badge (hidden in demo)
+  const { isDemoMode } = useDemoMode();
+  const insets = useSafeAreaInsets();
+  const { count: unreviewedCountRaw } = useUnreviewedTransactions();
+  const unreviewedCount = isDemoMode ? 0 : unreviewedCountRaw;
 
   // Onboarding state - load cache synchronously for instant UI
   const initialOnboardingCache = (() => {
@@ -844,22 +852,24 @@ export default function HomeScreen() {
     return cashEntries.reduce((sum, entry) => sum + (entry.amount || 0), 0);
   }, [cashEntries]);
 
-  // Show loading skeleton only during initial authentication check (very brief)
-  // Only show skeleton if we have no cached data AND no user data
-  // Use both initial cache check and current data to determine if we should show skeleton
+  // Show loading skeleton until we have data or hook has finished loading.
+  // This prevents flashing zero net worth when signed in with no cache (hook still fetching).
   const hasCachedData =
     hasInitialCache ||
     accounts.length > 0 ||
     goals.length > 0 ||
     cashEntries.length > 0;
 
-  // Skip skeleton if we have cached data (instant UI)
-  if (isInitialLoad && !userData && !hasCachedData) {
+  const stillLoadingNoData =
+    !isDemoMode && financialInitialLoad && !hasCachedData;
+
+  if (stillLoadingNoData) {
     return <HomeScreenSkeleton showError={false} />;
   }
 
-  // Show error state only if we have a critical error and no cached data
+  // Show error state only if we have a critical error and no cached data (never in demo)
   if (
+    !isDemoMode &&
     loadingError &&
     !accessToken &&
     accounts.length === 0 &&
@@ -871,6 +881,11 @@ export default function HomeScreen() {
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+      {isDemoMode && (
+        <View style={{ paddingTop: insets.top }}>
+          <DemoBanner />
+        </View>
+      )}
       {/* Clean Header with Gradient */}
       <HomeHeader
         userName={firstName || userData?.user_metadata?.full_name}
@@ -914,8 +929,8 @@ export default function HomeScreen() {
             onboardingStatus={onboardingStatus}
           />
 
-          {/* Transaction Review Card */}
-          <TransactionReviewCard userId={userData?.id} />
+          {/* Transaction Review Card (hidden in demo) */}
+          {!isDemoMode && <TransactionReviewCard userId={userData?.id} />}
 
           {/* Net Worth Carousel */}
           <QuickStats
@@ -934,6 +949,40 @@ export default function HomeScreen() {
             onToggleAccounts={toggleAccountsExpansion}
             isAccountsExpanded={isAccountsExpanded}
           />
+
+          {/* Demo: Spent so far — tap to open Spending in Insights */}
+          {isDemoMode && (
+            <TouchableOpacity
+              style={styles.demoSpendingCard}
+              activeOpacity={0.85}
+              onPress={() => {
+                router.push("/(tabs)/insights");
+                setTimeout(() => {
+                  DeviceEventEmitter.emit("navigateToInsightsSection", {
+                    section: "spending",
+                  });
+                }, 200);
+              }}
+            >
+              <View style={styles.demoSpendingCardContent}>
+                <View style={styles.demoSpendingLeft}>
+                  <Text style={styles.demoSpendingLabel}>
+                    Spent this period
+                  </Text>
+                  <Text style={styles.demoSpendingAmount}>
+                    {formatCurrency(8560.65, "USD", {
+                      decimals: 2,
+                      useKM: false,
+                    })}
+                  </Text>
+                </View>
+                <View style={styles.demoSpendingCta}>
+                  <Text style={styles.demoSpendingCtaText}>View spending</Text>
+                  <Ionicons name="chevron-forward" size={18} color="#4ECDC4" />
+                </View>
+              </View>
+            </TouchableOpacity>
+          )}
 
           {/* Summary Cards - Animated Expandable */}
           <Animated.View
@@ -954,32 +1003,32 @@ export default function HomeScreen() {
             }}
           >
             <FinancialCards
-            accountsTotal={accountsTotal}
-            investmentsTotal={investmentsTotal}
-            liabilitiesTotal={liabilitiesTotal}
-            formatCurrency={formatCurrency}
-            isLoading={financialLoading || financialInitialLoad}
-            isInitialLoad={financialInitialLoad}
-            onCardPress={(cardType) => {
-              openModal("accounts", {
-                initialExpandedCategory: cardType,
-                onAccountAdded: async () => {
-                  logger.info(
-                    "New account added, refreshing financial data..."
-                  );
-                  await fetchFreshData();
-                  logger.info("Financial data refreshed after new account");
-                },
-                onCashAdded: () => {
-                  openModal("cashInput");
-                },
-              });
-            }}
-          />
+              accountsTotal={accountsTotal}
+              investmentsTotal={investmentsTotal}
+              liabilitiesTotal={liabilitiesTotal}
+              formatCurrency={formatCurrency}
+              isLoading={financialLoading || financialInitialLoad}
+              isInitialLoad={financialInitialLoad}
+              onCardPress={(cardType) => {
+                openModal("accounts", {
+                  initialExpandedCategory: cardType,
+                  onAccountAdded: async () => {
+                    logger.info(
+                      "New account added, refreshing financial data..."
+                    );
+                    await fetchFreshData();
+                    logger.info("Financial data refreshed after new account");
+                  },
+                  onCashAdded: () => {
+                    openModal("cashInput");
+                  },
+                });
+              }}
+            />
           </Animated.View>
 
-          {/* Onboarding Progress Box */}
-          {onboardingStatus && (
+          {/* Onboarding Progress Box (hidden in demo) */}
+          {onboardingStatus && !isDemoMode && (
             <OnboardingProgressBox
               status={onboardingStatus}
               onPress={() => setShowOnboardingModal(true)}

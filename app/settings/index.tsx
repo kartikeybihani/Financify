@@ -29,12 +29,14 @@ import logger from "@/src/utils/core/logger";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 import { notificationService } from "@/src/utils/core/notificationService";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 import { BlurView } from "expo-blur";
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { userName } = useLocalSearchParams();
   const { clearAllCache } = useAuthNavigation();
+  const { isDemoMode } = useDemoMode();
   const [userData, setUserData] = useState<any>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(true);
@@ -276,44 +278,83 @@ export default function SettingsScreen() {
     title: string,
     onPress: () => void,
     showBorder = true,
-    rightElement?: JSX.Element
-  ) => (
-    <TouchableOpacity
-      style={[styles.settingsItem, showBorder && styles.settingsItemBorder]}
-      onPress={onPress}
-    >
-      <View style={styles.settingsItemLeft}>
-        {icon}
-        <Text style={styles.settingsItemText}>{title}</Text>
-      </View>
-      {rightElement || (
-        <MaterialIcons name="chevron-right" size={24} color="#666" />
-      )}
-    </TouchableOpacity>
-  );
+    rightElement?: JSX.Element,
+    disabled = false,
+    disableWithoutStyling = false
+  ) => {
+    const showDisabledStyle = disabled && !disableWithoutStyling;
+    return (
+      <TouchableOpacity
+        style={[
+          styles.settingsItem,
+          showBorder && styles.settingsItemBorder,
+          showDisabledStyle && styles.settingsItemDisabled,
+        ]}
+        onPress={onPress}
+        disabled={disabled}
+        activeOpacity={disabled ? 1 : 0.7}
+      >
+        <View style={styles.settingsItemLeft}>
+          {icon}
+          <Text
+            style={[
+              styles.settingsItemText,
+              showDisabledStyle && styles.settingsItemTextDisabled,
+            ]}
+          >
+            {title}
+          </Text>
+        </View>
+        {rightElement || (
+          <MaterialIcons
+            name="chevron-right"
+            size={24}
+            color={showDisabledStyle ? "#444" : "#666"}
+          />
+        )}
+      </TouchableOpacity>
+    );
+  };
 
   const renderSwitchItem = (
     icon: JSX.Element,
     title: string,
     value: boolean,
     onValueChange: (value: boolean) => void,
-    showBorder = true
-  ) => (
-    <View
-      style={[styles.settingsItem, showBorder && styles.settingsItemBorder]}
-    >
-      <View style={styles.settingsItemLeft}>
-        {icon}
-        <Text style={styles.settingsItemText}>{title}</Text>
+    showBorder = true,
+    disabled = false,
+    disableWithoutStyling = false
+  ) => {
+    const showDisabledStyle = disabled && !disableWithoutStyling;
+    return (
+      <View
+        style={[
+          styles.settingsItem,
+          showBorder && styles.settingsItemBorder,
+          showDisabledStyle && styles.settingsItemDisabled,
+        ]}
+      >
+        <View style={styles.settingsItemLeft}>
+          {icon}
+          <Text
+            style={[
+              styles.settingsItemText,
+              showDisabledStyle && styles.settingsItemTextDisabled,
+            ]}
+          >
+            {title}
+          </Text>
+        </View>
+        <Switch
+          value={value}
+          onValueChange={onValueChange}
+          disabled={disabled}
+          trackColor={{ false: "#333", true: "#4A90E2" }}
+          thumbColor={value ? "#fff" : "#f4f3f4"}
+        />
       </View>
-      <Switch
-        value={value}
-        onValueChange={onValueChange}
-        trackColor={{ false: "#333", true: "#4A90E2" }}
-        thumbColor={value ? "#fff" : "#f4f3f4"}
-      />
-    </View>
-  );
+    );
+  };
 
   const renderSettingsGroup = (title: string, children: React.ReactNode) => (
     <View style={styles.settingsGroup}>
@@ -360,7 +401,10 @@ export default function SettingsScreen() {
                   pathname: "/settings/personal-info",
                   params: { userName },
                 }),
-              true
+              true,
+              undefined,
+              isDemoMode,
+              isDemoMode
             )}
             {renderSettingsItem(
               <Ionicons name="refresh-outline" size={24} color="#4A90E2" />,
@@ -371,7 +415,9 @@ export default function SettingsScreen() {
                 <ActivityIndicator size="small" color="#4A90E2" />
               ) : (
                 <MaterialIcons name="chevron-right" size={24} color="#666" />
-              )
+              ),
+              isDemoMode,
+              isDemoMode
             )}
             {/* {renderSettingsItem(
               <Ionicons name="card-outline" size={24} color="#4A90E2" />,
@@ -463,7 +509,10 @@ export default function SettingsScreen() {
                     );
                   }
                 }
-              }
+              },
+              true,
+              isDemoMode,
+              isDemoMode
             )}
             {/* {renderSwitchItem(
               <Ionicons name="finger-print" size={24} color="#4A90E2" />,
@@ -482,19 +531,28 @@ export default function SettingsScreen() {
               <MaterialIcons name="feedback" size={24} color="#4A90E2" />,
               "Give Feedback",
               () => setShowFeedbackModal(true),
-              true
+              true,
+              undefined,
+              isDemoMode,
+              isDemoMode
             )}
             {renderSettingsItem(
               <Ionicons name="call-outline" size={24} color="#4A90E2" />,
               "Contact Us",
               handleCallUs,
-              true
+              true,
+              undefined,
+              isDemoMode,
+              isDemoMode
             )}
             {renderSettingsItem(
               <Ionicons name="share-outline" size={24} color="#4A90E2" />,
               "Share the App",
               handleShareApp,
-              false
+              false,
+              undefined,
+              isDemoMode,
+              isDemoMode
             )}
           </>
         )}
@@ -506,13 +564,19 @@ export default function SettingsScreen() {
               <Ionicons name="wallet-outline" size={24} color="#ff6b6b" />,
               "Disconnect & Clear Data",
               handleDisconnectBank,
-              true
+              true,
+              undefined,
+              isDemoMode,
+              isDemoMode
             )}
             {renderSettingsItem(
               <MaterialIcons name="logout" size={24} color="#ff6b6b" />,
               "Log Out",
               handleLogout,
-              false
+              false,
+              undefined,
+              isDemoMode,
+              isDemoMode
             )}
           </>
         )}
@@ -650,6 +714,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#fff",
     marginLeft: 15,
+  },
+  settingsItemDisabled: {
+    opacity: 0.5,
+  },
+  settingsItemTextDisabled: {
+    color: "#666",
   },
   footer: {
     paddingVertical: 20,

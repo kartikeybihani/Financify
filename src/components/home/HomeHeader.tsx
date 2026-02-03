@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 import { styles } from "@/src/styles/homeStyles";
 
 interface HomeHeaderProps {
@@ -19,6 +20,7 @@ export const HomeHeader: React.FC<HomeHeaderProps> = React.memo(
   ({ userName, onAddAccount, unreviewedCount = 0 }) => {
     const router = useRouter();
     const insets = useSafeAreaInsets();
+    const { isDemoMode } = useDemoMode();
 
     return (
       <LinearGradient
@@ -34,7 +36,11 @@ export const HomeHeader: React.FC<HomeHeaderProps> = React.memo(
         style={[
           styles.gradientContainer,
           {
-            paddingTop: insets.top + (Platform.OS === "ios" ? -10 : 8),
+            paddingTop: isDemoMode
+              ? Platform.OS === "ios"
+                ? 8
+                : 12
+              : insets.top + (Platform.OS === "ios" ? -10 : 8),
           },
         ]}
       >
@@ -60,11 +66,13 @@ export const HomeHeader: React.FC<HomeHeaderProps> = React.memo(
             <TouchableOpacity
               onPress={onAddAccount}
               style={styles.rightIconButton}
+              disabled={isDemoMode}
+              activeOpacity={isDemoMode ? 1 : 0.7}
             >
               <MaterialCommunityIcons
                 name="bank-plus"
                 size={28}
-                color="#4A90E2"
+                color={isDemoMode ? "#666" : "#4A90E2"}
               />
               {/* {unreviewedCount > 0 && (
                 <View
