@@ -61,7 +61,9 @@ async function getUserStockPrices(userId) {
     console.log(`✅ Found ${holdings.length} active holdings\n`);
 
     // Step 2: Identify cash equivalents (include in holdings, but don't call FinHub)
-    console.log("💰 Step 2: Identifying cash equivalents (included in holdings, FinHub not called)...");
+    console.log(
+      "💰 Step 2: Identifying cash equivalents (included in holdings, FinHub not called)..."
+    );
     const cashEquivalentSymbols = ["SPAXX", "SPRXX", "FZFXX", "FDRXX", "SNAXX"];
     const isCashEquivalent = (h) => {
       const symbol = h.symbol?.toUpperCase();
@@ -85,13 +87,19 @@ async function getUserStockPrices(userId) {
       const h = holdings.find((x) => x.symbol === sym);
       if (!h) return true;
       if (isCashEquivalent(h)) {
-        console.log(`   ⏭️  ${sym}: cash equivalent - not calling FinHub (kept in holdings)`);
+        console.log(
+          `   ⏭️  ${sym}: cash equivalent - not calling FinHub (kept in holdings)`
+        );
         return false;
       }
       return true;
     });
     console.log(
-      `✅ ${holdings.length} holdings total, ${symbolsToFetchFromFinhub.length} symbols to fetch from FinHub (${allUniqueSymbols.length - symbolsToFetchFromFinhub.length} cash equivalents - not fetched)\n`
+      `✅ ${holdings.length} holdings total, ${
+        symbolsToFetchFromFinhub.length
+      } symbols to fetch from FinHub (${
+        allUniqueSymbols.length - symbolsToFetchFromFinhub.length
+      } cash equivalents - not fetched)\n`
     );
 
     // Step 3: Fetch prices from Finnhub only for non-cash-equivalent symbols
@@ -165,8 +173,8 @@ async function getUserStockPrices(userId) {
       const currentMarketValue = currentPrice
         ? totalUnits * currentPrice
         : isCash
-          ? totalUnits * (parseFloat(storedPrice) || 0)
-          : null;
+        ? totalUnits * (parseFloat(storedPrice) || 0)
+        : null;
       const storedMarketValue = symbolHoldings.reduce(
         (sum, h) => sum + (parseFloat(h.market_value) || 0),
         0
@@ -185,7 +193,9 @@ async function getUserStockPrices(userId) {
         );
         console.log(`   Stored Market Value: $${storedMarketValue.toFixed(2)}`);
         console.log(
-          `   Current Market Value: $${storedMarketValue.toFixed(2)} (same - cash)`
+          `   Current Market Value: $${storedMarketValue.toFixed(
+            2
+          )} (same - cash)`
         );
       } else if (currentPrice) {
         console.log(`   Current Price (Finnhub): $${currentPrice.toFixed(2)}`);
@@ -242,17 +252,17 @@ async function getUserStockPrices(userId) {
     console.log("=".repeat(80));
     console.log(
       `✅ Holdings that would be updated: ${
-        filteredHoldings.filter((h) => priceMap.has(h.symbol)).length
+        holdings.filter((h) => priceMap.has(h.symbol)).length
       }`
     );
     console.log(
       `⚠️  Holdings skipped (no price data): ${
-        filteredHoldings.filter((h) => !priceMap.has(h.symbol)).length
+        holdings.filter((h) => !priceMap.has(h.symbol)).length
       }`
     );
     console.log(
-      `💰 Cash equivalents filtered out: ${
-        holdings.length - filteredHoldings.length
+      `💰 Cash equivalents (not sent to FinHub): ${
+        holdings.filter((h) => isCashEquivalent(h)).length
       }`
     );
     if (symbolErrors.length > 0) {

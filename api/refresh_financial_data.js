@@ -110,18 +110,21 @@ export default async function handler(req, res) {
       });
     }
 
-    // 2) Get access token from Vault
-    const { data: access_token, error: tokenErr } = await supabase.rpc(
-      "secure_get_plaid_token",
-      {
-        p_item_id: item_id,
-        p_user_id: actualUserId,
+    // 2) Get access token from Vault (only needed for Plaid refresh types)
+    let access_token = null;
+    if (refresh_type !== "stock_prices") {
+      const { data: token, error: tokenErr } = await supabase.rpc(
+        "secure_get_plaid_token",
+        {
+          p_item_id: item_id,
+          p_user_id: actualUserId,
+        }
+      );
+      if (tokenErr || !token) {
+        console.error("Vault token fetch failed:", tokenErr);
+        return res.status(404).json({ error: "Access token not found" });
       }
-    );
-
-    if (tokenErr || !access_token) {
-      console.error("Vault token fetch failed:", tokenErr);
-      return res.status(404).json({ error: "Access token not found" });
+      access_token = token;
     }
 
     const results = {
@@ -330,13 +333,19 @@ export default async function handler(req, res) {
             const h = holdings.find((x) => x.symbol === sym);
             if (!h) return true;
             if (isCashEquivalent(h)) {
-              console.log(`💰 Skipping FinHub for cash equivalent: ${sym} (kept in holdings)`);
+              console.log(
+                `💰 Skipping FinHub for cash equivalent: ${sym} (kept in holdings)`
+              );
               return false;
             }
             return true;
           });
           console.log(
-            `📊 Found ${holdings.length} holdings, ${symbolsToFetchFromFinhub.length} symbols to fetch from FinHub (${allUniqueSymbols.length - symbolsToFetchFromFinhub.length} cash equivalents - not fetched, kept as-is)`
+            `📊 Found ${holdings.length} holdings, ${
+              symbolsToFetchFromFinhub.length
+            } symbols to fetch from FinHub (${
+              allUniqueSymbols.length - symbolsToFetchFromFinhub.length
+            } cash equivalents - not fetched, kept as-is)`
           );
 
           // Batch fetch prices from Finnhub (rate limit: 60 calls/min on free tier)
