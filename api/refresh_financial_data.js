@@ -276,7 +276,7 @@ export default async function handler(req, res) {
         const { data: holdings, error: holdingsError } = await supabase
           .from("investment_holdings")
           .select(
-            "id, user_id, snaptrade_user_id, account_id, symbol, symbol_id, units, price, market_value, previous_market_value, day_change, day_change_percent, last_updated"
+            "id, user_id, snaptrade_user_id, account_id, symbol, symbol_id, units, price, market_value, previous_market_value, day_change, day_change_percent, last_updated, security_type, description"
           )
           .eq("user_id", actualUserId)
           .eq("is_active", true)
@@ -294,17 +294,55 @@ export default async function handler(req, res) {
             symbolsFetched: 0,
           };
         } else {
-          // Get unique symbols (deduplicate)
+          // Filter out cash equivalents and money market funds (they don't have prices on FinHub)
+          const cashEquivalentSymbols = [
+            "SPAXX",
+            "SPRXX",
+            "FZFXX",
+            "FDRXX",
+            "SNAXX",
+          ]; // Common money market funds
+          const filteredHoldings = holdings.filter((h) => {
+            const symbol = h.symbol?.toUpperCase();
+            const securityType = h.security_type?.toLowerCase() || "";
+            const description = h.description?.toLowerCase() || "";
+
+            // Skip cash equivalents
+            if (cashEquivalentSymbols.includes(symbol)) {
+              console.log(`💰 Skipping cash equivalent: ${symbol}`);
+              return false;
+            }
+
+            // Skip money market funds by security type or description
+            if (
+              securityType.includes("money market") ||
+              securityType.includes("cash") ||
+              description.includes("money market") ||
+              description.includes("cash equivalent")
+            ) {
+              console.log(
+                `💰 Skipping cash equivalent: ${symbol} (${
+                  securityType || description
+                })`
+              );
+              return false;
+            }
+
+            return true;
+          });
+
+          // Get unique symbols (deduplicate) from filtered holdings
           const uniqueSymbols = [
-            ...new Set(holdings.map((h) => h.symbol).filter(Boolean)),
+            ...new Set(filteredHoldings.map((h) => h.symbol).filter(Boolean)),
           ];
           console.log(
-            `📊 Found ${holdings.length} holdings with ${uniqueSymbols.length} unique symbols`
+            `📊 Found ${holdings.length} holdings, ${filteredHoldings.length} after filtering cash equivalents, ${uniqueSymbols.length} unique symbols`
           );
 
           // Batch fetch prices from Finnhub (rate limit: 60 calls/min on free tier)
           const priceMap = new Map();
           const BATCH_DELAY = 1100; // 1.1s between calls to stay under rate limit
+          const symbolErrors = []; // Track individual symbol failures
 
           for (let i = 0; i < uniqueSymbols.length; i++) {
             const symbol = uniqueSymbols[i];
@@ -315,6 +353,7 @@ export default async function handler(req, res) {
                 console.log(`✅ ${symbol}: $${snapshot.current.toFixed(2)}`);
               } else {
                 console.warn(`⚠️ No price data for ${symbol}`);
+                symbolErrors.push(`${symbol}: No price data available`);
               }
 
               // Rate limit: wait between calls (except last one)
@@ -324,10 +363,12 @@ export default async function handler(req, res) {
                 );
               }
             } catch (error) {
-              console.error(
-                `❌ Error fetching price for ${symbol}:`,
-                error.message
-              );
+              // Non-blocking: log error but continue with other symbols
+              const errorMsg =
+                error instanceof Error ? error.message : String(error);
+              console.error(`❌ Error fetching price for ${symbol}:`, errorMsg);
+              symbolErrors.push(`${symbol}: ${errorMsg}`);
+              // Continue to next symbol - don't fail entire operation
             }
           }
 
@@ -355,75 +396,90 @@ export default async function handler(req, res) {
 
           const EPSILON = 0.01;
           let updatedCount = 0;
+          const holdingErrors = []; // Track individual holding update failures
           const updatesByAccount = new Map(); // Track which accounts need balance recalculation
 
-          for (const holding of holdings) {
-            const newPrice = priceMap.get(holding.symbol);
-            if (newPrice == null) continue;
+          for (const holding of filteredHoldings) {
+            try {
+              const newPrice = priceMap.get(holding.symbol);
+              if (newPrice == null) continue;
 
-            const currentMarketValue =
-              holding.units && newPrice ? holding.units * newPrice : null;
-            if (currentMarketValue == null) continue;
+              const currentMarketValue =
+                holding.units && newPrice ? holding.units * newPrice : null;
+              if (currentMarketValue == null) continue;
 
-            const existingMarketValue = holding.market_value;
-            const isMarketValueUnchanged =
-              existingMarketValue != null &&
-              Number.isFinite(existingMarketValue) &&
-              Number.isFinite(currentMarketValue) &&
-              Math.abs(currentMarketValue - existingMarketValue) < EPSILON;
+              const existingMarketValue = holding.market_value;
+              const isMarketValueUnchanged =
+                existingMarketValue != null &&
+                Number.isFinite(existingMarketValue) &&
+                Number.isFinite(currentMarketValue) &&
+                Math.abs(currentMarketValue - existingMarketValue) < EPSILON;
 
-            // Calculate day_change (preserve if unchanged)
-            const sameDay = isSameCalendarDayUTC(holding.last_updated);
-            let dayChange = holding.day_change;
-            let dayChangePercent = holding.day_change_percent;
-            let previousMarketValueForStorage = holding.previous_market_value;
+              // Calculate day_change (preserve if unchanged)
+              const sameDay = isSameCalendarDayUTC(holding.last_updated);
+              let dayChange = holding.day_change;
+              let dayChangePercent = holding.day_change_percent;
+              let previousMarketValueForStorage = holding.previous_market_value;
 
-            if (!isMarketValueUnchanged) {
-              const dayBaseline =
-                holding.previous_market_value ?? holding.market_value ?? null;
+              if (!isMarketValueUnchanged) {
+                const dayBaseline =
+                  holding.previous_market_value ?? holding.market_value ?? null;
 
-              if (dayBaseline != null && Number.isFinite(dayBaseline)) {
-                dayChange = currentMarketValue - dayBaseline;
-                dayChangePercent =
-                  dayBaseline !== 0 ? (dayChange / dayBaseline) * 100 : 0;
+                if (dayBaseline != null && Number.isFinite(dayBaseline)) {
+                  dayChange = currentMarketValue - dayBaseline;
+                  dayChangePercent =
+                    dayBaseline !== 0 ? (dayChange / dayBaseline) * 100 : 0;
+                }
+
+                // Update previous_market_value on new day
+                if (!sameDay) {
+                  previousMarketValueForStorage =
+                    holding.market_value ?? currentMarketValue;
+                }
               }
 
-              // Update previous_market_value on new day
-              if (!sameDay) {
-                previousMarketValueForStorage =
-                  holding.market_value ?? currentMarketValue;
+              // Update holding
+              const { error: updateError } = await supabase
+                .from("investment_holdings")
+                .update({
+                  price: newPrice,
+                  market_value: currentMarketValue,
+                  day_change: dayChange,
+                  day_change_percent: dayChangePercent,
+                  previous_market_value: previousMarketValueForStorage,
+                  last_updated: now.toISOString(),
+                })
+                .eq("id", holding.id);
+
+              if (updateError) {
+                // Non-blocking: log error but continue with other holdings
+                console.error(
+                  `❌ Failed to update holding ${holding.symbol}:`,
+                  updateError
+                );
+                holdingErrors.push(`${holding.symbol}: ${updateError.message}`);
+              } else {
+                updatedCount++;
+                // Track account for balance recalculation
+                const key = `${holding.user_id}:${holding.snaptrade_user_id}:${holding.account_id}`;
+                if (!updatesByAccount.has(key)) {
+                  updatesByAccount.set(key, {
+                    user_id: holding.user_id,
+                    snaptrade_user_id: holding.snaptrade_user_id,
+                    account_id: holding.account_id,
+                  });
+                }
               }
-            }
-
-            // Update holding
-            const { error: updateError } = await supabase
-              .from("investment_holdings")
-              .update({
-                price: newPrice,
-                market_value: currentMarketValue,
-                day_change: dayChange,
-                day_change_percent: dayChangePercent,
-                previous_market_value: previousMarketValueForStorage,
-                last_updated: now.toISOString(),
-              })
-              .eq("id", holding.id);
-
-            if (updateError) {
+            } catch (error) {
+              // Non-blocking: catch any unexpected errors for this holding
+              const errorMsg =
+                error instanceof Error ? error.message : String(error);
               console.error(
-                `❌ Failed to update holding ${holding.symbol}:`,
-                updateError
+                `❌ Unexpected error updating holding ${holding.symbol}:`,
+                errorMsg
               );
-            } else {
-              updatedCount++;
-              // Track account for balance recalculation
-              const key = `${holding.user_id}:${holding.snaptrade_user_id}:${holding.account_id}`;
-              if (!updatesByAccount.has(key)) {
-                updatesByAccount.set(key, {
-                  user_id: holding.user_id,
-                  snaptrade_user_id: holding.snaptrade_user_id,
-                  account_id: holding.account_id,
-                });
-              }
+              holdingErrors.push(`${holding.symbol}: ${errorMsg}`);
+              // Continue to next holding - don't fail entire operation
             }
           }
 
@@ -645,20 +701,60 @@ export default async function handler(req, res) {
             `✅ Recalculated balances for ${recalculatedCount} accounts`
           );
 
+          // Build result message with partial success info
+          const hasPartialFailures =
+            symbolErrors.length > 0 || holdingErrors.length > 0;
+          let message = "Stock prices updated successfully";
+          if (hasPartialFailures) {
+            message = `Stock prices updated with ${updatedCount} holdings (${symbolErrors.length} symbol fetch failures, ${holdingErrors.length} update failures)`;
+          }
+
           results.stock_prices = {
-            message: "Stock prices updated successfully",
+            message,
             holdingsUpdated: updatedCount,
             accountsRecalculated: recalculatedCount,
             symbolsFetched: priceMap.size,
             totalSymbols: uniqueSymbols.length,
+            symbolErrors: symbolErrors.length > 0 ? symbolErrors : undefined,
+            holdingErrors: holdingErrors.length > 0 ? holdingErrors : undefined,
           };
+
+          // Add individual errors to results.errors for visibility, but don't fail the operation
+          if (symbolErrors.length > 0) {
+            results.errors.push(
+              `Some symbols failed to fetch: ${symbolErrors
+                .slice(0, 5)
+                .join(", ")}${
+                symbolErrors.length > 5
+                  ? ` (+${symbolErrors.length - 5} more)`
+                  : ""
+              }`
+            );
+          }
+          if (holdingErrors.length > 0) {
+            results.errors.push(
+              `Some holdings failed to update: ${holdingErrors
+                .slice(0, 5)
+                .join(", ")}${
+                holdingErrors.length > 5
+                  ? ` (+${holdingErrors.length - 5} more)`
+                  : ""
+              }`
+            );
+          }
         }
       } catch (error) {
-        console.error("❌ Stock prices refresh failed:", error);
-        results.errors.push(`Stock prices refresh failed: ${error.message}`);
+        // Only catch truly unexpected errors (e.g., database connection issues)
+        // Individual symbol/holding failures are already handled above
+        console.error(
+          "❌ Stock prices refresh failed with unexpected error:",
+          error
+        );
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        results.errors.push(`Stock prices refresh failed: ${errorMsg}`);
         results.stock_prices = {
           message: "Stock prices refresh failed",
-          error: error.message,
+          error: errorMsg,
         };
       }
     }

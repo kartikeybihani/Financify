@@ -869,14 +869,38 @@ export default function InvestmentsScreen({
 
         if (priceUpdateRes.ok) {
           const priceData = await priceUpdateRes.json();
-          finhubSyncTime = new Date().toISOString();
-          logger.info(
-            `✅ Stock prices updated: ${
-              priceData.results?.stock_prices?.holdingsUpdated || 0
-            } holdings at ${finhubSyncTime}`
-          );
+
+          // Check for errors in response body (207 Multi-Status can have errors)
+          if (priceData.success === false || priceData.errors?.length > 0) {
+            logger.warn(
+              `⚠️ Stock price update completed with errors: ${
+                priceData.errors?.join(", ") || "Unknown error"
+              }`
+            );
+            // Still log success if some holdings were updated
+            if (priceData.results?.stock_prices?.holdingsUpdated > 0) {
+              finhubSyncTime = new Date().toISOString();
+              logger.info(
+                `✅ Stock prices partially updated: ${
+                  priceData.results?.stock_prices?.holdingsUpdated || 0
+                } holdings at ${finhubSyncTime}`
+              );
+            }
+          } else {
+            finhubSyncTime = new Date().toISOString();
+            logger.info(
+              `✅ Stock prices updated: ${
+                priceData.results?.stock_prices?.holdingsUpdated || 0
+              } holdings at ${finhubSyncTime}`
+            );
+          }
         } else {
-          logger.warn("⚠️ Stock price update failed (non-critical)");
+          const errorText = await priceUpdateRes
+            .text()
+            .catch(() => "Unknown error");
+          logger.warn(
+            `⚠️ Stock price update failed (non-critical): ${errorText}`
+          );
 
           // Fallback: If FinHub update failed for recent connections, run full sync
           if (recentConnections.length > 0) {
