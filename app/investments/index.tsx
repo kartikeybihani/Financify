@@ -895,11 +895,20 @@ export default function InvestmentsScreen({
             );
           }
         } else {
-          const errorText = await priceUpdateRes
-            .text()
-            .catch(() => "Unknown error");
+          // Try to parse error as JSON first, fallback to text
+          let errorMessage = "Unknown error";
+          try {
+            const errorData = await priceUpdateRes.json();
+            errorMessage = errorData.error || JSON.stringify(errorData);
+          } catch {
+            try {
+              errorMessage = await priceUpdateRes.text();
+            } catch {
+              errorMessage = `HTTP ${priceUpdateRes.status}: ${priceUpdateRes.statusText}`;
+            }
+          }
           logger.warn(
-            `⚠️ Stock price update failed (non-critical): ${errorText}`
+            `⚠️ Stock price update failed (non-critical): ${errorMessage} (Status: ${priceUpdateRes.status})`
           );
 
           // Fallback: If FinHub update failed for recent connections, run full sync

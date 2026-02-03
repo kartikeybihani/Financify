@@ -1,7 +1,7 @@
 // /api/refresh_financial_data.js
 import { client } from "../lib/api/plaidClient.js";
 import { supabase } from "../lib/api/supabase.js";
-import { verifyItemOwnership } from "../lib/api/auth.js";
+import { verifyItemOwnership, verifyAuth } from "../lib/api/auth.js";
 import { refreshAndStoreRecurringForItem } from "../lib/plaid/recurringRefresh.js";
 import { fetchStockSnapshot } from "../lib/stocks.js";
 import {
@@ -50,15 +50,20 @@ export default async function handler(req, res) {
     // For stock_prices, get user_id from auth token instead of item_id
     let actualUserId = user_id;
     if (refresh_type === "stock_prices") {
-      // Get user from auth token
-      const {
-        data: { user },
-        error: authError,
-      } = await supabase.auth.getUser();
+      // Get user from Authorization header token (same as other endpoints)
+      const { user, error: authError } = await verifyAuth(req);
       if (authError || !user) {
+        console.error("❌ Auth verification failed:", authError);
         return res.status(401).json({ error: "Unauthorized" });
       }
       actualUserId = user.id;
+
+      // If user_id was provided in body, verify it matches authenticated user
+      if (user_id && user_id !== user.id) {
+        return res.status(403).json({
+          error: "Forbidden: Cannot access another user's data",
+        });
+      }
     } else {
       // 1) Verify user owns this item (authorization check)
       const {
