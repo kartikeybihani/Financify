@@ -185,6 +185,21 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
                               month: "short",
                               day: "numeric",
                             });
+                            // Negative amount = refund/credit (money in) → green + sign; positive = expense → normal, no sign
+                            const isRefundOrCredit = tx.amount < 0;
+                            const absAmount = Math.abs(tx.amount);
+                            const amountText = isRefundOrCredit
+                              ? `+$${absAmount.toLocaleString("en-US", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`
+                              : `$${absAmount.toLocaleString("en-US", {
+                                  minimumFractionDigits: 2,
+                                  maximumFractionDigits: 2,
+                                })}`;
+                            const amountColor = isRefundOrCredit
+                              ? "#22C55E"
+                              : undefined;
                             return (
                               <TouchableOpacity
                                 key={tx.id || `${key}-${idx}`}
@@ -233,12 +248,15 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
                                     </Text>
                                   </View>
                                 </View>
-                                <Text style={styles.txItemAmount}>
-                                  $
-                                  {tx.amount.toLocaleString("en-US", {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2,
-                                  })}
+                                <Text
+                                  style={[
+                                    styles.txItemAmount,
+                                    amountColor != null && {
+                                      color: amountColor,
+                                    },
+                                  ]}
+                                >
+                                  {amountText}
                                 </Text>
                               </TouchableOpacity>
                             );

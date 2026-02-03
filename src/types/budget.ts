@@ -776,8 +776,8 @@ export async function getTransactionsForCategory(
       // Priority 1: Match by category_id if both transaction and target have category_id
       if (targetCategoryId && tx.category_id) {
         if (tx.category_id === targetCategoryId) {
-          // Valid match by category_id - add to results
-          const amount = Math.abs(Number(tx.amount || 0));
+          // Valid match by category_id - add to results (preserve sign: negative = refund/credit, positive = expense)
+          const amount = Number(tx.amount || 0);
           if (!Number.isFinite(amount) || amount === 0) {
             return;
           }
@@ -821,8 +821,8 @@ export async function getTransactionsForCategory(
         return;
       }
 
-      // Valid match - add to results
-      const amount = Math.abs(Number(tx.amount || 0));
+      // Valid match - add to results (preserve sign: negative = refund/credit, positive = expense)
+      const amount = Number(tx.amount || 0);
       if (!Number.isFinite(amount) || amount === 0) {
         return;
       }

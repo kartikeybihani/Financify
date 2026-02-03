@@ -13,7 +13,7 @@ import {
   RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Ionicons, AntDesign } from "@expo/vector-icons";
+import { Ionicons, AntDesign, FontAwesome6 } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
@@ -2374,27 +2374,35 @@ export default function InvestmentsScreen({
                 </View>
 
                 <View style={styles.sortOptionsContainer}>
-                  {sortOptions.map((option) => (
-                    <TouchableOpacity
-                      key={option.key}
-                      style={styles.sortOption}
-                      onPress={() => handleSortSelection(option.key)}
-                      activeOpacity={0.7}
-                    >
-                      <Text
-                        style={[
-                          styles.sortOptionText,
-                          holdingsSortBy === option.key &&
-                            styles.sortOptionTextSelected,
-                        ]}
-                      >
-                        {option.label}
-                      </Text>
-                      {holdingsSortBy === option.key && (
-                        <Ionicons name="checkmark" size={20} color="#4A90E2" />
-                      )}
-                    </TouchableOpacity>
-                  ))}
+                  <View style={styles.sortOptionsBox}>
+                    {sortOptions.map((option, index) => (
+                      <React.Fragment key={option.key}>
+                        {index > 0 && <View style={styles.sortOptionDivider} />}
+                        <TouchableOpacity
+                          style={styles.sortOption}
+                          onPress={() => handleSortSelection(option.key)}
+                          activeOpacity={0.7}
+                        >
+                          <Text
+                            style={[
+                              styles.sortOptionText,
+                              holdingsSortBy === option.key &&
+                                styles.sortOptionTextSelected,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                          {holdingsSortBy === option.key && (
+                            <Ionicons
+                              name="checkmark"
+                              size={20}
+                              color="#4A90E2"
+                            />
+                          )}
+                        </TouchableOpacity>
+                      </React.Fragment>
+                    ))}
+                  </View>
                 </View>
               </LinearGradient>
             </TouchableWithoutFeedback>

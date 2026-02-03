@@ -810,17 +810,25 @@ export const styles = StyleSheet.create({
   sortOptionsContainer: {
     padding: Math.max(20, SCREEN_WIDTH * 0.05),
   },
+  sortOptionsBox: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    overflow: "hidden",
+  },
   sortOption: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     paddingVertical: 16,
     paddingHorizontal: 20,
-    borderRadius: 12,
-    backgroundColor: "rgba(255,255,255,0.05)",
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.1)",
+  },
+  sortOptionDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    marginLeft: 20,
+    marginRight: 20,
   },
   sortOptionText: {
     fontSize: 16,
