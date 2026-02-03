@@ -299,49 +299,44 @@ export default async function handler(req, res) {
             symbolsFetched: 0,
           };
         } else {
-          // Filter out cash equivalents and money market funds (they don't have prices on FinHub)
+          // Helper: is this symbol a cash equivalent? (Don't call FinHub for these - no price data)
           const cashEquivalentSymbols = [
             "SPAXX",
             "SPRXX",
             "FZFXX",
             "FDRXX",
             "SNAXX",
-          ]; // Common money market funds
-          const filteredHoldings = holdings.filter((h) => {
+          ];
+          const isCashEquivalent = (h) => {
             const symbol = h.symbol?.toUpperCase();
             const securityType = h.security_type?.toLowerCase() || "";
             const description = h.description?.toLowerCase() || "";
-
-            // Skip cash equivalents
-            if (cashEquivalentSymbols.includes(symbol)) {
-              console.log(`💰 Skipping cash equivalent: ${symbol}`);
-              return false;
-            }
-
-            // Skip money market funds by security type or description
+            if (cashEquivalentSymbols.includes(symbol)) return true;
             if (
               securityType.includes("money market") ||
               securityType.includes("cash") ||
               description.includes("money market") ||
               description.includes("cash equivalent")
-            ) {
-              console.log(
-                `💰 Skipping cash equivalent: ${symbol} (${
-                  securityType || description
-                })`
-              );
+            )
+              return true;
+            return false;
+          };
+
+          // Symbols to fetch from FinHub only (exclude cash equivalents - they stay in holdings, we just don't call FinHub)
+          const allUniqueSymbols = [
+            ...new Set(holdings.map((h) => h.symbol).filter(Boolean)),
+          ];
+          const symbolsToFetchFromFinhub = allUniqueSymbols.filter((sym) => {
+            const h = holdings.find((x) => x.symbol === sym);
+            if (!h) return true;
+            if (isCashEquivalent(h)) {
+              console.log(`💰 Skipping FinHub for cash equivalent: ${sym} (kept in holdings)`);
               return false;
             }
-
             return true;
           });
-
-          // Get unique symbols (deduplicate) from filtered holdings
-          const uniqueSymbols = [
-            ...new Set(filteredHoldings.map((h) => h.symbol).filter(Boolean)),
-          ];
           console.log(
-            `📊 Found ${holdings.length} holdings, ${filteredHoldings.length} after filtering cash equivalents, ${uniqueSymbols.length} unique symbols`
+            `📊 Found ${holdings.length} holdings, ${symbolsToFetchFromFinhub.length} symbols to fetch from FinHub (${allUniqueSymbols.length - symbolsToFetchFromFinhub.length} cash equivalents - not fetched, kept as-is)`
           );
 
           // Batch fetch prices from Finnhub (rate limit: 60 calls/min on free tier)
@@ -349,8 +344,8 @@ export default async function handler(req, res) {
           const BATCH_DELAY = 1100; // 1.1s between calls to stay under rate limit
           const symbolErrors = []; // Track individual symbol failures
 
-          for (let i = 0; i < uniqueSymbols.length; i++) {
-            const symbol = uniqueSymbols[i];
+          for (let i = 0; i < symbolsToFetchFromFinhub.length; i++) {
+            const symbol = symbolsToFetchFromFinhub[i];
             try {
               const snapshot = await fetchStockSnapshot(symbol);
               if (snapshot?.current != null) {
@@ -362,7 +357,7 @@ export default async function handler(req, res) {
               }
 
               // Rate limit: wait between calls (except last one)
-              if (i < uniqueSymbols.length - 1) {
+              if (i < symbolsToFetchFromFinhub.length - 1) {
                 await new Promise((resolve) =>
                   setTimeout(resolve, BATCH_DELAY)
                 );
@@ -378,10 +373,10 @@ export default async function handler(req, res) {
           }
 
           console.log(
-            `📈 Fetched prices for ${priceMap.size}/${uniqueSymbols.length} symbols`
+            `📈 Fetched prices for ${priceMap.size}/${symbolsToFetchFromFinhub.length} symbols`
           );
 
-          // Update holdings with new prices
+          // Update holdings with new prices (only those we got a price for; cash equivalents are left as-is)
           const now = new Date();
           const todayUTC = Date.UTC(
             now.getUTCFullYear(),
@@ -404,7 +399,7 @@ export default async function handler(req, res) {
           const holdingErrors = []; // Track individual holding update failures
           const updatesByAccount = new Map(); // Track which accounts need balance recalculation
 
-          for (const holding of filteredHoldings) {
+          for (const holding of holdings) {
             try {
               const newPrice = priceMap.get(holding.symbol);
               if (newPrice == null) continue;
@@ -719,7 +714,7 @@ export default async function handler(req, res) {
             holdingsUpdated: updatedCount,
             accountsRecalculated: recalculatedCount,
             symbolsFetched: priceMap.size,
-            totalSymbols: uniqueSymbols.length,
+            totalSymbols: symbolsToFetchFromFinhub.length,
             symbolErrors: symbolErrors.length > 0 ? symbolErrors : undefined,
             holdingErrors: holdingErrors.length > 0 ? holdingErrors : undefined,
           };

@@ -60,57 +60,48 @@ async function getUserStockPrices(userId) {
 
     console.log(`✅ Found ${holdings.length} active holdings\n`);
 
-    // Step 2: Filter out cash equivalents (same logic as API)
-    console.log("💰 Step 2: Filtering cash equivalents...");
+    // Step 2: Identify cash equivalents (include in holdings, but don't call FinHub)
+    console.log("💰 Step 2: Identifying cash equivalents (included in holdings, FinHub not called)...");
     const cashEquivalentSymbols = ["SPAXX", "SPRXX", "FZFXX", "FDRXX", "SNAXX"];
-    const filteredHoldings = holdings.filter((h) => {
+    const isCashEquivalent = (h) => {
       const symbol = h.symbol?.toUpperCase();
       const securityType = h.security_type?.toLowerCase() || "";
       const description = h.description?.toLowerCase() || "";
-
-      if (cashEquivalentSymbols.includes(symbol)) {
-        console.log(`   ⏭️  Skipping cash equivalent: ${symbol}`);
-        return false;
-      }
-
+      if (cashEquivalentSymbols.includes(symbol)) return true;
       if (
         securityType.includes("money market") ||
         securityType.includes("cash") ||
         description.includes("money market") ||
         description.includes("cash equivalent")
-      ) {
-        console.log(
-          `   ⏭️  Skipping cash equivalent: ${symbol} (${
-            securityType || description
-          })`
-        );
+      )
+        return true;
+      return false;
+    };
+
+    const allUniqueSymbols = [
+      ...new Set(holdings.map((h) => h.symbol).filter(Boolean)),
+    ];
+    const symbolsToFetchFromFinhub = allUniqueSymbols.filter((sym) => {
+      const h = holdings.find((x) => x.symbol === sym);
+      if (!h) return true;
+      if (isCashEquivalent(h)) {
+        console.log(`   ⏭️  ${sym}: cash equivalent - not calling FinHub (kept in holdings)`);
         return false;
       }
-
       return true;
     });
-
     console.log(
-      `✅ Filtered to ${filteredHoldings.length} holdings (skipped ${
-        holdings.length - filteredHoldings.length
-      } cash equivalents)\n`
+      `✅ ${holdings.length} holdings total, ${symbolsToFetchFromFinhub.length} symbols to fetch from FinHub (${allUniqueSymbols.length - symbolsToFetchFromFinhub.length} cash equivalents - not fetched)\n`
     );
 
-    // Step 3: Get unique symbols (deduplicate) from filtered holdings
-    console.log("📊 Step 3: Getting unique symbols...");
-    const uniqueSymbols = [
-      ...new Set(filteredHoldings.map((h) => h.symbol).filter(Boolean)),
-    ];
-    console.log(`✅ Found ${uniqueSymbols.length} unique symbols to fetch\n`);
-
-    // Step 4: Fetch prices from Finnhub (same logic as API)
-    console.log("📈 Step 4: Fetching prices from Finnhub...\n");
+    // Step 3: Fetch prices from Finnhub only for non-cash-equivalent symbols
+    console.log("📈 Step 3: Fetching prices from Finnhub...\n");
     const priceMap = new Map();
-    const symbolErrors = []; // Track failures
-    const BATCH_DELAY = 1100; // 1.1s between calls to stay under rate limit
+    const symbolErrors = [];
+    const BATCH_DELAY = 1100;
 
-    for (let i = 0; i < uniqueSymbols.length; i++) {
-      const symbol = uniqueSymbols[i];
+    for (let i = 0; i < symbolsToFetchFromFinhub.length; i++) {
+      const symbol = symbolsToFetchFromFinhub[i];
       try {
         process.stdout.write(`  Fetching ${symbol}... `);
         const snapshot = await fetchStockSnapshot(symbol);
@@ -122,20 +113,18 @@ async function getUserStockPrices(userId) {
           symbolErrors.push(`${symbol}: No price data available`);
         }
 
-        // Rate limit: wait between calls (except last one)
-        if (i < uniqueSymbols.length - 1) {
+        if (i < symbolsToFetchFromFinhub.length - 1) {
           await new Promise((resolve) => setTimeout(resolve, BATCH_DELAY));
         }
       } catch (error) {
         const errorMsg = error instanceof Error ? error.message : String(error);
         console.log(`❌ Error: ${errorMsg}`);
         symbolErrors.push(`${symbol}: ${errorMsg}`);
-        // Continue to next symbol - non-blocking
       }
     }
 
     console.log(
-      `\n✅ Step 4 Complete: Fetched prices for ${priceMap.size}/${uniqueSymbols.length} symbols`
+      `\n✅ Step 3 Complete: Fetched prices for ${priceMap.size}/${symbolsToFetchFromFinhub.length} symbols`
     );
     if (symbolErrors.length > 0) {
       console.log(`⚠️  ${symbolErrors.length} symbol(s) failed:`);
@@ -143,16 +132,16 @@ async function getUserStockPrices(userId) {
     }
     console.log();
 
-    // Display results grouped by symbol
+    // Display results grouped by symbol (all holdings, including cash equivalents)
     console.log("=".repeat(80));
     console.log("STOCK PRICES SUMMARY");
     console.log("=".repeat(80));
     console.log();
 
-    // Step 5: Group filtered holdings by symbol
-    console.log("📊 Step 5: Grouping holdings by symbol...");
+    // Step 4: Group all holdings by symbol
+    console.log("📊 Step 4: Grouping holdings by symbol...");
     const holdingsBySymbol = new Map();
-    filteredHoldings.forEach((holding) => {
+    holdings.forEach((holding) => {
       if (!holdingsBySymbol.has(holding.symbol)) {
         holdingsBySymbol.set(holding.symbol, []);
       }
@@ -166,6 +155,7 @@ async function getUserStockPrices(userId) {
     for (const [symbol, symbolHoldings] of holdingsBySymbol.entries()) {
       const currentPrice = priceMap.get(symbol);
       const storedPrice = symbolHoldings[0].price;
+      const isCash = isCashEquivalent(symbolHoldings[0]);
 
       // Calculate totals for this symbol
       const totalUnits = symbolHoldings.reduce(
@@ -174,7 +164,9 @@ async function getUserStockPrices(userId) {
       );
       const currentMarketValue = currentPrice
         ? totalUnits * currentPrice
-        : null;
+        : isCash
+          ? totalUnits * (parseFloat(storedPrice) || 0)
+          : null;
       const storedMarketValue = symbolHoldings.reduce(
         (sum, h) => sum + (parseFloat(h.market_value) || 0),
         0
@@ -187,7 +179,15 @@ async function getUserStockPrices(userId) {
       console.log(`   Type: ${symbolHoldings[0].security_type || "N/A"}`);
       console.log(`   Units: ${totalUnits.toFixed(4)}`);
       console.log(`   Stored Price: $${(storedPrice || 0).toFixed(2)}`);
-      if (currentPrice) {
+      if (isCash) {
+        console.log(
+          `   Current Price (Finnhub): not fetched (cash equivalent - kept as stored)`
+        );
+        console.log(`   Stored Market Value: $${storedMarketValue.toFixed(2)}`);
+        console.log(
+          `   Current Market Value: $${storedMarketValue.toFixed(2)} (same - cash)`
+        );
+      } else if (currentPrice) {
         console.log(`   Current Price (Finnhub): $${currentPrice.toFixed(2)}`);
         const priceDiff = currentPrice - (storedPrice || 0);
         const priceDiffPercent =
@@ -199,11 +199,7 @@ async function getUserStockPrices(userId) {
             2
           )} (${priceDiffPercent}%)`
         );
-      } else {
-        console.log(`   Current Price (Finnhub): ❌ Not available`);
-      }
-      console.log(`   Stored Market Value: $${storedMarketValue.toFixed(2)}`);
-      if (currentMarketValue) {
+        console.log(`   Stored Market Value: $${storedMarketValue.toFixed(2)}`);
         console.log(
           `   Current Market Value: $${currentMarketValue.toFixed(2)}`
         );
@@ -213,6 +209,9 @@ async function getUserStockPrices(userId) {
             2
           )}`
         );
+      } else {
+        console.log(`   Current Price (Finnhub): ❌ Not available`);
+        console.log(`   Stored Market Value: $${storedMarketValue.toFixed(2)}`);
       }
       console.log();
     }
