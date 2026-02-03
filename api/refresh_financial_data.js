@@ -500,10 +500,12 @@ export default async function handler(req, res) {
             snaptradeUserId,
             accountId
           ) => {
-            // Fetch holdings with market_value and unrealized_pl
+            // Fetch holdings with market_value, unrealized_pl, and fields to detect cash equivalents
             const { data: holdings } = await supabase
               .from("investment_holdings")
-              .select("market_value, unrealized_pl")
+              .select(
+                "market_value, unrealized_pl, symbol, security_type, description"
+              )
               .eq("user_id", userId)
               .eq("snaptrade_user_id", snaptradeUserId)
               .eq("account_id", accountId)
@@ -518,10 +520,29 @@ export default async function handler(req, res) {
               .eq("account_id", accountId)
               .eq("is_active", true);
 
+            // Same cash-equivalent detection as above (avoid double-counting cash when SPAXX etc. are in holdings)
+            const cashEqSymbols = ["SPAXX", "SPRXX", "FZFXX", "FDRXX", "SNAXX"];
+            const isCashEq = (h) => {
+              const sym = h.symbol?.toUpperCase();
+              const st = (h.security_type || "").toLowerCase();
+              const desc = (h.description || "").toLowerCase();
+              if (cashEqSymbols.includes(sym)) return true;
+              if (
+                st.includes("money market") ||
+                st.includes("cash") ||
+                desc.includes("money market") ||
+                desc.includes("cash equivalent")
+              )
+                return true;
+              return false;
+            };
+
             // Calculate total holdings value (sum of all market_values)
             let totalHoldingsValue = 0;
+            let cashEquivalentInHoldings = 0;
             holdings?.forEach((h) => {
               totalHoldingsValue += h.market_value || 0;
+              if (isCashEq(h)) cashEquivalentInHoldings += h.market_value || 0;
             });
             options?.forEach((o) => {
               totalHoldingsValue += o.market_value || 0;
@@ -557,10 +578,12 @@ export default async function handler(req, res) {
             }
 
             // Get cash from existing balance (preserve from SnapTrade sync). Do not use buying_power.
-            const cash = balance?.cash || 0;
+            const cash = parseFloat(balance?.cash || 0) || 0;
 
-            // Calculate new total_value = holdings + cash only (no buying_power)
-            const newTotalValue = totalHoldingsValue + cash;
+            // Avoid double-counting: broker "cash" is often the same as SPAXX/sweep in holdings.
+            // Add only the portion of cash not already represented by cash-equivalent holdings.
+            const cashToAdd = Math.max(0, cash - cashEquivalentInHoldings);
+            const newTotalValue = totalHoldingsValue + cashToAdd;
 
             // Apply day-boundary logic (same as SnapTrade sync)
             const now = new Date();

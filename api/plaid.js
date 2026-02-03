@@ -908,9 +908,27 @@ async function handleSnapTradeSync(res, userId, accountId) {
               existingBalance?.total_value ??
               null;
 
+        // Cash-equivalent symbols (avoid double-counting: broker "cash" often = SPAXX/sweep in holdings)
+        const cashEqSymbols = ["SPAXX", "SPRXX", "FZFXX", "FDRXX", "SNAXX"];
+        const isCashEquivalent = (h) => {
+          const sym = (h.symbol || "").toUpperCase();
+          const st = (h.security_type || "").toLowerCase();
+          const desc = (h.description || "").toLowerCase();
+          if (cashEqSymbols.includes(sym)) return true;
+          if (
+            st.includes("money market") ||
+            st.includes("cash") ||
+            desc.includes("money market") ||
+            desc.includes("cash equivalent")
+          )
+            return true;
+          return false;
+        };
+
         // Calculate portfolio performance metrics
         let totalUnrealizedPL = existingBalance?.total_change || 0;
         let totalHoldingsValue = 0;
+        let cashEquivalentInHoldings = 0;
 
         if (
           holdingsData &&
@@ -930,31 +948,51 @@ async function handleSnapTradeSync(res, userId, accountId) {
             const unrealizedPL = holding.open_pnl || holding.unrealized_pl || 0;
             totalUnrealizedPL += unrealizedPL;
             totalHoldingsValue += marketValue;
+            if (isCashEquivalent(holding))
+              cashEquivalentInHoldings += marketValue;
           });
         }
 
         // Calculate total account value (holdings + cash only, no buying_power)
+        // Avoid double-counting: broker "cash" often = SPAXX/sweep (already in holdings)
+        const totalCash = balanceData.reduce((sum, b) => {
+          const cash =
+            typeof b.cash === "number" ? b.cash : parseFloat(b.cash || 0);
+          return sum + cash;
+        }, 0);
+        const cashToAdd = Math.max(0, totalCash - cashEquivalentInHoldings);
+        const ourCalculatedTotal = totalHoldingsValue + cashToAdd;
         let totalValue = 0;
 
         // First priority: Use account.balance.total.amount (total account value including cash)
         if (accountTotalValue && accountTotalValue > 0) {
-          totalValue = accountTotalValue;
-          console.log(
-            `✅ Using account total value (holdings + cash): $${totalValue.toFixed(
-              2
-            )}`
-          );
+          // Safeguard: if API total looks doubled (e.g. cash = SPAXX counted twice), use our total
+          if (
+            ourCalculatedTotal > 0 &&
+            accountTotalValue > ourCalculatedTotal * 1.05
+          ) {
+            totalValue = ourCalculatedTotal;
+            console.log(
+              `✅ Using our total (API total looked doubled): $${totalValue.toFixed(
+                2
+              )}`
+            );
+          } else {
+            totalValue = accountTotalValue;
+            console.log(
+              `✅ Using account total value (holdings + cash): $${totalValue.toFixed(
+                2
+              )}`
+            );
+          }
         } else {
-          // Fallback: Calculate from holdings + cash only (no buying_power)
-          const totalCash = balanceData.reduce((sum, b) => {
-            const cash =
-              typeof b.cash === "number" ? b.cash : parseFloat(b.cash || 0);
-            return sum + cash;
-          }, 0);
-          totalValue = totalHoldingsValue + totalCash;
+          // Fallback: holdings + cash minus cash-equivalent holdings to avoid double-count
+          totalValue = ourCalculatedTotal;
           console.log(`⚠️ Fallback calculation:`, {
             totalHoldingsValue: totalHoldingsValue.toFixed(2),
             totalCash: totalCash.toFixed(2),
+            cashEquivalentInHoldings: cashEquivalentInHoldings.toFixed(2),
+            cashToAdd: cashToAdd.toFixed(2),
             totalValue: totalValue.toFixed(2),
             balanceDataSample: balanceData[0]
               ? {

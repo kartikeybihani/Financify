@@ -415,7 +415,7 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
                 </View>
               </View>
 
-              {runners.length < 0 && (
+              {runners.length > 0 && (
                 <View style={styles.runnersSection}>
                   <Text style={styles.otherMoversLabel}>
                     {isFallback ? "Other gainers" : "Other movers"}
