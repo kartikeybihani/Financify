@@ -15,6 +15,7 @@ const BIGGEST_MOVER_CRON_SECRET = process.env.BIGGEST_MOVER_CRON_SECRET;
 
 export default async function handler(req, res) {
   // GET ?mode=biggest_mover — cron-only (Finnhub refresh + create triggers + send). Weekdays 4PM ET via Supabase pg_cron.
+  // Optional: ?user_id=UUID to run for a single user (for testing).
   if (req.method === "GET" && req.query?.mode === "biggest_mover") {
     const secret =
       req.headers["x-cron-secret"] ||
@@ -22,7 +23,11 @@ export default async function handler(req, res) {
     if (!BIGGEST_MOVER_CRON_SECRET || secret !== BIGGEST_MOVER_CRON_SECRET) {
       return res.status(401).json({ error: "Unauthorized" });
     }
-    return runBiggestMoverDaily(res);
+    const testUserId =
+      typeof req.query?.user_id === "string" && req.query.user_id.trim()
+        ? req.query.user_id.trim()
+        : null;
+    return runBiggestMoverDaily(res, { testUserId });
   }
 
   if (req.method !== "POST")
@@ -850,11 +855,14 @@ export default async function handler(req, res) {
 /**
  * Cron-only: Finnhub batch refresh (no SnapTrade), then create one biggest-mover trigger per user (weekday 4PM ET).
  * One trigger per user per day; only for users with at least one active holding.
+ * @param {Object} options - Optional. testUserId: run only for this user (for testing).
  */
-async function runBiggestMoverDaily(res) {
+async function runBiggestMoverDaily(res, options = {}) {
+  const { testUserId } = options;
   const startedAt = new Date().toISOString();
   const result = {
     message: "Biggest mover daily completed",
+    test_user_id: testUserId || undefined,
     holdings_updated: 0,
     triggers_created: 0,
     users_sent: 0,
@@ -866,10 +874,8 @@ async function runBiggestMoverDaily(res) {
   };
 
   try {
-    console.log("🔄 [biggest_mover] Starting Finnhub batch refresh...");
-
-    // 1) Fetch all active holdings (all users)
-    const { data: allHoldings, error: holdingsError } = await supabase
+    // 1) Fetch active holdings (all users, or single user when testing)
+    let query = supabase
       .from("investment_holdings")
       .select(
         "id, user_id, snaptrade_user_id, account_id, symbol, symbol_id, units, price, market_value, previous_market_value, day_change, day_change_percent, last_updated, security_type, description"
@@ -877,6 +883,8 @@ async function runBiggestMoverDaily(res) {
       .eq("is_active", true)
       .not("symbol", "is", null)
       .neq("symbol", "");
+    if (testUserId) query = query.eq("user_id", testUserId);
+    const { data: allHoldings, error: holdingsError } = await query;
 
     if (holdingsError) {
       result.errors.push(`Holdings fetch failed: ${holdingsError.message}`);
@@ -886,6 +894,7 @@ async function runBiggestMoverDaily(res) {
 
     if (!allHoldings || allHoldings.length === 0) {
       result.completed_at = new Date().toISOString();
+      if (testUserId) result.message = "No active holdings for this user.";
       return res.status(200).json(result);
     }
 
@@ -916,16 +925,25 @@ async function runBiggestMoverDaily(res) {
 
     const priceMap = new Map();
     const BATCH_DELAY = 1100;
+    let finnhubSkipped = 0;
     for (let i = 0; i < symbolsToFetch.length; i++) {
       const symbol = symbolsToFetch[i];
       try {
         const snapshot = await fetchStockSnapshot(symbol);
         if (snapshot?.current != null) priceMap.set(symbol, snapshot.current);
+        else finnhubSkipped++;
         if (i < symbolsToFetch.length - 1)
           await new Promise((r) => setTimeout(r, BATCH_DELAY));
-      } catch (e) {
-        console.warn(`[biggest_mover] Finnhub skip ${symbol}:`, e?.message);
+      } catch {
+        finnhubSkipped++;
       }
+    }
+    if (symbolsToFetch.length > 0) {
+      console.log(
+        `[biggest_mover] Finnhub: ${priceMap.size}/${
+          symbolsToFetch.length
+        } symbols${finnhubSkipped > 0 ? `, ${finnhubSkipped} skipped` : ""}`
+      );
     }
 
     const now = new Date();
@@ -1003,7 +1021,6 @@ async function runBiggestMoverDaily(res) {
     }
 
     result.holdings_updated = updatedCount;
-    console.log(`✅ [biggest_mover] Updated ${updatedCount} holdings`);
 
     // Recalculate investment_balances for SnapTrade accounts that were updated
     for (const acc of updatesByAccount.values()) {
@@ -1175,13 +1192,13 @@ async function runBiggestMoverDaily(res) {
 
     result.completed_at = new Date().toISOString();
     console.log(
-      `✅ [biggest_mover] Done. triggers=${result.triggers_created} sent=${result.total_sent} failed=${result.total_failed}`
+      `[biggest_mover] done holdings=${result.holdings_updated} triggers=${result.triggers_created} sent=${result.total_sent} failed=${result.total_failed}`
     );
     return res.status(200).json(result);
   } catch (err) {
     result.completed_at = new Date().toISOString();
     result.errors.push(err?.message || String(err));
-    console.error("❌ [biggest_mover] Error:", err);
+    console.error("[biggest_mover] error:", err?.message || err);
     return res.status(500).json(result);
   }
 }
