@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Platform } from "react-native";
 import { Tabs } from "expo-router";
 import { NativeTabs, Label, Icon } from "expo-router/unstable-native-tabs";
@@ -8,8 +8,84 @@ import {
   FontAwesome,
 } from "@expo/vector-icons";
 import logger from "@/src/utils/core/logger";
+import { supabase } from "@/src/lib/supabase/supabase";
+import { notificationService } from "@/src/utils/core/notificationService";
+import AppStorage from "@/src/utils/storage/storage";
+import NotificationPermissionModal from "@/src/components/modals/NotificationPermissionModal";
+
+const NOTIFICATION_PROMPT_DISMISSED_AT_KEY = "notification_prompt_dismissed_at";
+const REPROMPT_AFTER_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
+const PROMPT_DELAY_MS = 1500;
 
 export default function TabLayout() {
+  const [showNotificationModal, setShowNotificationModal] = useState(false);
+  const hasCheckedRef = useRef(false);
+
+  // Show notification permission modal when: onboarding completed, no active push token for this device, and (never dismissed or dismissed > 2 days ago)
+  useEffect(() => {
+    if (hasCheckedRef.current) return;
+    hasCheckedRef.current = true;
+
+    const timer = setTimeout(async () => {
+      try {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user?.id) return;
+
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("onboarding_completed")
+          .eq("id", user.id)
+          .single();
+        if (!profile?.onboarding_completed) return;
+
+        const deviceId = notificationService.getDeviceId();
+        const { data: existingToken } = await supabase
+          .from("user_push_tokens")
+          .select("id")
+          .eq("user_id", user.id)
+          .eq("device_id", deviceId)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (existingToken) return;
+
+        const dismissedAtRaw = AppStorage.getItemSync(
+          NOTIFICATION_PROMPT_DISMISSED_AT_KEY
+        );
+        if (dismissedAtRaw) {
+          const dismissedAt = new Date(dismissedAtRaw).getTime();
+          if (Date.now() - dismissedAt < REPROMPT_AFTER_MS) return;
+        }
+
+        setShowNotificationModal(true);
+      } catch (e) {
+        logger.error("Notification prompt check failed", e);
+      }
+    }, PROMPT_DELAY_MS);
+
+    return () => clearTimeout(timer);
+  }, []);
+
+  const handleNotificationAllow = async () => {
+    try {
+      const granted = await notificationService.requestPermissions();
+      if (granted) logger.info("Notification permissions granted (tabs)");
+    } catch (e) {
+      logger.error("Notification allow failed", e);
+    }
+    setShowNotificationModal(false);
+  };
+
+  const handleNotificationDontAllow = () => {
+    AppStorage.setItemSync(
+      NOTIFICATION_PROMPT_DISMISSED_AT_KEY,
+      new Date().toISOString()
+    );
+    setShowNotificationModal(false);
+  };
+
   // Check if we should use NativeTabs (iOS 26+ only)
   const isIOS = Platform.OS === "ios";
   const iosVersion = isIOS ? parseInt(Platform.Version as string, 10) : 0;
@@ -41,62 +117,76 @@ export default function TabLayout() {
     },
   ];
 
+  const modal = (
+    <NotificationPermissionModal
+      visible={showNotificationModal}
+      onAllow={handleNotificationAllow}
+      onDontAllow={handleNotificationDontAllow}
+    />
+  );
+
   if (shouldUseNativeTabs) {
     return (
-      <NativeTabs minimizeBehavior="onScrollDown">
-        <NativeTabs.Trigger name="index">
-          <Label>Home</Label>
-          <Icon sf={{ default: "house", selected: "house.fill" }} />
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="chat">
-          <Label>Finny</Label>
-          <Icon sf={{ default: "flame", selected: "flame.fill" }} />
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="goals">
-          <Label>Goals</Label>
-          <Icon sf={{ default: "target", selected: "target" }} />
-        </NativeTabs.Trigger>
-        <NativeTabs.Trigger name="insights">
-          <Label>Insights</Label>
-          <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
-        </NativeTabs.Trigger>
-      </NativeTabs>
+      <>
+        <NativeTabs minimizeBehavior="onScrollDown">
+          <NativeTabs.Trigger name="index">
+            <Label>Home</Label>
+            <Icon sf={{ default: "house", selected: "house.fill" }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="chat">
+            <Label>Finny</Label>
+            <Icon sf={{ default: "flame", selected: "flame.fill" }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="goals">
+            <Label>Goals</Label>
+            <Icon sf={{ default: "target", selected: "target" }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="insights">
+            <Label>Insights</Label>
+            <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
+          </NativeTabs.Trigger>
+        </NativeTabs>
+        {modal}
+      </>
     );
   }
 
   return (
-    <Tabs
-      initialRouteName="index"
-      screenOptions={{
-        headerShown: false,
-        tabBarActiveTintColor: "#4A90E2",
-        tabBarLabelStyle: { fontSize: 13 },
-      }}
-    >
-      {tabs.map((tab) => (
-        <Tabs.Screen
-          key={tab.name}
-          name={tab.name}
-          options={{
-            title: tab.label,
-            tabBarIcon: ({ focused, color }) => {
-              const IconComponent =
-                tab.iconCategory === "Ionicons"
-                  ? Ionicons
-                  : tab.iconCategory === "MaterialCommunityIcons"
-                  ? MaterialCommunityIcons
-                  : FontAwesome;
-              return (
-                <IconComponent
-                  name={tab.icon as any}
-                  size={22}
-                  color={focused ? "#4A90E2" : "#C7C7CC"}
-                />
-              );
-            },
-          }}
-        />
-      ))}
-    </Tabs>
+    <>
+      <Tabs
+        initialRouteName="index"
+        screenOptions={{
+          headerShown: false,
+          tabBarActiveTintColor: "#4A90E2",
+          tabBarLabelStyle: { fontSize: 13 },
+        }}
+      >
+        {tabs.map((tab) => (
+          <Tabs.Screen
+            key={tab.name}
+            name={tab.name}
+            options={{
+              title: tab.label,
+              tabBarIcon: ({ focused, color }) => {
+                const IconComponent =
+                  tab.iconCategory === "Ionicons"
+                    ? Ionicons
+                    : tab.iconCategory === "MaterialCommunityIcons"
+                    ? MaterialCommunityIcons
+                    : FontAwesome;
+                return (
+                  <IconComponent
+                    name={tab.icon as any}
+                    size={22}
+                    color={focused ? "#4A90E2" : "#C7C7CC"}
+                  />
+                );
+              },
+            }}
+          />
+        ))}
+      </Tabs>
+      {modal}
+    </>
   );
 }

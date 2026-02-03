@@ -318,6 +318,20 @@ export class NotificationService {
   }
 
   /**
+   * Get device ID used for push token registration (same as registerPushToken).
+   */
+  getDeviceId(): string {
+    const deviceIdKey = 'device_id';
+    let deviceId = AppStorage.getItemSync(deviceIdKey);
+    if (!deviceId) {
+      const deviceInfo = `${Platform.OS}-${Device.modelName || 'unknown'}-${Device.osVersion || 'unknown'}`;
+      deviceId = deviceInfo;
+      AppStorage.setItemSync(deviceIdKey, deviceId);
+    }
+    return deviceId;
+  }
+
+  /**
    * Register Expo push token with backend
    */
   async registerPushToken(): Promise<void> {
@@ -334,15 +348,7 @@ export class NotificationService {
       });
       const expoPushToken = tokenData.data;
 
-      // Generate or get device ID
-      const deviceIdKey = 'device_id';
-      let deviceId = AppStorage.getItemSync(deviceIdKey);
-      if (!deviceId) {
-        // Generate a simple device identifier
-        const deviceInfo = `${Platform.OS}-${Device.modelName || 'unknown'}-${Device.osVersion || 'unknown'}`;
-        deviceId = deviceInfo;
-        AppStorage.setItemSync(deviceIdKey, deviceId);
-      }
+      const deviceId = this.getDeviceId();
 
       // Upsert push token in database
       const { error } = await supabase
