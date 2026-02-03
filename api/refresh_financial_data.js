@@ -9,7 +9,10 @@ import {
   formatRetryAfterSeconds,
 } from "../lib/api/rateLimiter.js";
 import { getTriggersForUser } from "../lib/notificationDecisionEngine.js";
-import { sendNotificationsForUser } from "../lib/notificationSender.js";
+import {
+  sendNotificationsForUser,
+  generateNotificationContent,
+} from "../lib/notificationSender.js";
 
 const BIGGEST_MOVER_CRON_SECRET = process.env.BIGGEST_MOVER_CRON_SECRET;
 
@@ -1103,6 +1106,8 @@ async function runBiggestMoverDaily(res, options = {}) {
 
     // 3) For each user: already have biggest_mover today? Pick biggest mover, create trigger
     const usersWithNewTrigger = [];
+    /** When forceSend: trigger we just created, to send directly and bypass daily limit. */
+    const forceSendTriggerByUser = new Map();
     for (const userId of userIds) {
       const userHoldings = allHoldings.filter((h) => h.user_id === userId);
       const withPriceMap = userHoldings
@@ -1166,7 +1171,7 @@ async function runBiggestMoverDaily(res, options = {}) {
           priority: 6,
           status: "pending",
         })
-        .select("id")
+        .select("id, trigger_type, trigger_metadata")
         .single();
 
       if (insertErr) {
@@ -1175,12 +1180,22 @@ async function runBiggestMoverDaily(res, options = {}) {
       }
       result.triggers_created++;
       usersWithNewTrigger.push(userId);
+      if (forceSend) forceSendTriggerByUser.set(userId, inserted);
     }
 
     // 4) Send notifications for users we just created triggers for
     for (const userId of usersWithNewTrigger) {
       try {
-        const triggersToSend = await getTriggersForUser(userId);
+        const triggersToSend =
+          forceSend && forceSendTriggerByUser.has(userId)
+            ? [forceSendTriggerByUser.get(userId)]
+            : await getTriggersForUser(userId);
+        for (const trigger of triggersToSend) {
+          const { title, body } = generateNotificationContent(trigger);
+          console.log(
+            `[biggest_mover] notification user=${userId.substring(0, 8)}... title="${title}" body="${body}"`
+          );
+        }
         const sendResult = await sendNotificationsForUser(
           userId,
           triggersToSend
