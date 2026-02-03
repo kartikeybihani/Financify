@@ -19,6 +19,8 @@ import { LinearGradient } from "expo-linear-gradient";
 import * as WebBrowser from "expo-web-browser";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
+import { authenticatedFetch } from "@/src/utils/auth/authToken";
+import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 import {
   getSnaptradeHoldingsFromDB,
   getSnaptradeOptionsFromDB,
@@ -794,6 +796,36 @@ export default function InvestmentsScreen({
       // Wait a moment to ensure balances are fully updated
       await new Promise((resolve) => setTimeout(resolve, 500));
       await populateInvestmentAccountsInDB();
+
+      // Step 6: Update stock prices from Finnhub (runs in background, non-blocking)
+      logger.info("📈 Updating stock prices from Finnhub...");
+      try {
+        const priceUpdateRes = await authenticatedFetch(
+          `${API_BASE_URL}/api/refresh_financial_data`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              refresh_type: "stock_prices",
+              user_id: user.id,
+            }),
+          }
+        );
+
+        if (priceUpdateRes.ok) {
+          const priceData = await priceUpdateRes.json();
+          logger.info(
+            `✅ Stock prices updated: ${
+              priceData.results?.stock_prices?.holdingsUpdated || 0
+            } holdings`
+          );
+        } else {
+          logger.warn("⚠️ Stock price update failed (non-critical)");
+        }
+      } catch (priceError) {
+        // Non-critical: stock price update failure shouldn't break sync
+        logger.warn("⚠️ Stock price update error (non-critical):", priceError);
+      }
 
       logger.info(
         "✅ Investment refresh completed successfully - data synced and reloaded"

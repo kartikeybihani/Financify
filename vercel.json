@@ -8,6 +8,9 @@
     },
     "api/scheduled-sync.js": {
       "maxDuration": 120
+    },
+    "api/refresh_financial_data.js": {
+      "maxDuration": 300
     }
   },
   "crons": [

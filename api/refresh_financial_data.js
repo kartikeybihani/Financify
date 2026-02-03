@@ -3,6 +3,7 @@ import { client } from "../lib/api/plaidClient.js";
 import { supabase } from "../lib/api/supabase.js";
 import { verifyItemOwnership } from "../lib/api/auth.js";
 import { refreshAndStoreRecurringForItem } from "../lib/plaid/recurringRefresh.js";
+import { fetchStockSnapshot } from "../lib/stocks.js";
 import {
   checkRateLimit,
   formatRetryAfterSeconds,
@@ -19,31 +20,61 @@ export default async function handler(req, res) {
     include_recurring = false,
   } = req.body;
 
-  if (!item_id) return res.status(400).json({ error: "Missing item_id" });
-
   // Validate refresh_type
-  const validRefreshTypes = ["balances", "transactions", "both", "recurring"];
+  const validRefreshTypes = [
+    "balances",
+    "transactions",
+    "both",
+    "recurring",
+    "stock_prices",
+  ];
   if (!validRefreshTypes.includes(refresh_type)) {
     return res.status(400).json({
       error:
-        "Invalid refresh_type. Must be 'balances', 'transactions', 'both', or 'recurring'",
+        "Invalid refresh_type. Must be 'balances', 'transactions', 'both', 'recurring', or 'stock_prices'",
     });
   }
 
+  // stock_prices doesn't need item_id - it works for all user's holdings
+  if (refresh_type !== "stock_prices" && !item_id) {
+    return res.status(400).json({ error: "Missing item_id" });
+  }
+
   try {
-    console.log(`🔄 Starting ${refresh_type} refresh for item_id: ${item_id}`);
+    console.log(
+      `🔄 Starting ${refresh_type} refresh${
+        item_id ? ` for item_id: ${item_id}` : ""
+      }`
+    );
 
-    // 1) Verify user owns this item (authorization check)
-    const {
-      authorized,
-      userId: actualUserId,
-      error: authError,
-    } = await verifyItemOwnership(req, item_id);
+    // For stock_prices, get user_id from auth token instead of item_id
+    let actualUserId = user_id;
+    if (refresh_type === "stock_prices") {
+      // Get user from auth token
+      const {
+        data: { user },
+        error: authError,
+      } = await supabase.auth.getUser();
+      if (authError || !user) {
+        return res.status(401).json({ error: "Unauthorized" });
+      }
+      actualUserId = user.id;
+    } else {
+      // 1) Verify user owns this item (authorization check)
+      const {
+        authorized,
+        userId: verifiedUserId,
+        error: authError,
+      } = await verifyItemOwnership(req, item_id);
 
-    if (!authorized) {
-      return res.status(authError?.includes("Unauthorized") ? 401 : 403).json({
-        error: authError || "Access denied",
-      });
+      if (!authorized) {
+        return res
+          .status(authError?.includes("Unauthorized") ? 401 : 403)
+          .json({
+            error: authError || "Access denied",
+          });
+      }
+      actualUserId = verifiedUserId;
     }
 
     const refreshRateConfigs = {
@@ -51,6 +82,7 @@ export default async function handler(req, res) {
       transactions: { limit: 4, windowMs: 2 * 60 * 1000 },
       recurring: { limit: 3, windowMs: 5 * 60 * 1000 },
       both: { limit: 3, windowMs: 5 * 60 * 1000 },
+      stock_prices: { limit: 5, windowMs: 10 * 60 * 1000 }, // 5 times per 10 minutes
     };
 
     const refreshRateLimit = await checkRateLimit(req, {
@@ -91,6 +123,7 @@ export default async function handler(req, res) {
       balances: null,
       transactions: null,
       recurring: null,
+      stock_prices: null,
       errors: [],
     };
 
@@ -229,6 +262,265 @@ export default async function handler(req, res) {
         );
         results.recurring = {
           message: "Recurring transactions refresh failed",
+          error: error.message,
+        };
+      }
+    }
+
+    // 6) Handle stock prices refresh (updates prices from Finnhub API)
+    if (refresh_type === "stock_prices") {
+      try {
+        console.log("📈 Refreshing stock prices from Finnhub...");
+
+        // Get all unique active holdings with symbols for this user
+        const { data: holdings, error: holdingsError } = await supabase
+          .from("investment_holdings")
+          .select(
+            "id, user_id, snaptrade_user_id, account_id, symbol, symbol_id, units, price, market_value, previous_market_value, day_change, day_change_percent, last_updated"
+          )
+          .eq("user_id", actualUserId)
+          .eq("is_active", true)
+          .not("symbol", "is", null)
+          .neq("symbol", "");
+
+        if (holdingsError) {
+          throw new Error(`Failed to fetch holdings: ${holdingsError.message}`);
+        }
+
+        if (!holdings || holdings.length === 0) {
+          results.stock_prices = {
+            message: "No holdings to update",
+            updated: 0,
+            symbolsFetched: 0,
+          };
+        } else {
+          // Get unique symbols (deduplicate)
+          const uniqueSymbols = [
+            ...new Set(holdings.map((h) => h.symbol).filter(Boolean)),
+          ];
+          console.log(
+            `📊 Found ${holdings.length} holdings with ${uniqueSymbols.length} unique symbols`
+          );
+
+          // Batch fetch prices from Finnhub (rate limit: 60 calls/min on free tier)
+          const priceMap = new Map();
+          const BATCH_DELAY = 1100; // 1.1s between calls to stay under rate limit
+
+          for (let i = 0; i < uniqueSymbols.length; i++) {
+            const symbol = uniqueSymbols[i];
+            try {
+              const snapshot = await fetchStockSnapshot(symbol);
+              if (snapshot?.current != null) {
+                priceMap.set(symbol, snapshot.current);
+                console.log(`✅ ${symbol}: $${snapshot.current.toFixed(2)}`);
+              } else {
+                console.warn(`⚠️ No price data for ${symbol}`);
+              }
+
+              // Rate limit: wait between calls (except last one)
+              if (i < uniqueSymbols.length - 1) {
+                await new Promise((resolve) =>
+                  setTimeout(resolve, BATCH_DELAY)
+                );
+              }
+            } catch (error) {
+              console.error(
+                `❌ Error fetching price for ${symbol}:`,
+                error.message
+              );
+            }
+          }
+
+          console.log(
+            `📈 Fetched prices for ${priceMap.size}/${uniqueSymbols.length} symbols`
+          );
+
+          // Update holdings with new prices
+          const now = new Date();
+          const todayUTC = Date.UTC(
+            now.getUTCFullYear(),
+            now.getUTCMonth(),
+            now.getUTCDate()
+          );
+          const isSameCalendarDayUTC = (dateStr) => {
+            if (!dateStr) return false;
+            const d = new Date(dateStr);
+            const dayUTC = Date.UTC(
+              d.getUTCFullYear(),
+              d.getUTCMonth(),
+              d.getUTCDate()
+            );
+            return dayUTC === todayUTC;
+          };
+
+          const EPSILON = 0.01;
+          let updatedCount = 0;
+          const updatesByAccount = new Map(); // Track which accounts need balance recalculation
+
+          for (const holding of holdings) {
+            const newPrice = priceMap.get(holding.symbol);
+            if (newPrice == null) continue;
+
+            const currentMarketValue =
+              holding.units && newPrice ? holding.units * newPrice : null;
+            if (currentMarketValue == null) continue;
+
+            const existingMarketValue = holding.market_value;
+            const isMarketValueUnchanged =
+              existingMarketValue != null &&
+              Number.isFinite(existingMarketValue) &&
+              Number.isFinite(currentMarketValue) &&
+              Math.abs(currentMarketValue - existingMarketValue) < EPSILON;
+
+            // Calculate day_change (preserve if unchanged)
+            const sameDay = isSameCalendarDayUTC(holding.last_updated);
+            let dayChange = holding.day_change;
+            let dayChangePercent = holding.day_change_percent;
+            let previousMarketValueForStorage = holding.previous_market_value;
+
+            if (!isMarketValueUnchanged) {
+              const dayBaseline =
+                holding.previous_market_value ?? holding.market_value ?? null;
+
+              if (dayBaseline != null && Number.isFinite(dayBaseline)) {
+                dayChange = currentMarketValue - dayBaseline;
+                dayChangePercent =
+                  dayBaseline !== 0 ? (dayChange / dayBaseline) * 100 : 0;
+              }
+
+              // Update previous_market_value on new day
+              if (!sameDay) {
+                previousMarketValueForStorage =
+                  holding.market_value ?? currentMarketValue;
+              }
+            }
+
+            // Update holding
+            const { error: updateError } = await supabase
+              .from("investment_holdings")
+              .update({
+                price: newPrice,
+                market_value: currentMarketValue,
+                day_change: dayChange,
+                day_change_percent: dayChangePercent,
+                previous_market_value: previousMarketValueForStorage,
+                last_updated: now.toISOString(),
+              })
+              .eq("id", holding.id);
+
+            if (updateError) {
+              console.error(
+                `❌ Failed to update holding ${holding.symbol}:`,
+                updateError
+              );
+            } else {
+              updatedCount++;
+              // Track account for balance recalculation
+              const key = `${holding.user_id}:${holding.snaptrade_user_id}:${holding.account_id}`;
+              if (!updatesByAccount.has(key)) {
+                updatesByAccount.set(key, {
+                  user_id: holding.user_id,
+                  snaptrade_user_id: holding.snaptrade_user_id,
+                  account_id: holding.account_id,
+                });
+              }
+            }
+          }
+
+          console.log(`✅ Updated ${updatedCount} holdings`);
+
+          // Recalculate balances for affected accounts
+          const recalculateBalances = async (
+            userId,
+            snaptradeUserId,
+            accountId
+          ) => {
+            const { data: holdings } = await supabase
+              .from("investment_holdings")
+              .select("unrealized_pl")
+              .eq("user_id", userId)
+              .eq("snaptrade_user_id", snaptradeUserId)
+              .eq("account_id", accountId)
+              .eq("is_active", true);
+
+            const { data: options } = await supabase
+              .from("investment_options")
+              .select("unrealized_pl")
+              .eq("user_id", userId)
+              .eq("snaptrade_user_id", snaptradeUserId)
+              .eq("account_id", accountId)
+              .eq("is_active", true);
+
+            let totalUnrealizedPL = 0;
+            holdings?.forEach(
+              (h) => (totalUnrealizedPL += h.unrealized_pl || 0)
+            );
+            options?.forEach(
+              (o) => (totalUnrealizedPL += o.unrealized_pl || 0)
+            );
+
+            const { data: balance } = await supabase
+              .from("investment_balances")
+              .select("total_value")
+              .eq("user_id", userId)
+              .eq("snaptrade_user_id", snaptradeUserId)
+              .eq("account_id", accountId)
+              .eq("is_current", true)
+              .single();
+
+            const totalValue = balance?.total_value || 0;
+            const totalChangePercent =
+              totalValue > 0 ? (totalUnrealizedPL / totalValue) * 100 : 0;
+
+            await supabase
+              .from("investment_balances")
+              .update({
+                total_change: totalUnrealizedPL,
+                total_change_percent: totalChangePercent,
+                // NOTE: day_change/day_change_percent preserved (from balance sync)
+                // NOTE: total_value preserved (includes cash from balance sync)
+                last_updated: new Date().toISOString(),
+              })
+              .eq("user_id", userId)
+              .eq("snaptrade_user_id", snaptradeUserId)
+              .eq("account_id", accountId)
+              .eq("is_current", true);
+          };
+
+          let recalculatedCount = 0;
+          for (const account of updatesByAccount.values()) {
+            try {
+              await recalculateBalances(
+                account.user_id,
+                account.snaptrade_user_id,
+                account.account_id
+              );
+              recalculatedCount++;
+            } catch (error) {
+              console.error(
+                `❌ Failed to recalculate balances for account ${account.account_id}:`,
+                error
+              );
+            }
+          }
+
+          console.log(
+            `✅ Recalculated balances for ${recalculatedCount} accounts`
+          );
+
+          results.stock_prices = {
+            message: "Stock prices updated successfully",
+            holdingsUpdated: updatedCount,
+            accountsRecalculated: recalculatedCount,
+            symbolsFetched: priceMap.size,
+            totalSymbols: uniqueSymbols.length,
+          };
+        }
+      } catch (error) {
+        console.error("❌ Stock prices refresh failed:", error);
+        results.errors.push(`Stock prices refresh failed: ${error.message}`);
+        results.stock_prices = {
+          message: "Stock prices refresh failed",
           error: error.message,
         };
       }
