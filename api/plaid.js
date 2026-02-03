@@ -497,24 +497,22 @@ async function recalculatePortfolioMetricsFromDatabase(
       totalUnrealizedPL += unrealizedPL;
     });
 
-    // CRITICAL: Get existing balance to preserve total_value (includes cash + buying_power)
+    // CRITICAL: Get existing balance to preserve total_value (includes cash only, no buying_power)
     // The balance sync sets total_value from accountTotalValue (API), which is more accurate
     // We should NOT overwrite it with sum of holdings (which doesn't include cash)
     const { data: existingBalance } = await supabase
       .from("investment_balances")
-      .select("total_value, cash, buying_power")
+      .select("total_value, cash")
       .eq("user_id", userId)
       .eq("snaptrade_user_id", snaptradeUserId)
       .eq("account_id", accountId)
       .eq("is_current", true)
       .single();
 
-    // Use existing total_value from balance sync (includes cash), or calculate from holdings + cash
+    // Use existing total_value from balance sync (includes cash), or calculate from holdings + cash only
     const totalPortfolioValue =
       existingBalance?.total_value ||
-      totalHoldingsValue +
-        (existingBalance?.cash || 0) +
-        (existingBalance?.buying_power || 0);
+      totalHoldingsValue + (existingBalance?.cash || 0);
 
     // Calculate percentages
     const dayChangePercent =
@@ -535,7 +533,7 @@ async function recalculatePortfolioMetricsFromDatabase(
       totalHoldingsValue: totalHoldingsValue.toFixed(2),
       cashAmount: cashAmount.toFixed(2),
       totalPortfolioValue: totalPortfolioValue.toFixed(2),
-      note: "totalPortfolioValue preserved from balance sync (includes cash + buying_power)",
+      note: "totalPortfolioValue preserved from balance sync (cash only, no buying_power)",
       totalDayChange: totalDayChange.toFixed(2),
       dayChangePercent: dayChangePercent.toFixed(2),
       totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
@@ -551,7 +549,7 @@ async function recalculatePortfolioMetricsFromDatabase(
       total_change: totalUnrealizedPL,
       total_change_percent: totalChangePercent,
       // NOTE: day_change and day_change_percent are NOT updated here - they're calculated from account totals
-      // NOTE: total_value is preserved from balance sync (includes cash + buying_power from API)
+      // NOTE: total_value is preserved from balance sync (cash only from API)
       last_updated: new Date().toISOString(),
     };
 
@@ -867,11 +865,11 @@ async function handleSnapTradeSync(res, userId, accountId) {
           accountTotalFromHoldings || accountTotalFromBalance;
 
         // Get existing balance to read previous_total_value before updating
-        // CRITICAL: Also fetch cash and buying_power to reconstruct full previous_total_value if needed
+        // CRITICAL: Also fetch cash to reconstruct previous_total_value if needed (no buying_power)
         const { data: existingBalance } = await supabase
           .from("investment_balances")
           .select(
-            "day_change, day_change_percent, total_change, total_change_percent, previous_total_value, total_value, last_updated, cash, buying_power"
+            "day_change, day_change_percent, total_change, total_change_percent, previous_total_value, total_value, last_updated, cash"
           )
           .eq("user_id", connection.user_id)
           .eq("snaptrade_user_id", connection.snaptrade_user_id)
@@ -935,8 +933,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
           });
         }
 
-        // Calculate total account value (holdings + cash + buying_power)
-        // This is the TRUE portfolio value that accounts for sales
+        // Calculate total account value (holdings + cash only, no buying_power)
         let totalValue = 0;
 
         // First priority: Use account.balance.total.amount (total account value including cash)
@@ -948,15 +945,11 @@ async function handleSnapTradeSync(res, userId, accountId) {
             )}`
           );
         } else {
-          // Fallback: Calculate from holdings + cash + buying_power
+          // Fallback: Calculate from holdings + cash only (no buying_power)
           const totalCash = balanceData.reduce((sum, b) => {
             const cash =
               typeof b.cash === "number" ? b.cash : parseFloat(b.cash || 0);
-            const buyingPower =
-              typeof b.buying_power === "number"
-                ? b.buying_power
-                : parseFloat(b.buying_power || 0);
-            return sum + cash + buyingPower;
+            return sum + cash;
           }, 0);
           totalValue = totalHoldingsValue + totalCash;
           console.log(`⚠️ Fallback calculation:`, {
@@ -966,43 +959,37 @@ async function handleSnapTradeSync(res, userId, accountId) {
             balanceDataSample: balanceData[0]
               ? {
                   cash: balanceData[0].cash,
-                  buying_power: balanceData[0].buying_power,
                   cashType: typeof balanceData[0].cash,
-                  buyingPowerType: typeof balanceData[0].buying_power,
                 }
               : "no balance data",
           });
         }
 
-        // Calculate day_change using TOTAL account value (holdings + cash + buying_power)
-        // CRITICAL: previous_total_value must also include cash + buying_power from start of day
-        // This ensures sales don't affect day_change - when stocks are sold, cash increases but total stays same
+        // Calculate day_change using TOTAL account value (holdings + cash only)
+        // CRITICAL: previous_total_value must include cash from start of day (no buying_power)
         let computedDayChange = null;
         let dayChangePercent = null;
 
-        // CRITICAL: previous_total_value MUST include cash + buying_power (total account value)
+        // CRITICAL: previous_total_value MUST include cash (total account value), no buying_power
         // If previous_total_value exists but seems incomplete (holdings-only), reconstruct it
-        // by adding the cash + buying_power from the previous balance record
+        // by adding the cash from the previous balance record
         let adjustedPreviousTotalValue = previousTotalValue;
         if (previousTotalValue !== null && existingBalance) {
           const previousCash = existingBalance.cash || 0;
-          const previousBuyingPower = existingBalance.buying_power || 0;
-          const previousCashTotal = previousCash + previousBuyingPower;
 
-          // Reconstruct: previous_total_value should be total account value (holdings + cash + buying_power)
-          // If previous_total_value + previousCashTotal is closer to current totalValue, it was incomplete
-          const reconstructedPrevious = previousTotalValue + previousCashTotal;
+          // Reconstruct: previous_total_value should be total account value (holdings + cash)
+          const reconstructedPrevious = previousTotalValue + previousCash;
           const diffOriginal = Math.abs(previousTotalValue - totalValue);
           const diffReconstructed = Math.abs(
             reconstructedPrevious - totalValue
           );
 
           // Use reconstructed value if:
-          // 1. There's significant cash/buying_power (> $1)
+          // 1. There's significant cash (> $1)
           // 2. Reconstructed is closer to current total (or original is way off)
           // 3. Reconstructed makes sense (not negative, reasonable)
           if (
-            previousCashTotal > 1 &&
+            previousCash > 1 &&
             (diffReconstructed < diffOriginal * 0.9 ||
               diffOriginal > totalValue * 0.1) &&
             reconstructedPrevious > 0 &&
@@ -1010,22 +997,20 @@ async function handleSnapTradeSync(res, userId, accountId) {
           ) {
             adjustedPreviousTotalValue = reconstructedPrevious;
             console.log(
-              "🔧 Reconstructed previous_total_value to include cash + buying_power:",
+              "🔧 Reconstructed previous_total_value to include cash:",
               {
                 original_previous_total_value: previousTotalValue.toFixed(2),
                 previous_cash: previousCash.toFixed(2),
-                previous_buying_power: previousBuyingPower.toFixed(2),
                 reconstructed_previous_total_value:
                   adjustedPreviousTotalValue.toFixed(2),
                 current_total_value: totalValue.toFixed(2),
-                reason: "previous_total_value was missing cash + buying_power",
+                reason: "previous_total_value was missing cash",
               }
             );
-          } else if (previousCashTotal > 1) {
+          } else if (previousCash > 1) {
             console.log("⚠️ previous_total_value reconstruction check:", {
               original: previousTotalValue.toFixed(2),
               previous_cash: previousCash.toFixed(2),
-              previous_buying_power: previousBuyingPower.toFixed(2),
               reconstructed: reconstructedPrevious.toFixed(2),
               current_total: totalValue.toFixed(2),
               diff_original: diffOriginal.toFixed(2),
@@ -1045,7 +1030,6 @@ async function handleSnapTradeSync(res, userId, accountId) {
           existingBalancePrevious: existingBalance?.previous_total_value,
           existingBalanceTotal: existingBalance?.total_value,
           existingCash: existingBalance?.cash,
-          existingBuyingPower: existingBalance?.buying_power,
         });
 
         // CRITICAL: Preserve day_change if total_value hasn't changed (prevents overwriting with 0 on repeated syncs)
@@ -1135,7 +1119,7 @@ async function handleSnapTradeSync(res, userId, accountId) {
           total_change: totalUnrealizedPL,
           total_change_percent: totalChangePercent,
           total_value: totalValue,
-          // CRITICAL: previous_total_value must include cash + buying_power, not just holdings
+          // CRITICAL: previous_total_value includes cash only (no buying_power)
           // Only update previous_total_value when rolling to a new day (same logic as holdings)
           // When a new day starts, set previous_total_value to PREVIOUS day's total_value (preserve baseline)
           previous_total_value: !existingBalance

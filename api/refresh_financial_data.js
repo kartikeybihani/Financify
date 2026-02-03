@@ -540,7 +540,7 @@ export default async function handler(req, res) {
             const { data: balance, error: balanceError } = await supabase
               .from("investment_balances")
               .select(
-                "total_value, cash, buying_power, previous_total_value, day_change, day_change_percent, last_updated"
+                "total_value, cash, previous_total_value, day_change, day_change_percent, last_updated"
               )
               .eq("user_id", userId)
               .eq("snaptrade_user_id", snaptradeUserId)
@@ -556,12 +556,11 @@ export default async function handler(req, res) {
               return;
             }
 
-            // Get cash and buying_power from existing balance (preserve from SnapTrade sync)
+            // Get cash from existing balance (preserve from SnapTrade sync). Do not use buying_power.
             const cash = balance?.cash || 0;
-            const buyingPower = balance?.buying_power || 0;
 
-            // Calculate new total_value = holdings + cash + buying_power
-            const newTotalValue = totalHoldingsValue + cash + buyingPower;
+            // Calculate new total_value = holdings + cash only (no buying_power)
+            const newTotalValue = totalHoldingsValue + cash;
 
             // Apply day-boundary logic (same as SnapTrade sync)
             const now = new Date();
@@ -585,7 +584,7 @@ export default async function handler(req, res) {
             const sameDay = isSameCalendarDayUTC(existingLastUpdated);
 
             // Determine previous_total_value for day_change calculation (same logic as SnapTrade sync)
-            // CRITICAL: previous_total_value must include cash + buying_power, not just holdings
+            // CRITICAL: previous_total_value includes cash only (no buying_power)
             // Only update previous_total_value when rolling to a new day (same logic as holdings)
             // When a new day starts, set previous_total_value to PREVIOUS day's total_value (preserve baseline)
             let previousTotalValue;

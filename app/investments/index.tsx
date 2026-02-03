@@ -1530,11 +1530,8 @@ export default function InvestmentsScreen({
     0
   );
 
-  // Available cash = cash + buying_power (includes proceeds from stock sales)
-  const totalCash = filteredBalances.reduce(
-    (sum, b) => sum + (b.cash || 0) + (b.buying_power || 0),
-    0
-  );
+  // Available cash = cash only (not buying_power), per investment_balances.cash
+  const totalCash = filteredBalances.reduce((sum, b) => sum + (b.cash || 0), 0);
 
   // Calculate total unrealized P&L using new investment_balances columns first, then fallback to holdings
   const calculateTotalUnrealizedPL = () => {

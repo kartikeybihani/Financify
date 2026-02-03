@@ -1352,9 +1352,11 @@ export default function InsightsScreen() {
 
       // Ensure timePeriod is always provided (fallback to "all" if undefined)
       const timePeriodToUse = filters.timePeriod || "all";
-      
-      logger.info(`🔍 Loading filtered transactions with timePeriod: "${timePeriodToUse}" (original: "${filters.timePeriod}")`);
-      
+
+      logger.info(
+        `🔍 Loading filtered transactions with timePeriod: "${timePeriodToUse}" (original: "${filters.timePeriod}")`
+      );
+
       const newTransactions = await getFilteredTransactions(userId, {
         accountIds: filters.accountIds,
         timePeriod: timePeriodToUse,
@@ -1460,7 +1462,7 @@ export default function InsightsScreen() {
       // Log actual date range of displayed transactions for debugging
       if (updatedTransactions.length > 0 && reset) {
         const displayedDates = updatedTransactions
-          .map(tx => tx.date || tx.authorized_date)
+          .map((tx) => tx.date || tx.authorized_date)
           .filter(Boolean)
           .sort();
         const earliestDisplayed = displayedDates[0];
@@ -1770,9 +1772,15 @@ export default function InsightsScreen() {
   }, [filterOptions, accounts]);
 
   const onRefresh = async () => {
-    if (!hasData.current) return;
     setRefreshing(true);
     try {
+      // Investments tab: only re-fetch from database (holdings, options, balances, connections)
+      if (activeSectionKey === "investments") {
+        await loadInvestmentDataFromDB();
+        return;
+      }
+
+      if (!hasData.current) return;
       // Don't clear section caches - show stale cache and update in background (same as Home)
       clearCache();
       await fetchFreshData();
