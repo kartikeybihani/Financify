@@ -1361,15 +1361,34 @@ export default function InvestmentsScreen({
       );
 
       // Check if we have valid total_change data
-      if (
-        totalChangeSum !== 0 ||
-        filteredBalances.some(
-          (b) => b.total_change !== null && b.total_change !== undefined
-        )
-      ) {
-        // Calculate percentage based on total portfolio value
+      const hasValidTotalChange = filteredBalances.some(
+        (b) => b.total_change !== null && b.total_change !== undefined
+      );
+
+      if (hasValidTotalChange) {
+        // CRITICAL: Use stored total_change_percent from database (weighted by total_value)
+        // This ensures consistency with backend calculations
+        let weightedPercentSum = 0;
+        let totalWeight = 0;
+
+        filteredBalances.forEach((b) => {
+          if (
+            b.total_change_percent != null &&
+            b.total_change_percent !== undefined &&
+            !isNaN(b.total_change_percent) &&
+            b.total_value != null &&
+            b.total_value > 0
+          ) {
+            weightedPercentSum += b.total_change_percent * (b.total_value || 0);
+            totalWeight += b.total_value || 0;
+          }
+        });
+
+        // Use weighted average percentage if available, otherwise calculate from sum
         const percentage =
-          totalPortfolioValue > 0
+          totalWeight > 0
+            ? weightedPercentSum / totalWeight
+            : totalPortfolioValue > 0
             ? (totalChangeSum / totalPortfolioValue) * 100
             : 0;
 
@@ -1437,9 +1456,29 @@ export default function InvestmentsScreen({
       );
 
       if (hasValidDayChange) {
-        // Calculate percentage based on total portfolio value
+        // CRITICAL: Use stored day_change_percent from database (weighted by total_value)
+        // This ensures consistency with backend calculations which use account totals
+        let weightedPercentSum = 0;
+        let totalWeight = 0;
+
+        filteredBalances.forEach((b) => {
+          if (
+            b.day_change_percent != null &&
+            b.day_change_percent !== undefined &&
+            !isNaN(b.day_change_percent) &&
+            b.total_value != null &&
+            b.total_value > 0
+          ) {
+            weightedPercentSum += b.day_change_percent * (b.total_value || 0);
+            totalWeight += b.total_value || 0;
+          }
+        });
+
+        // Use weighted average percentage if available, otherwise calculate from sum
         const percentage =
-          totalPortfolioValue > 0
+          totalWeight > 0
+            ? weightedPercentSum / totalWeight
+            : totalPortfolioValue > 0
             ? (dayChangeSum / totalPortfolioValue) * 100
             : 0;
 

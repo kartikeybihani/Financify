@@ -472,7 +472,7 @@ async function recalculatePortfolioMetricsFromDatabase(
     }
 
     // Calculate totals from database holdings
-    let totalValue = 0;
+    let totalHoldingsValue = 0;
     let totalDayChange = 0;
     let totalUnrealizedPL = 0;
 
@@ -481,7 +481,7 @@ async function recalculatePortfolioMetricsFromDatabase(
       const dayChange = holding.day_change || 0;
       const unrealizedPL = holding.unrealized_pl || 0;
 
-      totalValue += marketValue;
+      totalHoldingsValue += marketValue;
       totalDayChange += dayChange;
       totalUnrealizedPL += unrealizedPL;
     });
@@ -492,14 +492,29 @@ async function recalculatePortfolioMetricsFromDatabase(
       const dayChange = option.day_change || 0;
       const unrealizedPL = option.unrealized_pl || 0;
 
-      totalValue += marketValue;
+      totalHoldingsValue += marketValue;
       totalDayChange += dayChange;
       totalUnrealizedPL += unrealizedPL;
     });
 
-    // totalValue already includes cash (from holdings that include cash positions)
-    // So we use totalValue directly as the portfolio value
-    const totalPortfolioValue = totalValue;
+    // CRITICAL: Get existing balance to preserve total_value (includes cash + buying_power)
+    // The balance sync sets total_value from accountTotalValue (API), which is more accurate
+    // We should NOT overwrite it with sum of holdings (which doesn't include cash)
+    const { data: existingBalance } = await supabase
+      .from("investment_balances")
+      .select("total_value, cash, buying_power")
+      .eq("user_id", userId)
+      .eq("snaptrade_user_id", snaptradeUserId)
+      .eq("account_id", accountId)
+      .eq("is_current", true)
+      .single();
+
+    // Use existing total_value from balance sync (includes cash), or calculate from holdings + cash
+    const totalPortfolioValue =
+      existingBalance?.total_value ||
+      totalHoldingsValue +
+        (existingBalance?.cash || 0) +
+        (existingBalance?.buying_power || 0);
 
     // Calculate percentages
     const dayChangePercent =
@@ -511,43 +526,43 @@ async function recalculatePortfolioMetricsFromDatabase(
         ? (totalUnrealizedPL / totalPortfolioValue) * 100
         : 0;
 
-    // Get cash balance for logging purposes only
-    const { data: balanceData } = await supabase
-      .from("investment_balances")
-      .select("cash")
-      .eq("user_id", userId)
-      .eq("snaptrade_user_id", snaptradeUserId)
-      .eq("account_id", accountId)
-      .eq("is_current", true)
-      .single();
-
-    const cashAmount = balanceData?.cash || 0;
+    // Use cash from existingBalance (already fetched above)
+    const cashAmount = existingBalance?.cash || 0;
 
     console.log("📊 Database-calculated portfolio metrics:", {
       holdingsCount: holdings?.length || 0,
       optionsCount: options?.length || 0,
-      totalValue: totalValue.toFixed(2),
+      totalHoldingsValue: totalHoldingsValue.toFixed(2),
       cashAmount: cashAmount.toFixed(2),
       totalPortfolioValue: totalPortfolioValue.toFixed(2),
-      note: "totalValue already includes cash, so totalPortfolioValue = totalValue",
+      note: "totalPortfolioValue preserved from balance sync (includes cash + buying_power)",
       totalDayChange: totalDayChange.toFixed(2),
       dayChangePercent: dayChangePercent.toFixed(2),
       totalUnrealizedPL: totalUnrealizedPL.toFixed(2),
       totalChangePercent: totalChangePercent.toFixed(2),
     });
 
-    // Update investment_balances with recalculated totals but preserve previously computed day_change metrics
-    // CRITICAL: Don't overwrite day_change/day_change_percent - they're calculated from account totals, not holdings
+    // Update investment_balances with recalculated totals but preserve critical fields
+    // CRITICAL:
+    // - Don't overwrite day_change/day_change_percent (calculated from account totals in balance sync)
+    // - Don't overwrite total_value if it exists (balance sync sets it from API accountTotalValue, includes cash)
+    // - Only update total_change and total_change_percent from holdings
+    const updateData = {
+      total_change: totalUnrealizedPL,
+      total_change_percent: totalChangePercent,
+      // NOTE: day_change and day_change_percent are NOT updated here - they're calculated from account totals
+      // NOTE: total_value is preserved from balance sync (includes cash + buying_power from API)
+      last_updated: new Date().toISOString(),
+    };
+
+    // Only update total_value if it wasn't set by balance sync (fallback for edge cases)
+    if (!existingBalance?.total_value) {
+      updateData.total_value = totalPortfolioValue;
+    }
+
     const { error: updateError } = await supabase
       .from("investment_balances")
-      .update({
-        total_value: totalPortfolioValue,
-        total_change: totalUnrealizedPL,
-        total_change_percent: totalChangePercent,
-        // NOTE: day_change and day_change_percent are NOT updated here - they're calculated from account totals
-        // and should only be updated during balance sync, not recalculation
-        last_updated: new Date().toISOString(),
-      })
+      .update(updateData)
       .eq("user_id", userId)
       .eq("snaptrade_user_id", snaptradeUserId)
       .eq("account_id", accountId)
@@ -1033,21 +1048,43 @@ async function handleSnapTradeSync(res, userId, accountId) {
           existingBuyingPower: existingBalance?.buying_power,
         });
 
+        // CRITICAL: Preserve day_change if total_value hasn't changed (prevents overwriting with 0 on repeated syncs)
+        const EPSILON = 0.01; // Small threshold for floating point comparison
+        const existingTotalValue = existingBalance?.total_value;
+        const isTotalValueUnchanged =
+          existingTotalValue != null &&
+          Math.abs(totalValue - existingTotalValue) < EPSILON;
+
         if (
           adjustedPreviousTotalValue !== null &&
           adjustedPreviousTotalValue !== undefined &&
           totalValue > 0
         ) {
-          computedDayChange = totalValue - adjustedPreviousTotalValue;
-          dayChangePercent =
-            adjustedPreviousTotalValue !== 0
-              ? (computedDayChange / adjustedPreviousTotalValue) * 100
-              : 0;
-          console.log(
-            `✅ Calculated day_change: $${computedDayChange.toFixed(
-              2
-            )} (${dayChangePercent.toFixed(2)}%)`
-          );
+          // Only compute new day_change if total_value actually changed
+          if (isTotalValueUnchanged) {
+            // Data unchanged: preserve existing day_change values
+            computedDayChange = existingBalance?.day_change ?? null;
+            dayChangePercent = existingBalance?.day_change_percent ?? null;
+            console.log(
+              `🔄 Total value unchanged (${totalValue.toFixed(
+                2
+              )}), preserving day_change: $${(computedDayChange || 0).toFixed(
+                2
+              )} (${(dayChangePercent || 0).toFixed(2)}%)`
+            );
+          } else {
+            // Data changed: calculate new day_change
+            computedDayChange = totalValue - adjustedPreviousTotalValue;
+            dayChangePercent =
+              adjustedPreviousTotalValue !== 0
+                ? (computedDayChange / adjustedPreviousTotalValue) * 100
+                : 0;
+            console.log(
+              `✅ Calculated day_change: $${computedDayChange.toFixed(
+                2
+              )} (${dayChangePercent.toFixed(2)}%)`
+            );
+          }
         } else {
           // No previous value, preserve existing or set to null
           computedDayChange = existingBalance?.day_change ?? null;
@@ -1100,11 +1137,14 @@ async function handleSnapTradeSync(res, userId, accountId) {
           total_value: totalValue,
           // CRITICAL: previous_total_value must include cash + buying_power, not just holdings
           // Only update previous_total_value when rolling to a new day (same logic as holdings)
-          // When a new day starts, set previous_total_value to current total (which includes cash + buying_power)
-          previous_total_value:
-            !existingBalance || !sameDay
-              ? totalValue
-              : existingBalance.previous_total_value ?? totalValue,
+          // When a new day starts, set previous_total_value to PREVIOUS day's total_value (preserve baseline)
+          previous_total_value: !existingBalance
+            ? totalValue // First sync: establish baseline
+            : sameDay
+            ? existingBalance.previous_total_value ??
+              existingBalance.total_value ??
+              totalValue // Same day: preserve baseline
+            : existingBalance.total_value ?? totalValue, // New day: use previous day's total_value as new baseline
           is_current: true,
           last_updated: new Date().toISOString(),
           provider: "snaptrade",
@@ -1193,12 +1233,8 @@ async function handleSnapTradeSync(res, userId, accountId) {
           }
         }
 
-        // After updating balances, recalculate from database holdings to ensure accuracy
-        await recalculatePortfolioMetricsFromDatabase(
-          connection.user_id,
-          connection.snaptrade_user_id,
-          accountId
-        );
+        // NOTE: Recalculation moved to AFTER holdings sync to ensure accuracy
+        // We need holdings to be synced first so recalculation uses fresh data
         balancesSynced = true;
       } else {
         console.log("ℹ️ No balance data to sync");
@@ -1350,34 +1386,45 @@ async function handleSnapTradeSync(res, userId, accountId) {
             // - First sync ever: no change (0)
             // - New day: use previous day's baseline (preserve last day_change calculation)
             // - Same day: use start-of-day baseline
-            const previousMarketValue =
-              isFirstSyncEver
-                ? null // First sync: no baseline yet
-                : sameDay && dayBaseline != null
-                ? dayBaseline // Same day: use start-of-day baseline
-                : dayBaseline != null
-                ? dayBaseline // New day: use previous day's baseline (preserve last calculation)
-                : null;
+            const previousMarketValue = isFirstSyncEver
+              ? null // First sync: no baseline yet
+              : sameDay && dayBaseline != null
+              ? dayBaseline // Same day: use start-of-day baseline
+              : dayBaseline != null
+              ? dayBaseline // New day: use previous day's baseline (preserve last calculation)
+              : null;
 
-            // For storage: 
+            // For storage:
             // - First sync ever: set to current value (new baseline)
             // - New day: preserve previous baseline (don't reset)
             // - Same day: preserve baseline
-            const previousMarketValueForStorage =
-              isFirstSyncEver
-                ? currentMarketValue // First sync: set new baseline
-                : dayBaseline != null
-                ? dayBaseline // Preserve existing baseline (same day OR new day)
-                : currentMarketValue; // Fallback: use current value
+            const previousMarketValueForStorage = isFirstSyncEver
+              ? currentMarketValue // First sync: set new baseline
+              : dayBaseline != null
+              ? dayBaseline // Preserve existing baseline (same day OR new day)
+              : currentMarketValue; // Fallback: use current value
 
             // Calculate day_change and day_change_percent
             let dayChange = null;
             let dayChangePercent = null;
-            
+
+            // CRITICAL: Preserve day_change if market_value hasn't changed (prevents overwriting with 0 on repeated syncs)
+            const EPSILON = 0.01; // Small threshold for floating point comparison
+            const existingMarketValue = existingHolding?.market_value;
+            const isMarketValueUnchanged =
+              existingMarketValue != null &&
+              Number.isFinite(existingMarketValue) &&
+              Number.isFinite(currentMarketValue) &&
+              Math.abs(currentMarketValue - existingMarketValue) < EPSILON;
+
             if (isFirstSyncEver) {
               // First sync ever: no change
               dayChange = 0;
               dayChangePercent = 0;
+            } else if (isMarketValueUnchanged) {
+              // Market value unchanged: preserve existing day_change values
+              dayChange = existingHolding?.day_change ?? null;
+              dayChangePercent = existingHolding?.day_change_percent ?? null;
             } else if (
               previousMarketValue !== null &&
               previousMarketValue !== undefined &&
@@ -1407,7 +1454,18 @@ async function handleSnapTradeSync(res, userId, accountId) {
                 units: holding.units,
               });
             } else if (existingHolding) {
-              if (sameDay && dayChange !== null) {
+              if (isMarketValueUnchanged) {
+                console.log(
+                  `🔄 Market value unchanged for ${symbolString}, preserving day_change:`,
+                  {
+                    existing_market_value: existingMarketValue?.toFixed(2),
+                    current_market_value: currentMarketValue?.toFixed(2),
+                    preserved_day_change: dayChange?.toFixed(2),
+                    preserved_day_change_percent:
+                      dayChangePercent?.toFixed(2) + "%",
+                  }
+                );
+              } else if (sameDay && dayChange !== null) {
                 console.log(`💰 Day change for ${symbolString} (same day):`, {
                   previous_market_value: dayBaseline?.toFixed(2),
                   current_market_value: currentMarketValue?.toFixed(2),
@@ -1423,11 +1481,15 @@ async function handleSnapTradeSync(res, userId, accountId) {
                   current_market_value: currentMarketValue?.toFixed(2),
                   day_change: dayChange?.toFixed(2),
                   day_change_percent: dayChangePercent?.toFixed(2) + "%",
-                  reason: "new day - using previous day's baseline (preserving last day_change)",
+                  reason:
+                    "new day - using previous day's baseline (preserving last day_change)",
                   previous_price: existingHolding.price,
                   current_price: holding.price,
                 });
-              } else if (dayChange !== null && existingHolding.day_change != null) {
+              } else if (
+                dayChange !== null &&
+                existingHolding.day_change != null
+              ) {
                 console.log(`➡️ Preserved day_change for ${symbolString}:`, {
                   preserved_day_change: dayChange?.toFixed(2),
                   reason: "no baseline available, using last known value",
