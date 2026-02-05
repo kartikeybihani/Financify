@@ -728,7 +728,7 @@ export const styles = StyleSheet.create({
     flex: 1,
     marginRight: 12,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 12,
+    borderRadius: 32,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
     paddingVertical: 14,

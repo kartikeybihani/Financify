@@ -527,21 +527,22 @@ export default async function handler(req, res) {
             snaptradeUserId,
             accountId
           ) => {
-            // Fetch holdings with market_value, unrealized_pl, and fields to detect cash equivalents
+            // Fetch holdings with market_value, unrealized_pl, day_change, and fields to detect cash equivalents
+            // CRITICAL: Must include day_change to sum for balance calculation
             const { data: holdings } = await supabase
               .from("investment_holdings")
               .select(
-                "market_value, unrealized_pl, symbol, security_type, description"
+                "market_value, unrealized_pl, day_change, symbol, security_type, description"
               )
               .eq("user_id", userId)
               .eq("snaptrade_user_id", snaptradeUserId)
               .eq("account_id", accountId)
               .eq("is_active", true);
 
-            // Fetch options with market_value and unrealized_pl
+            // Fetch options with market_value, unrealized_pl, and day_change
             const { data: options } = await supabase
               .from("investment_options")
-              .select("market_value, unrealized_pl")
+              .select("market_value, unrealized_pl, day_change")
               .eq("user_id", userId)
               .eq("snaptrade_user_id", snaptradeUserId)
               .eq("account_id", accountId)
