@@ -10,6 +10,23 @@ import {
 } from "../lib/api/rateLimiter.js";
 import { syncSnaptradeInvestments } from "../lib/snaptradeSync.js";
 
+const SCHEDULED_SYNC_CRON_SECRET =
+  process.env.SCHEDULED_SYNC_CRON_SECRET || process.env.BIGGEST_MOVER_CRON_SECRET;
+
+/** Infer trigger_source from mode for sync_logs */
+function getTriggerSource(mode) {
+  return mode === "plaid_transactions" ? "supabase_cron" : "vercel_cron";
+}
+
+/** Insert sync run into sync_logs (success, partial, or failure) */
+async function insertSyncLog(payload) {
+  try {
+    await supabase.from("sync_logs").insert(payload);
+  } catch (e) {
+    console.error("[scheduled-sync] Failed to insert sync_log:", e?.message);
+  }
+}
+
 export default async function handler(req, res) {
   // Only allow GET requests (for cron triggers)
   if (req.method !== "GET") {
@@ -21,6 +38,16 @@ export default async function handler(req, res) {
     `http://${req.headers?.host || "localhost"}`
   );
   const mode = url.searchParams.get("mode") || "scheduled";
+
+  // plaid_transactions is called by Supabase pg_cron; require cron secret
+  if (mode === "plaid_transactions") {
+    const secret =
+      req.headers["x-cron-secret"] ||
+      (req.headers.authorization || "").replace(/^Bearer\s+/i, "").trim();
+    if (!SCHEDULED_SYNC_CRON_SECRET || secret !== SCHEDULED_SYNC_CRON_SECRET) {
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+  }
 
   const cronRateLimit = await checkRateLimit(req, {
     scope: `scheduled_sync:${mode}`,
@@ -56,11 +83,41 @@ export default async function handler(req, res) {
 
     if (fetchError) {
       console.error("❌ Error fetching user items:", fetchError);
+      const completedAt = new Date().toISOString();
+      await insertSyncLog({
+        sync_type: mode,
+        total_items: 0,
+        successful_syncs: 0,
+        failed_syncs: 0,
+        error_details: { error: fetchError.message },
+        error_summary: `Failed to fetch user items: ${fetchError.message}`,
+        status: "failure",
+        trigger_source: getTriggerSource(mode),
+        started_at: startedAt,
+        completed_at: completedAt,
+        duration_ms: Math.round(
+          (new Date(completedAt) - new Date(startedAt))
+        ),
+      });
       return res.status(500).json({ error: "Failed to fetch user items" });
     }
 
     if (!userItems || userItems.length === 0) {
       console.log("ℹ️ No user items found for syncing");
+      const completedAt = new Date().toISOString();
+      await insertSyncLog({
+        sync_type: mode,
+        total_items: 0,
+        successful_syncs: 0,
+        failed_syncs: 0,
+        status: "success",
+        trigger_source: getTriggerSource(mode),
+        started_at: startedAt,
+        completed_at: completedAt,
+        duration_ms: Math.round(
+          (new Date(completedAt) - new Date(startedAt))
+        ),
+      });
       return res.status(200).json({
         message: "No items to sync",
         synced: 0,
@@ -79,23 +136,51 @@ export default async function handler(req, res) {
       `📊 Found ${userItems.length} items (Plaid: ${plaidItems.length}, SnapTrade: ${snaptradeItems.length}) | mode=${mode}`
     );
 
-    const results =
-      mode === "weekly_balances"
-        ? await runWeeklyBalanceSync(plaidItems)
-        : await runScheduledSync(plaidItems, snaptradeItems);
+    let results;
+    if (mode === "weekly_balances") {
+      results = await runWeeklyBalanceSync(plaidItems);
+    } else if (mode === "plaid_transactions") {
+      results = await runScheduledSync(plaidItems, []);
+    } else if (mode === "snaptrade") {
+      results = await runScheduledSync([], snaptradeItems);
+    } else {
+      results = await runScheduledSync(plaidItems, snaptradeItems);
+    }
 
     // 3) Update global sync status in sync_logs table
     const completedAt = new Date().toISOString();
-    await supabase.from("sync_logs").insert({
+    const totalItemsForLog =
+      mode === "weekly_balances"
+        ? plaidItems.length
+        : mode === "plaid_transactions"
+          ? plaidItems.length
+          : mode === "snaptrade"
+            ? snaptradeItems.length
+            : userItems.length;
+    const status =
+      results.errors > 0 && results.synced > 0
+        ? "partial"
+        : results.errors > 0
+          ? "failure"
+          : "success";
+    await insertSyncLog({
       sync_type: mode,
-      total_items:
-        mode === "weekly_balances" ? plaidItems.length : userItems.length,
+      total_items: totalItemsForLog,
       successful_syncs: results.synced,
       failed_syncs: results.errors,
       error_details:
         results.errorDetails.length > 0 ? results.errorDetails : null,
+      error_summary:
+        results.errorDetails.length > 0
+          ? results.errorDetails.map((e) => e.error || e).join("; ")
+          : null,
+      status,
+      trigger_source: getTriggerSource(mode),
       started_at: startedAt,
       completed_at: completedAt,
+      duration_ms: Math.round(
+        (new Date(completedAt) - new Date(startedAt))
+      ),
     });
 
     console.log(
@@ -106,16 +191,38 @@ export default async function handler(req, res) {
       message:
         mode === "weekly_balances"
           ? "Weekly balance sync completed"
-          : "Scheduled sync completed",
+          : mode === "plaid_transactions"
+            ? "Plaid transaction sync completed"
+            : mode === "snaptrade"
+              ? "SnapTrade sync completed"
+              : "Scheduled sync completed",
       mode,
-      total_items:
-        mode === "weekly_balances" ? plaidItems.length : userItems.length,
+      total_items: totalItemsForLog,
       synced: results.synced,
       errors: results.errors,
       errorDetails: results.errorDetails,
     });
   } catch (error) {
     console.error("❌ Scheduled sync error:", error);
+    const completedAt = new Date().toISOString();
+    const mode =
+      new URL(req.url || "/", `http://${req.headers?.host || "localhost"}`)
+        .searchParams.get("mode") || "scheduled";
+    await insertSyncLog({
+      sync_type: mode,
+      total_items: 0,
+      successful_syncs: 0,
+      failed_syncs: 0,
+      error_details: { error: error.message, stack: error.stack },
+      error_summary: error.message,
+      status: "failure",
+      trigger_source: getTriggerSource(mode),
+      started_at: startedAt,
+      completed_at: completedAt,
+      duration_ms: Math.round(
+        (new Date(completedAt) - new Date(startedAt))
+      ),
+    });
     return res.status(500).json({
       error: "Scheduled sync failed",
       details: error.message,

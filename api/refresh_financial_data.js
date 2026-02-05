@@ -860,6 +860,30 @@ export default async function handler(req, res) {
 }
 
 /**
+ * Persist biggest_mover run to biggest_mover_runs for debugging/monitoring.
+ * @param {Object} result - Run result object
+ * @param {'success'|'failure'} status
+ */
+async function logBiggestMoverRun(result, status) {
+  try {
+    result.completed_at = result.completed_at || new Date().toISOString();
+    await supabase.from("biggest_mover_runs").insert({
+      started_at: result.started_at,
+      completed_at: result.completed_at,
+      holdings_updated: result.holdings_updated,
+      triggers_created: result.triggers_created,
+      users_sent: result.users_sent,
+      total_sent: result.total_sent,
+      total_failed: result.total_failed,
+      errors: result.errors,
+      status,
+    });
+  } catch (e) {
+    console.error("[biggest_mover] Failed to log run:", e?.message);
+  }
+}
+
+/**
  * Cron-only: Finnhub batch refresh (no SnapTrade), then create one biggest-mover trigger per user (weekday 4PM ET).
  * One trigger per user per day; only for users with at least one active holding.
  * @param {Object} options - Optional. testUserId: run only for this user (for testing). forceSend: create/send trigger even if one exists today (manual test only).
@@ -897,12 +921,14 @@ async function runBiggestMoverDaily(res, options = {}) {
     if (holdingsError) {
       result.errors.push(`Holdings fetch failed: ${holdingsError.message}`);
       result.completed_at = new Date().toISOString();
+      await logBiggestMoverRun(result, "failure");
       return res.status(500).json(result);
     }
 
     if (!allHoldings || allHoldings.length === 0) {
       result.completed_at = new Date().toISOString();
       if (testUserId) result.message = "No active holdings for this user.";
+      await logBiggestMoverRun(result, "success");
       return res.status(200).json(result);
     }
 
@@ -1219,11 +1245,13 @@ async function runBiggestMoverDaily(res, options = {}) {
     console.log(
       `[biggest_mover] done holdings=${result.holdings_updated} triggers=${result.triggers_created} sent=${result.total_sent} failed=${result.total_failed}`
     );
+    await logBiggestMoverRun(result, "success");
     return res.status(200).json(result);
   } catch (err) {
     result.completed_at = new Date().toISOString();
     result.errors.push(err?.message || String(err));
     console.error("[biggest_mover] error:", err?.message || err);
+    await logBiggestMoverRun(result, "failure");
     return res.status(500).json(result);
   }
 }
