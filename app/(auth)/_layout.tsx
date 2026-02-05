@@ -10,11 +10,12 @@ export default function AuthLayout() {
   const router = useRouter();
   const hasRedirectedRef = useRef(false);
 
-  // If user is signed-in or onboarding, bounce out of the auth group once
+  // If user is signed-in or onboarding, bounce out of the auth group once (never when RECOVERY)
   useEffect(() => {
     if (
       !isLoading &&
       navigationState !== NavigationState.PRE_SIGNUP &&
+      navigationState !== NavigationState.RECOVERY &&
       !hasRedirectedRef.current
     ) {
       hasRedirectedRef.current = true;

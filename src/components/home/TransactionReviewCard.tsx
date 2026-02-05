@@ -778,6 +778,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "rgba(255, 255, 255, 0.6)",
     marginTop: 8,
+    alignSelf: "center",
   },
   modalOverlay: {
     flex: 1,

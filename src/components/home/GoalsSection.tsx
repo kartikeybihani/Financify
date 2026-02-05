@@ -1,4 +1,5 @@
 // components/home/GoalsSection.tsx
+// OPTIMIZED: Uses AnimatedNumber for smooth value transitions
 
 import React from "react";
 import { View, Text, TouchableOpacity, Image, Platform } from "react-native";
@@ -8,7 +9,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
 import { Goal } from "@/src/types/finny";
 import { styles } from "@/src/styles/homeStyles";
-import logger from "@/src/utils/core/logger";
+import { AnimatedNumber } from "@/src/components/shared/AnimatedNumber";
 
 interface GoalsSectionProps {
   goals: Goal[];
@@ -135,19 +136,23 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
               <View style={styles.goalContentBox}>
                 <View style={styles.goalHeader}>
                   <Text style={styles.goalTitle}>{closestGoal.label}</Text>
-                  <Text style={styles.goalAmount}>
-                    {new Intl.NumberFormat("en-US", {
-                      style: "currency",
-                      currency: "USD",
-                      minimumFractionDigits: 0,
-                      maximumFractionDigits: 0,
-                    }).format(closestGoal.current_amount || 0)}{" "}
-                    of{" "}
-                    {formatCurrency(closestGoal.target_amount || 0, "USD", {
-                      decimals: 0,
-                      useKM: true,
-                    })}
-                  </Text>
+                  <View style={{ flexDirection: "row", alignItems: "baseline" }}>
+                    {/* ANIMATED: Current amount */}
+                    <AnimatedNumber
+                      value={closestGoal.current_amount || 0}
+                      prefix="$"
+                      decimals={0}
+                      duration={300}
+                      style={styles.goalAmount}
+                    />
+                    <Text style={styles.goalAmount}>
+                      {" "}of{" "}
+                      {formatCurrency(closestGoal.target_amount || 0, "USD", {
+                        decimals: 0,
+                        useKM: true,
+                      })}
+                    </Text>
+                  </View>
                 </View>
                 <View style={styles.progressBarBackground}>
                   <View
@@ -169,24 +174,24 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
                   />
                 </View>
                 <View style={styles.goalPercentContainer}>
-                <Ionicons name="trending-up" size={14} color="#4ECDC4" />
-                <Text
-                  style={{
-                    fontWeight: "600",
-                    color: "#4ECDC4",
-                    fontSize: 12,
-                    marginLeft: 2,
-                  }}
-                >
-                  {closestGoal.target_amount > 0
-                    ? Math.round(
-                        (closestGoal.current_amount /
-                          closestGoal.target_amount) *
-                          100,
-                      )
-                    : 0}
-                  % Progress
-                </Text>
+                  <Ionicons name="trending-up" size={14} color="#4ECDC4" />
+                  <Text
+                    style={{
+                      fontWeight: "600",
+                      color: "#4ECDC4",
+                      fontSize: 12,
+                      marginLeft: 2,
+                    }}
+                  >
+                    {closestGoal.target_amount > 0
+                      ? Math.round(
+                          (closestGoal.current_amount /
+                            closestGoal.target_amount) *
+                            100,
+                        )
+                      : 0}
+                    % Progress
+                  </Text>
                 </View>
               </View>
             </TouchableOpacity>

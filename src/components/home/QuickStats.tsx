@@ -1,6 +1,7 @@
 // components/home/QuickStats.tsx
+// OPTIMIZED: Uses AnimatedNumber for smooth value transitions
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useMemo } from "react";
 import {
   View,
   Text,
@@ -15,6 +16,9 @@ import { QuickStatsSkeleton } from "@/src/components/home/LoadingSkeletons";
 import { styles } from "@/src/styles/homeStyles";
 import { useHomeInsights } from "@/src/hooks/useHomeInsights";
 import { AppStorage } from "@/src/utils/storage/storage";
+import { AnimatedNumber } from "@/src/components/shared/AnimatedNumber";
+import { BudgetProgressData, loadBudgetProgressFromCache } from "@/src/shared/utils/homeScreenCache";
+import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
 
 const QUICK_STATS_CAROUSEL_SLIDE_KEY = "quickStats_activeCarouselSlide";
 
@@ -31,6 +35,11 @@ interface QuickStatsProps {
   isLoading?: boolean; // Show skeleton when loading and no cached data
   onToggleAccounts?: () => void;
   isAccountsExpanded?: boolean;
+  // OPTIMIZED: Initial budget from module-level cache for instant display
+  initialBudgetProgress?: {
+    budgetProgress: BudgetProgressData | null;
+    hasBudget: boolean;
+  } | null;
 }
 
 export const QuickStats: React.FC<QuickStatsProps> = React.memo(
@@ -41,19 +50,56 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
     isLoading = false,
     onToggleAccounts,
     isAccountsExpanded = false,
+    initialBudgetProgress,
   }) => {
     const router = useRouter();
+    // useHomeInsights for background updates (will update when data changes)
     const { insight, loading: insightsLoading } = useHomeInsights();
     const [activeSlide, setActiveSlide] = useState(0);
     const scrollViewRef = useRef<ScrollView>(null);
     const screenWidth = Dimensions.get("window").width;
 
-    // Show skeleton if loading AND balance is zero (no cached data)
+    // FAILSAFE: Try to load budget from cache directly if prop is null
+    // This handles the case where userId wasn't available at parent's module load
+    const fallbackBudgetRef = useRef<{ budgetProgress: BudgetProgressData | null; hasBudget: boolean } | null>(
+      !initialBudgetProgress ? (() => {
+        try {
+          const userId = getUserIdSync();
+          if (!userId) return null;
+          return loadBudgetProgressFromCache(userId);
+        } catch {
+          return null;
+        }
+      })() : null
+    );
+
+    // OPTIMIZED: Use initial cached budget immediately, then switch to hook data when available
+    // Priority: hook data > prop data > failsafe data
+    const effectiveBudgetData = useMemo(() => {
+      // If hook has loaded budget data, use it (most up-to-date)
+      if (insight?.type === "budget_progress" && insight.budgetProgress) {
+        return insight.budgetProgress;
+      }
+      // Use cached data from prop (passed from parent)
+      if (initialBudgetProgress?.hasBudget && initialBudgetProgress.budgetProgress) {
+        return initialBudgetProgress.budgetProgress;
+      }
+      // Use failsafe cache (loaded directly in this component)
+      if (fallbackBudgetRef.current?.hasBudget && fallbackBudgetRef.current.budgetProgress) {
+        return fallbackBudgetRef.current.budgetProgress;
+      }
+      return null;
+    }, [insight, initialBudgetProgress]);
+
+    const hasBudget = effectiveBudgetData !== null;
+
+    // Show skeleton only if loading AND we have zero balance AND no budget data
     const hasNoData =
       totalBalance === 0 &&
       spendingData.lastMonth === 0 &&
-      spendingData.threeMonths === 0;
-    const shouldShowSkeleton = (isLoading || insightsLoading) && hasNoData;
+      spendingData.threeMonths === 0 &&
+      !hasBudget;
+    const shouldShowSkeleton = isLoading && insightsLoading && hasNoData;
 
     if (shouldShowSkeleton) {
       return <QuickStatsSkeleton />;
@@ -65,8 +111,7 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
       return value.toFixed(1);
     };
 
-    // Check if we should show budget slide
-    const hasBudget = insight?.type === "budget_progress";
+    // Number of slides (budget slide only if budget exists)
     const totalSlides = hasBudget ? 2 : 1;
     const slideWidth = screenWidth - 40;
 
@@ -112,12 +157,14 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
       }, 200);
     };
 
+    // budgetData is already memoized as effectiveBudgetData above
+    const budgetData = effectiveBudgetData;
+
     // Render budget progress slide
     const renderBudgetSlide = () => {
-      if (!hasBudget || !insight.budgetProgress) return null;
+      if (!budgetData) return null;
 
-      const { spent, total, percentage, remaining, daysLeft } =
-        insight.budgetProgress;
+      const { spent, total, percentage, remaining, daysLeft } = budgetData;
       const isOverBudget = percentage > 100;
       const isWarning = percentage > 80;
       const statusColor = isOverBudget
@@ -147,19 +194,19 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
           {/* Amount Row: spent/total on left, chip and remaining on right */}
           <View style={[styles.netWorthAmountRow, { marginBottom: 10 }]}>
             <View style={{ flexDirection: "row", alignItems: "baseline" }}>
-              <Text
+              {/* ANIMATED: Spent amount */}
+              <AnimatedNumber
+                value={spent}
+                prefix="$"
+                decimals={0}
+                duration={300}
                 style={{
                   fontSize: 22,
                   fontWeight: "700",
                   color: "#fff",
                   letterSpacing: -0.5,
                 }}
-              >
-                {formatCurrency(spent, "USD", {
-                  decimals: 0,
-                  useKM: false,
-                })}
-              </Text>
+              />
               <Text
                 style={{
                   fontSize: 16,
@@ -195,23 +242,18 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                   {formatPercentage(percentage)}%
                 </Text>
               </View>
-              <Text
+              {/* ANIMATED: Remaining amount */}
+              <AnimatedNumber
+                value={Math.abs(remaining)}
+                prefix={isOverBudget ? "-$" : "$"}
+                decimals={0}
+                duration={300}
                 style={{
                   fontSize: 14,
                   fontWeight: "600",
                   color: isOverBudget ? "#FF6B6B" : "#fff",
                 }}
-              >
-                {isOverBudget
-                  ? `-${formatCurrency(Math.abs(remaining), "USD", {
-                      decimals: 0,
-                      useKM: false,
-                    })}`
-                  : formatCurrency(Math.max(0, remaining), "USD", {
-                      decimals: 0,
-                      useKM: false,
-                    })}
-              </Text>
+              />
             </View>
           </View>
 
@@ -262,11 +304,10 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
               },
             ]}
           >
-            {hasBudget && insight.budgetProgress ? (
+            {budgetData ? (
               /* Redesigned layout with Safe to Spend when budget exists */
               (() => {
-                const { remaining, percentage, daysLeft } =
-                  insight.budgetProgress;
+                const { remaining, percentage, daysLeft } = budgetData;
                 const isOverBudget = percentage > 100;
                 const isWarning = percentage > 80;
                 const statusColor = isOverBudget
@@ -301,17 +342,17 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                       >
                         TOTAL NET WORTH
                       </Text>
-                      <Text
+                      {/* ANIMATED: Net Worth */}
+                      <AnimatedNumber
+                        value={totalBalance}
+                        prefix="$"
+                        decimals={2}
+                        duration={300}
                         style={[
                           styles.netWorthText,
                           { textAlign: "center", flex: 0 },
                         ]}
-                      >
-                        {formatCurrency(totalBalance, "USD", {
-                          decimals: 2,
-                          useKM: false,
-                        })}
-                      </Text>
+                      />
                     </View>
 
                     {/* Divider */}
@@ -364,7 +405,12 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                           {isOverBudget ? "Over Budget" : "Safe to Spend"}
                         </Text>
                       </View>
-                      <Text
+                      {/* ANIMATED: Safe to Spend amount */}
+                      <AnimatedNumber
+                        value={isOverBudget ? Math.abs(remaining) : safeToSpend}
+                        prefix={isOverBudget ? "-$" : "$"}
+                        decimals={0}
+                        duration={300}
                         style={{
                           fontSize: 22,
                           fontWeight: "700",
@@ -374,17 +420,7 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                           textAlign: "center",
                           marginTop: 1,
                         }}
-                      >
-                        {isOverBudget
-                          ? `-${formatCurrency(Math.abs(remaining), "USD", {
-                              decimals: 0,
-                              useKM: false,
-                            })}`
-                          : formatCurrency(safeToSpend, "USD", {
-                              decimals: 0,
-                              useKM: false,
-                            })}
-                      </Text>
+                      />
                       {daysLeft > 0 && (
                         <Text
                           style={{
@@ -402,15 +438,17 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                 );
               })()
             ) : (
-              /* Default left-aligned layout */
+              /* Default full-width layout when no budget */
               <>
                 <Text style={styles.netWorthLabel}>TOTAL NET WORTH</Text>
-                <Text style={styles.netWorthText}>
-                  {formatCurrency(totalBalance, "USD", {
-                    decimals: 2,
-                    useKM: false,
-                  })}
-                </Text>
+                {/* ANIMATED: Net Worth (full width) */}
+                <AnimatedNumber
+                  value={totalBalance}
+                  prefix="$"
+                  decimals={2}
+                  duration={300}
+                  style={styles.netWorthText}
+                />
               </>
             )}
           </View>

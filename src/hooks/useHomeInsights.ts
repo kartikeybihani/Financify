@@ -1,7 +1,10 @@
 // hooks/useHomeInsights.ts
 // Hook to get actionable insights for the home screen carousel
+// OPTIMIZED: Uses VERY_LONG cache (7 days) with event-based invalidation
+// Shows stale data immediately, refreshes in background
 
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { DeviceEventEmitter } from "react-native";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { getBudgetSummary, getCurrentBudgetPeriodIfExists } from "@/src/types/budget";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
@@ -10,11 +13,21 @@ import { Transaction } from "@/src/types/plaid";
 import logger from "@/src/utils/core/logger";
 import AppStorage from "@/src/utils/storage/storage";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
+import {
+  updateBudgetProgressInCache,
+  loadBudgetProgressFromCache,
+  BudgetProgressData,
+} from "@/src/shared/utils/homeScreenCache";
+import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
 
-// Cache keys
+// Cache keys - user-specific
 const INSIGHTS_CACHE_KEY = "home_insights";
-const INSIGHTS_CACHE_TIMESTAMP_KEY = "home_insights_timestamp";
-const CACHE_DURATION = CACHE_CONFIG.DURATIONS.MEDIUM; // 5 minutes
+const getInsightsCacheKey = (userId: string) => `${INSIGHTS_CACHE_KEY}_${userId}`;
+const getInsightsTimestampKey = (userId: string) => `${INSIGHTS_CACHE_KEY}_timestamp_${userId}`;
+
+// CHANGED: Use VERY_LONG (7 days) with event-based invalidation
+// Budget changes when: transactions sync (every 2h) or budget is edited
+const CACHE_DURATION = CACHE_CONFIG.DURATIONS.VERY_LONG;
 
 // Helper to get category color (fallback mapping)
 const getCategoryColor = (categoryName: string): string => {
@@ -72,39 +85,66 @@ export interface HomeInsightsData {
 }
 
 /**
+ * Load cached insight synchronously
+ * Always returns stale data if available for instant UI
+ * Tries multiple cache sources for maximum hit rate
+ */
+const loadCachedInsight = (userId: string | null): HomeInsight | null => {
+  try {
+    // If we have userId, try the dedicated insights cache first
+    if (userId) {
+      const cacheKey = getInsightsCacheKey(userId);
+      const cacheString = AppStorage.getItemSync(cacheKey);
+
+      if (cacheString) {
+        const cachedData = JSON.parse(cacheString) as HomeInsight & { userId?: string };
+        // Security check
+        if (!cachedData.userId || cachedData.userId === userId) {
+          return cachedData;
+        }
+      }
+
+      // Try homeScreenCache as fallback
+      const homeCache = loadBudgetProgressFromCache(userId);
+      if (homeCache?.hasBudget && homeCache.budgetProgress) {
+        return {
+          type: "budget_progress",
+          budgetProgress: homeCache.budgetProgress,
+        };
+      }
+    }
+
+    // If no userId yet, we can't load user-specific cache
+    // The parent component should pass initialBudgetProgress prop instead
+    return null;
+  } catch (error) {
+    return null;
+  }
+};
+
+/**
  * Get actionable insights for home screen carousel
  * Prioritizes: Budget progress > Category alert (>30%) > Spending summary
+ * 
+ * OPTIMIZED:
+ * - Uses 7-day cache (event-based invalidation)
+ * - Shows stale data immediately for instant UI
+ * - Refreshes in background without blocking UI
+ * - Listens to financialDataRefreshed events for invalidation
  */
 export function useHomeInsights(): HomeInsightsData {
+  // Get userId synchronously for cache loading
+  const userIdRef = useRef<string | null>(getUserIdSync());
+  
   // Load cache synchronously before first render (MMKV advantage)
-  const initialCache = (() => {
-    try {
-      const cacheString = AppStorage.getItemSync(INSIGHTS_CACHE_KEY);
-      const timestampString = AppStorage.getItemSync(INSIGHTS_CACHE_TIMESTAMP_KEY);
-      
-      if (!cacheString || !timestampString) {
-        return null;
-      }
-
-      const timestamp = parseInt(timestampString, 10);
-      const now = Date.now();
-      const cacheAge = now - timestamp;
-
-      if (cacheAge > CACHE_DURATION) {
-        return null;
-      }
-
-      const cachedData = JSON.parse(cacheString) as HomeInsight;
-      return cachedData;
-    } catch (error) {
-      return null;
-    }
-  })();
+  // CHANGED: Always show stale data for instant UI
+  const initialCache = loadCachedInsight(userIdRef.current);
 
   // Initialize state with cached data if available (instant UI)
   const [insight, setInsight] = useState<HomeInsight | null>(initialCache);
-  const [loading, setLoading] = useState(!initialCache); // If we have cache, not loading
-  const isRefreshingRef = useRef(false); // Prevent multiple simultaneous refreshes
+  // CHANGED: If we have ANY cached data, don't show loading state
+  const [loading, setLoading] = useState(!initialCache);
+  const isRefreshingRef = useRef(false);
 
   // Helper to format date as YYYY-MM-DD
   const formatDate = (date: Date): string => {
@@ -134,9 +174,7 @@ export function useHomeInsights(): HomeInsightsData {
       try {
         const now = new Date();
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
         const monthStartStr = formatDate(monthStart);
-        const monthEndStr = formatDate(monthEnd);
         const todayStr = formatDate(now);
 
         // Fetch current month transactions
@@ -200,20 +238,32 @@ export function useHomeInsights(): HomeInsightsData {
     []
   );
 
-  // Cache management
-  const saveToCache = useCallback(async (data: HomeInsight | null): Promise<void> => {
+  // Save to both caches
+  const saveToCache = useCallback((userId: string, data: HomeInsight | null): void => {
     try {
       if (data) {
-        // Use synchronous operations for better performance
-        AppStorage.setItemSync(INSIGHTS_CACHE_KEY, JSON.stringify(data));
-        AppStorage.setItemSync(INSIGHTS_CACHE_TIMESTAMP_KEY, Date.now().toString());
+        const cacheKey = getInsightsCacheKey(userId);
+        const timestampKey = getInsightsTimestampKey(userId);
+        
+        // Save with userId for security validation
+        const cacheData = { ...data, userId };
+        AppStorage.setItemSync(cacheKey, JSON.stringify(cacheData));
+        AppStorage.setItemSync(timestampKey, Date.now().toString());
+
+        // Also update homeScreenCache for cross-component access
+        if (data.type === "budget_progress" && data.budgetProgress) {
+          updateBudgetProgressInCache(userId, data.budgetProgress, true);
+        } else {
+          // No budget - update cache accordingly
+          updateBudgetProgressInCache(userId, null, false);
+        }
       }
     } catch (error) {
-      logger.error("❌ [INSIGHTS CACHE] Failed to save to cache:", error);
+      logger.error("❌ [INSIGHTS CACHE] Failed to save:", error);
     }
   }, []);
 
-  // Calculate insight
+  // Calculate insight - OPTIMIZED to run in background
   const calculateInsight = useCallback(async (hasCache: boolean = false) => {
     // Prevent multiple simultaneous refreshes
     if (isRefreshingRef.current) {
@@ -222,6 +272,8 @@ export function useHomeInsights(): HomeInsightsData {
     
     try {
       isRefreshingRef.current = true;
+      
+      // CHANGED: Only show loading if we have NO cached data at all
       if (!hasCache) {
         setLoading(true);
       }
@@ -234,6 +286,8 @@ export function useHomeInsights(): HomeInsightsData {
       }
 
       const userId = authResult.user.id;
+      userIdRef.current = userId;
+      
       const now = new Date();
       const daysInMonth = new Date(
         now.getFullYear(),
@@ -262,8 +316,8 @@ export function useHomeInsights(): HomeInsightsData {
           const totalSpent = budgetSummary.actuals.overall;
 
           // Only show budget progress if budget is meaningful (> $100)
-          if (totalBudget > 100 && totalSpent > 0) {
-            const percentage = (totalSpent / totalBudget) * 100;
+          if (totalBudget > 100) {
+            const percentage = totalSpent > 0 ? (totalSpent / totalBudget) * 100 : 0;
             const remaining = totalBudget - totalSpent;
 
             const budgetInsight: HomeInsight = {
@@ -277,12 +331,15 @@ export function useHomeInsights(): HomeInsightsData {
               },
             };
             setInsight(budgetInsight);
-            await saveToCache(budgetInsight);
+            saveToCache(userId, budgetInsight);
             setLoading(false);
             return;
           }
         }
       }
+
+      // No budget - update homeScreenCache
+      updateBudgetProgressInCache(userId, null, false);
 
       // Priority 2: Check for category alert (>30%)
       const { totalSpent, categoryBreakdown } =
@@ -291,29 +348,8 @@ export function useHomeInsights(): HomeInsightsData {
       if (categoryBreakdown.length > 0) {
         const topCategory = categoryBreakdown[0];
         if (topCategory.percentage > 30) {
-          // Get category color - try to fetch from DB first, then fallback
-          let categoryColor = "#FF6B6B"; // Default red
-          
-          try {
-            // Try to get color from categories table
-            const { data: categoryData } = await supabase
-              .from("categories")
-              .select("color")
-              .eq("user_id", userId)
-              .ilike("name", topCategory.category)
-              .eq("is_active", true)
-              .maybeSingle();
-            
-            if (categoryData?.color) {
-              categoryColor = categoryData.color;
-            } else {
-              // Use fallback mapping
-              categoryColor = getCategoryColor(topCategory.category);
-            }
-          } catch (error) {
-            // Use fallback mapping on error
-            categoryColor = getCategoryColor(topCategory.category);
-          }
+          // Get category color - use fallback mapping (skip DB query for speed)
+          const categoryColor = getCategoryColor(topCategory.category);
 
           const categoryInsight: HomeInsight = {
             type: "category_alert",
@@ -325,7 +361,7 @@ export function useHomeInsights(): HomeInsightsData {
             },
           };
           setInsight(categoryInsight);
-          await saveToCache(categoryInsight);
+          saveToCache(userId, categoryInsight);
           setLoading(false);
           return;
         }
@@ -342,17 +378,15 @@ export function useHomeInsights(): HomeInsightsData {
           },
         };
         setInsight(spendingInsight);
-        await saveToCache(spendingInsight);
+        saveToCache(userId, spendingInsight);
       } else {
         setInsight(null);
-        await saveToCache(null);
       }
 
       setLoading(false);
     } catch (error) {
       logger.error("Error calculating home insights:", error);
-      setInsight(null);
-      await saveToCache(null);
+      // CHANGED: Don't clear insight on error - keep stale data
       setLoading(false);
     } finally {
       isRefreshingRef.current = false;
@@ -360,9 +394,9 @@ export function useHomeInsights(): HomeInsightsData {
   }, [getCurrentMonthCategoryBreakdown, saveToCache]);
 
   // Refresh function
-  const refresh = useCallback(async (hasCache: boolean = false) => {
-    await calculateInsight(hasCache);
-  }, [calculateInsight]);
+  const refresh = useCallback(async () => {
+    await calculateInsight(!!insight);
+  }, [calculateInsight, insight]);
 
   // Initialize on mount - only run once
   const hasInitializedRef = useRef(false);
@@ -373,16 +407,25 @@ export function useHomeInsights(): HomeInsightsData {
     }
     hasInitializedRef.current = true;
 
-    // Cache is already loaded synchronously before render
-    // So we only need to fetch fresh data in background
-    if (initialCache) {
-      // We have cache - fetch fresh data in background (non-blocking)
-      calculateInsight(true);
-    } else {
-      // No cache - fetch immediately (first load or cache expired)
-      calculateInsight(false);
-    }
+    // CHANGED: Always refresh in background, but don't block UI
+    // Cache was already loaded synchronously above
+    calculateInsight(!!initialCache);
   }, [calculateInsight, initialCache]);
+
+  // Listen for data refresh events to invalidate cache
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(
+      "financialDataRefreshed",
+      () => {
+        // Transaction sync completed - refresh insights in background
+        calculateInsight(true);
+      }
+    );
+
+    return () => {
+      subscription.remove();
+    };
+  }, [calculateInsight]);
 
   return {
     insight,
@@ -390,3 +433,18 @@ export function useHomeInsights(): HomeInsightsData {
     refresh,
   };
 }
+
+/**
+ * Clear insights cache for user
+ */
+export const clearInsightsCache = (userId: string): void => {
+  try {
+    const cacheKey = getInsightsCacheKey(userId);
+    const timestampKey = getInsightsTimestampKey(userId);
+    AppStorage.removeItemSync(cacheKey);
+    AppStorage.removeItemSync(timestampKey);
+    logger.info(`🗑️ [INSIGHTS CACHE] Cleared for user: ${userId.substring(0, 8)}`);
+  } catch (error) {
+    logger.error("❌ [INSIGHTS CACHE] Failed to clear:", error);
+  }
+};

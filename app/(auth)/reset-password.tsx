@@ -9,6 +9,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { consumeLastDeepLink } from "@/src/utils/linking/linkingStore";
 import { setRecoveryInProgress } from "@/src/utils/auth/recoveryState";
+import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 
 const MIN_PASSWORD_LENGTH = 8;
 const APP_SCHEME = "finny";
@@ -33,6 +34,7 @@ const parseTokensFromUrl = (url: string) => {
 
 export default function ResetPasswordScreen() {
   const router = useRouter();
+  const { refreshNavigationState } = useAuthNavigation();
 
   useEffect(() => {
     logger.info("🔐 ResetPasswordScreen mounted");
@@ -59,7 +61,9 @@ export default function ResetPasswordScreen() {
     }
 
     if (password.length < MIN_PASSWORD_LENGTH) {
-      setFormError(`Password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+      setFormError(
+        `Password must be at least ${MIN_PASSWORD_LENGTH} characters`
+      );
       return false;
     }
 
@@ -72,13 +76,16 @@ export default function ResetPasswordScreen() {
     return true;
   };
 
-  const animateFade = useCallback((toValue: number) => {
-    Animated.timing(fadeAnim, {
-      toValue,
-      duration: 200,
-      useNativeDriver: true,
-    }).start();
-  }, [fadeAnim]);
+  const animateFade = useCallback(
+    (toValue: number) => {
+      Animated.timing(fadeAnim, {
+        toValue,
+        duration: 200,
+        useNativeDriver: true,
+      }).start();
+    },
+    [fadeAnim]
+  );
 
   const handleUrl = useCallback(
     async (url: string) => {
@@ -89,7 +96,10 @@ export default function ResetPasswordScreen() {
       const refreshToken = params.refresh_token as string | undefined;
 
       if (scheme && scheme !== APP_SCHEME) {
-        logger.warn("Reset link scheme mismatch", { scheme, expected: APP_SCHEME });
+        logger.warn("Reset link scheme mismatch", {
+          scheme,
+          expected: APP_SCHEME,
+        });
       }
 
       const code = params.code as string | undefined;
@@ -118,7 +128,9 @@ export default function ResetPasswordScreen() {
       }
 
       if (!accessToken || !refreshToken) {
-        logger.warn("Reset password link missing both code and tokens", { url });
+        logger.warn("Reset password link missing both code and tokens", {
+          url,
+        });
         setFormError(
           "This reset link is missing required tokens. Please request a new password reset email."
         );
@@ -212,9 +224,10 @@ export default function ResetPasswordScreen() {
     Alert.alert("Password Updated", "You're all set!", [
       {
         text: "Continue",
-        onPress: () => {
+        onPress: async () => {
           logger.info("🔐 ResetPasswordScreen navigating to app after update");
           setRecoveryInProgress(false);
+          await refreshNavigationState();
           router.replace("/");
         },
       },

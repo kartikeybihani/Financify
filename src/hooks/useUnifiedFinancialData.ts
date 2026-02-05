@@ -499,12 +499,49 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       }
     );
 
+    // Listen for investment data sync events (from investments screen or cron)
+    const investmentSubscription = DeviceEventEmitter.addListener(
+      "investmentDataSynced",
+      async () => {
+        logger.info("📈 [UNIFIED] Investment data synced event received, refreshing investment data...");
+        try {
+          // Only refresh investment data, not all financial data
+          const [balancesData, holdingsData] = await Promise.all([
+            getSnaptradeBalancesFromDB().catch(err => {
+              logger.error("❌ [UNIFIED] Failed to refresh investment balances:", err);
+              return [];
+            }),
+            getSnaptradeHoldingsFromDB().catch(err => {
+              logger.error("❌ [UNIFIED] Failed to refresh investment holdings:", err);
+              return [];
+            })
+          ]);
+          
+          setInvestmentBalances(balancesData || []);
+          setInvestmentHoldings(holdingsData || []);
+          logger.info(`✅ [UNIFIED] Investment data refreshed: ${holdingsData?.length || 0} holdings, ${balancesData?.length || 0} balances`);
+          
+          // Update cache with new investment data
+          await saveToCache({
+            accounts,
+            goals,
+            cashEntries,
+            investmentBalances: balancesData || [],
+            investmentHoldings: holdingsData || [],
+          });
+        } catch (error) {
+          logger.error("❌ [UNIFIED] Error refreshing investment data:", error);
+        }
+      }
+    );
+
     return () => {
       financialSubscription.remove();
       goalsSubscription.remove();
       authSubscription.remove();
+      investmentSubscription.remove();
     };
-  }, [fetchAllData, shouldBackgroundSync, saveLastSyncTime, isDemoMode]);
+  }, [fetchAllData, shouldBackgroundSync, saveLastSyncTime, isDemoMode, accounts, goals, cashEntries, saveToCache]);
 
   // Memoized categorized data
   const categorizedLiabilities = useMemo(

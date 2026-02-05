@@ -67,15 +67,21 @@ import {
   resetOnboardingDismissal,
   OnboardingStatus,
 } from "@/src/utils/onboarding/onboardingProgress";
-import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
+import { getUserIdSync, saveCurrentUserId } from "@/src/utils/insights/cacheUtils";
 import { loadOnboardingFromCache } from "@/src/shared/utils/onboardingCache";
+import {
+  loadFirstNameFromCache,
+  updateFirstNameInCache,
+  loadBudgetProgressFromCache,
+  BudgetProgressData,
+} from "@/src/shared/utils/homeScreenCache";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
 }
 
-// Check for unified cache synchronously before first render (like insights tab)
-// This allows instant UI without loading skeleton when cache exists
+// OPTIMIZED: Run cache checks once outside component to avoid re-running on every render
+// Check for unified cache synchronously before first render
 const checkUnifiedCacheSync = (): boolean => {
   try {
     const cacheString = AppStorage.getItemSync("unified_financial_data");
@@ -92,14 +98,12 @@ const checkUnifiedCacheSync = (): boolean => {
     const cacheAge = now - timestamp;
 
     // Cache duration is 7 days (event-based invalidation, not time-based expiry)
-    // Only expire if cache is older than 7 days (fallback safety)
     const SEVEN_DAYS = 7 * 24 * 60 * 60 * 1000;
     if (cacheAge > SEVEN_DAYS) {
       return false;
     }
 
     const cachedData = JSON.parse(cacheString);
-    // Check if we have any meaningful data
     const hasData =
       (cachedData.accounts && cachedData.accounts.length > 0) ||
       (cachedData.goals && cachedData.goals.length > 0) ||
@@ -111,14 +115,68 @@ const checkUnifiedCacheSync = (): boolean => {
   }
 };
 
+// OPTIMIZED: Cache check results computed once at module load
+// Note: userId might not be available at module load, so we also check lazily
+const INITIAL_CACHE_STATE = {
+  hasUnifiedCache: checkUnifiedCacheSync(),
+  cachedFirstName: (() => {
+    try {
+      const userId = getUserIdSync();
+      return userId ? loadFirstNameFromCache(userId) : null;
+    } catch {
+      return null;
+    }
+  })(),
+  // Cached budget - computed at module load if userId available
+  cachedBudgetProgress: (() => {
+    try {
+      const userId = getUserIdSync();
+      if (!userId) return null;
+      return loadBudgetProgressFromCache(userId);
+    } catch {
+      return null;
+    }
+  })(),
+};
+
+// Helper to get cached budget lazily (for when userId wasn't available at module load)
+const getCachedBudgetLazy = (): { budgetProgress: BudgetProgressData | null; hasBudget: boolean } | null => {
+  // If module-level cache already has it, return that
+  if (INITIAL_CACHE_STATE.cachedBudgetProgress) {
+    return INITIAL_CACHE_STATE.cachedBudgetProgress;
+  }
+  // Otherwise try to load now (userId might be available now)
+  try {
+    const userId = getUserIdSync();
+    if (!userId) return null;
+    return loadBudgetProgressFromCache(userId);
+  } catch {
+    return null;
+  }
+};
+
 export default function HomeScreen() {
   const router = useRouter();
 
-  // Check cache synchronously before first render
-  const hasInitialCache = checkUnifiedCacheSync();
-  logger.info(
-    `🏠 [HOME] Initial cache check: ${hasInitialCache ? "HIT" : "MISS"}`
+  // OPTIMIZED: Use pre-computed cache state (computed once at module load)
+  // This prevents re-running cache checks on every render
+  const hasInitialCache = INITIAL_CACHE_STATE.hasUnifiedCache;
+  const cachedFirstName = INITIAL_CACHE_STATE.cachedFirstName;
+  
+  // Load cached budget - use ref to ensure we only compute once per mount
+  const cachedBudgetRef = useRef<{ budgetProgress: BudgetProgressData | null; hasBudget: boolean } | null>(
+    getCachedBudgetLazy()
   );
+  const cachedBudgetProgress = cachedBudgetRef.current;
+  
+  // Only log once per mount, not on every render
+  const hasLoggedCacheRef = useRef(false);
+  if (!hasLoggedCacheRef.current) {
+    hasLoggedCacheRef.current = true;
+    logger.info(
+      `🏠 [HOME] Initial cache check: ${hasInitialCache ? "HIT" : "MISS"}, budget: ${cachedBudgetProgress?.hasBudget ? "HIT" : "MISS"}`
+    );
+  }
 
   // Unified financial data hook - replaces 3 separate hooks
   const {
@@ -177,7 +235,8 @@ export default function HomeScreen() {
     useState<{ name: string; id: string } | null>(null);
 
   const [userData, setUserData] = useState<any>(null);
-  const [firstName, setFirstName] = useState<string | null>(null);
+  // OPTIMIZED: Initialize firstName from cache for instant UI
+  const [firstName, setFirstName] = useState<string | null>(cachedFirstName);
 
   // Account Detail Modal state
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
@@ -486,6 +545,11 @@ export default function HomeScreen() {
       logger.info("User in home screen:", user?.email);
       setUserData(user);
 
+      // OPTIMIZED: Save userId for instant cache loading on next app open
+      if (user?.id) {
+        saveCurrentUserId(user.id);
+      }
+
       if (!user?.id) {
         logger.error("No authenticated user found");
         setAccessToken(null);
@@ -504,6 +568,8 @@ export default function HomeScreen() {
 
         if (profile?.first_name) {
           setFirstName(profile.first_name);
+          // OPTIMIZED: Cache firstName for instant UI on next app open
+          updateFirstNameInCache(user.id, profile.first_name);
         }
       } catch (error) {
         logger.error("Error fetching profile first name:", error);
@@ -949,6 +1015,7 @@ export default function HomeScreen() {
             }
             onToggleAccounts={toggleAccountsExpansion}
             isAccountsExpanded={isAccountsExpanded}
+            initialBudgetProgress={cachedBudgetProgress}
           />
 
           {/* Demo: Spent so far — tap to open Spending in Insights */}

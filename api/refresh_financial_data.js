@@ -567,12 +567,17 @@ export default async function handler(req, res) {
             // Calculate total holdings value (sum of all market_values)
             let totalHoldingsValue = 0;
             let cashEquivalentInHoldings = 0;
+            // CRITICAL: Sum day_change from holdings - this is the source of truth
+            let totalDayChangeFromHoldings = 0;
             holdings?.forEach((h) => {
               totalHoldingsValue += h.market_value || 0;
               if (isCashEq(h)) cashEquivalentInHoldings += h.market_value || 0;
+              // Sum day_change from individual holdings (calculated by Finnhub price update)
+              totalDayChangeFromHoldings += h.day_change || 0;
             });
             options?.forEach((o) => {
               totalHoldingsValue += o.market_value || 0;
+              totalDayChangeFromHoldings += o.day_change || 0;
             });
 
             // Calculate total unrealized P/L
@@ -653,60 +658,19 @@ export default async function handler(req, res) {
               previousTotalValueForStorage = previousTotalValue;
             }
 
-            // CRITICAL: Preserve day_change if total_value hasn't changed (prevents overwriting with 0 on repeated updates)
-            const EPSILON = 0.01; // Small threshold for floating point comparison
-            const existingTotalValue = balance?.total_value;
-            const isTotalValueUnchanged =
-              existingTotalValue != null &&
-              Number.isFinite(existingTotalValue) &&
-              Number.isFinite(newTotalValue) &&
-              Math.abs(newTotalValue - existingTotalValue) < EPSILON;
-
-            // Calculate day_change and day_change_percent
-            let dayChange = balance?.day_change ?? null;
-            let dayChangePercent = balance?.day_change_percent ?? null;
-
-            // Only calculate day_change if we have a previous_total_value baseline
-            if (
-              previousTotalValue != null &&
-              previousTotalValue !== undefined &&
-              newTotalValue > 0
-            ) {
-              // Only compute new day_change if total_value actually changed
-              if (isTotalValueUnchanged) {
-                // Data unchanged: preserve existing day_change values
-                dayChange = balance?.day_change ?? null;
-                dayChangePercent = balance?.day_change_percent ?? null;
-                console.log(
-                  `🔄 Total value unchanged (${newTotalValue.toFixed(
-                    2
-                  )}), preserving day_change: $${(dayChange || 0).toFixed(
-                    2
-                  )} (${(dayChangePercent || 0).toFixed(2)}%)`
-                );
-              } else {
-                // Data changed: calculate new day_change
-                dayChange = newTotalValue - previousTotalValue;
-                dayChangePercent =
-                  previousTotalValue !== 0
-                    ? (dayChange / previousTotalValue) * 100
-                    : 0;
-                console.log(
-                  `✅ Calculated day_change: $${dayChange.toFixed(
-                    2
-                  )} (${dayChangePercent.toFixed(2)}%)`
-                );
-              }
-            } else {
-              // No previous value, preserve existing or set to null
-              dayChange = balance?.day_change ?? null;
-              dayChangePercent = balance?.day_change_percent ?? null;
-              console.log(
-                `⚠️ No previous value for day_change calculation. Using existing: $${
-                  dayChange || 0
-                }`
-              );
-            }
+            // CRITICAL: Use day_change summed from holdings - this is the source of truth
+            // Each holding's day_change is calculated by Finnhub price update based on previous_market_value
+            // Balance day_change = SUM(holdings.day_change) - this ensures consistency
+            let dayChange = totalDayChangeFromHoldings;
+            let dayChangePercent = newTotalValue > 0 
+              ? (dayChange / newTotalValue) * 100 
+              : 0;
+            
+            console.log(
+              `✅ Balance day_change computed from holdings: $${dayChange.toFixed(
+                2
+              )} (${dayChangePercent.toFixed(2)}%) from ${holdings?.length || 0} holdings`
+            );
 
             // Calculate total_change_percent
             const totalChangePercent =
@@ -1059,16 +1023,17 @@ async function runBiggestMoverDaily(res, options = {}) {
     // Recalculate investment_balances for SnapTrade accounts that were updated
     for (const acc of updatesByAccount.values()) {
       try {
+        // CRITICAL: Include day_change to sum from holdings - this is the source of truth
         const { data: holdings } = await supabase
           .from("investment_holdings")
-          .select("market_value, symbol, security_type, description")
+          .select("market_value, symbol, security_type, description, day_change")
           .eq("user_id", acc.user_id)
           .eq("snaptrade_user_id", acc.snaptrade_user_id)
           .eq("account_id", acc.account_id)
           .eq("is_active", true);
         const { data: options } = await supabase
           .from("investment_options")
-          .select("market_value")
+          .select("market_value, day_change")
           .eq("user_id", acc.user_id)
           .eq("snaptrade_user_id", acc.snaptrade_user_id)
           .eq("account_id", acc.account_id)
@@ -1080,11 +1045,17 @@ async function runBiggestMoverDaily(res, options = {}) {
           (h.description || "").toLowerCase().includes("cash");
         let totalHoldings = 0;
         let cashInHoldings = 0;
+        // CRITICAL: Sum day_change from holdings - this is the source of truth for balance day_change
+        let totalDayChangeFromHoldings = 0;
         holdings?.forEach((h) => {
           totalHoldings += h.market_value || 0;
           if (isCashEq(h)) cashInHoldings += h.market_value || 0;
+          totalDayChangeFromHoldings += h.day_change || 0;
         });
-        options?.forEach((o) => (totalHoldings += o.market_value || 0));
+        options?.forEach((o) => {
+          totalHoldings += o.market_value || 0;
+          totalDayChangeFromHoldings += o.day_change || 0;
+        });
         const { data: balance } = await supabase
           .from("investment_balances")
           .select("total_value, cash, previous_total_value, last_updated")
@@ -1099,15 +1070,16 @@ async function runBiggestMoverDaily(res, options = {}) {
           (parseFloat(balance.cash) || 0) - cashInHoldings
         );
         const newTotal = totalHoldings + cash;
+        // CRITICAL: day_change is computed from SUM(holdings.day_change), not from total_value diff
+        const dayCh = totalDayChangeFromHoldings;
+        const dayChPct = newTotal > 0 ? (dayCh / newTotal) * 100 : 0;
+        // Preserve previous_total_value baseline (don't overwrite with current)
         const sameDay =
           balance.last_updated && isSameCalendarDayUTC(balance.last_updated);
         const prev =
           sameDay && balance.previous_total_value != null
             ? balance.previous_total_value
             : balance.total_value ?? newTotal;
-        const dayCh = prev != null ? newTotal - prev : null;
-        const dayChPct =
-          prev != null && prev !== 0 ? (dayCh / prev) * 100 : null;
         await supabase
           .from("investment_balances")
           .update({

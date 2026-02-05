@@ -4,15 +4,45 @@ import logger from "@/src/utils/core/logger";
 import { Transaction } from "@/src/types/plaid";
 import { InitialCache } from "@/src/types/insights";
 
+// Dedicated key for storing current userId - simple and reliable
+const CURRENT_USER_ID_KEY = "financify_current_user_id";
+
+/**
+ * Save the current userId for instant cache loading on next app open
+ * Call this whenever user is authenticated
+ */
+export const saveCurrentUserId = (userId: string): void => {
+  try {
+    AppStorage.setItemSync(CURRENT_USER_ID_KEY, userId);
+  } catch (error) {
+    // Silently fail
+  }
+};
+
+/**
+ * Clear the current userId on logout
+ */
+export const clearCurrentUserId = (): void => {
+  try {
+    AppStorage.removeItemSync(CURRENT_USER_ID_KEY);
+  } catch (error) {
+    // Silently fail
+  }
+};
+
 /**
  * Try to get userId synchronously from session storage for instant cache loading
  * This allows us to load cache before first render, eliminating loading skeleton
  */
 export const getUserIdSync = (): string | null => {
   try {
-    // Try to get userId from Supabase session storage (Supabase stores it)
-    // Check common Supabase session storage keys
-    // Get Supabase URL from environment variables
+    // PRIORITY 1: Check our dedicated userId storage (most reliable)
+    const savedUserId = AppStorage.getItemSync(CURRENT_USER_ID_KEY);
+    if (savedUserId) {
+      return savedUserId;
+    }
+
+    // PRIORITY 2: Try Supabase session storage
     const supabaseUrl =
       process.env.EXPO_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL;
     if (supabaseUrl) {
@@ -23,8 +53,15 @@ export const getUserIdSync = (): string | null => {
         if (sessionData) {
           try {
             const parsed = JSON.parse(sessionData);
-            if (parsed?.currentSession?.user?.id) {
-              return parsed.currentSession.user.id;
+            // Try multiple possible paths for user ID
+            const userId = 
+              parsed?.currentSession?.user?.id ||
+              parsed?.user?.id ||
+              parsed?.session?.user?.id;
+            if (userId) {
+              // Save it for next time
+              saveCurrentUserId(userId);
+              return userId;
             }
           } catch (e) {
             // Ignore parse errors
@@ -33,9 +70,21 @@ export const getUserIdSync = (): string | null => {
       }
     }
 
-    // Fallback: Try to find userId from any cached transaction data
-    // This is a best-effort approach - we'll validate later
+    // PRIORITY 3: Try to find userId from any cached data
     const allKeys = AppStorage.getAllKeysSync();
+    
+    // Try home screen cache first (most likely to have userId)
+    const homeKey = allKeys.find((key) => key.startsWith("home_screen_cache_"));
+    if (homeKey) {
+      // Extract userId from key: "home_screen_cache_{userId}"
+      const userId = homeKey.replace("home_screen_cache_", "");
+      if (userId && userId.length > 10) {
+        saveCurrentUserId(userId);
+        return userId;
+      }
+    }
+
+    // Try transaction cache
     const transactionKey = allKeys.find((key) =>
       key.includes(CACHE_CONFIG.KEYS.TRANSACTIONS),
     );
@@ -45,6 +94,7 @@ export const getUserIdSync = (): string | null => {
         try {
           const parsed = JSON.parse(cachedData);
           if (parsed?.userId) {
+            saveCurrentUserId(parsed.userId);
             return parsed.userId;
           }
         } catch (e) {

@@ -16,6 +16,7 @@ import {
   startTokenRefresh,
 } from "@/src/utils/auth/authToken";
 import { isRecoveryInProgress } from "@/src/utils/auth/recoveryState";
+import { saveCurrentUserId, clearCurrentUserId } from "@/src/utils/insights/cacheUtils";
 
 // Constants
 const PROFILE_FETCH_TIMEOUT_MS = 8000; // 8 seconds timeout for profile fetch
@@ -27,9 +28,10 @@ const NAV_STATE_CACHE_KEY = "cached_nav_state";
 const NAV_STATE_CACHE_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000; // 7 days
 const SESSION_FROM_LINK_WAIT_MS = 1000; // Give email-confirm link a moment to establish session before showing welcome
 
-// Navigation states - the 4 main stages
+// Navigation states - the 5 main stages
 export enum NavigationState {
   PRE_SIGNUP = "pre_signup",
+  RECOVERY = "recovery", // e.g. password reset flow; stay in auth stack
   ONBOARDING = "onboarding",
   ONBOARDING_FINAL = "onboarding_final",
   AUTHENTICATED = "authenticated",
@@ -397,6 +399,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       if (!currentSession?.user) {
         profileCache.current = null;
         profileCacheUserId.current = null;
+        clearCurrentUserId(); // Clear userId cache on logout
         setNavigationState(NavigationState.PRE_SIGNUP);
         setOnboardingStep(0);
         setOnboardingCompleted(false);
@@ -404,16 +407,11 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         return;
       }
 
+      // CRITICAL: Save userId immediately for instant cache loading on next app open
+      saveCurrentUserId(currentSession.user.id);
+
       if (isRecoveryInProgress()) {
-        const uid = currentSession.user.id;
-        const cachedProfile =
-          profileCache.current && profileCacheUserId.current === uid
-            ? profileCache.current
-            : null;
-        const newState = determineNavigationState(true, cachedProfile);
-        setNavigationState(newState);
-        setOnboardingStep(cachedProfile?.onboarding_step || 0);
-        setOnboardingCompleted(cachedProfile?.onboarding_completed || false);
+        setNavigationState(NavigationState.RECOVERY);
         return;
       }
 
@@ -735,7 +733,10 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
           } = await supabase.auth.getUser();
 
           if (error || !user) {
-            logger.error("Invalid session, signing out:", error?.message ?? "no user");
+            logger.error(
+              "Invalid session, signing out:",
+              error?.message ?? "no user"
+            );
             await supabase.auth.signOut();
             await clearAllCache();
             setSession(null);
@@ -868,11 +869,13 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
       if (event === "SIGNED_OUT") {
         invalidateTokenCache();
+        clearCurrentUserId(); // Clear userId for instant cache
         await clearAllCache();
         logger.info("🚪 Signed out and cleared cache");
       }
 
       if (event === "SIGNED_IN" && newSession?.user) {
+        saveCurrentUserId(newSession.user.id); // Save userId for instant cache on next app open
         logger.info(`User logged in: ${newSession.user.email}`);
       }
     });

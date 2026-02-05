@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 import AppStorage from '@/src/utils/storage/storage';
 import * as Device from 'expo-device';
 import { supabase } from '@/src/lib/supabase/supabase';
+import { router } from 'expo-router';
 
 // Configure notification behavior
 Notifications.setNotificationHandler({
@@ -262,7 +263,37 @@ export class NotificationService {
     // Listen for user interactions with notifications
     this.responseListener = Notifications.addNotificationResponseReceivedListener(response => {
       console.log('Notification response:', response);
-      const { type } = response.notification.request.content.data as { type: string };
+      const data = response.notification.request.content.data as { 
+        type: string;
+        navigation_target?: string;
+        pattern_type?: string;
+      };
+      const { type, navigation_target, pattern_type } = data;
+      
+      // Handle navigation target if specified (e.g., biggest_mover -> investments)
+      if (navigation_target) {
+        console.log('Navigating to:', navigation_target);
+        switch (navigation_target) {
+          case 'insights_investments':
+            // Navigate to insights tab with investments section
+            router.push('/(tabs)/insights?section=investments');
+            return;
+          case 'insights_spending':
+            router.push('/(tabs)/insights?section=spending');
+            return;
+          case 'insights_transactions':
+            router.push('/(tabs)/insights?section=transactions');
+            return;
+          case 'insights_recurring':
+            router.push('/(tabs)/insights?section=recurring');
+            return;
+          case 'insights_budget':
+            router.push('/(tabs)/insights?section=budget');
+            return;
+          default:
+            console.log('Unknown navigation target:', navigation_target);
+        }
+      }
       
       // Handle different notification types
       switch (type) {
@@ -275,6 +306,10 @@ export class NotificationService {
           break;
         case 'motivational':
           console.log('User tapped motivational notification');
+          break;
+        case 'proactive':
+          // Handle proactive notifications (spending patterns, etc.)
+          console.log('User tapped proactive notification, pattern:', pattern_type);
           break;
       }
     });

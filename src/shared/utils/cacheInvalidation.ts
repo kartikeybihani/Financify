@@ -10,6 +10,8 @@ import { clearBudgetCache } from "./budgetCache";
 import { clearInvestmentCache } from "./investmentCache";
 import { clearRecurringCache } from "./recurringCache";
 import { clearOnboardingCache } from "./onboardingCache";
+import { clearHomeScreenCache } from "./homeScreenCache";
+import { clearInsightsCache } from "@/src/hooks/useHomeInsights";
 
 /**
  * Invalidate unified financial data cache
@@ -160,6 +162,20 @@ export const invalidateOnboardingCache = async (userId: string): Promise<void> =
 };
 
 /**
+ * Invalidate home screen cache (firstName, budgetProgress)
+ * Call when: profile updated, budget changed, transactions synced
+ */
+export const invalidateHomeScreenCache = async (userId: string): Promise<void> => {
+  try {
+    clearHomeScreenCache(userId);
+    clearInsightsCache(userId);
+    logger.info(`🗑️ [CACHE] Invalidated home screen cache for user: ${userId.substring(0, 8)}`);
+  } catch (error) {
+    logger.error("❌ [CACHE] Failed to invalidate home screen cache:", error);
+  }
+};
+
+/**
  * Invalidate all caches for a user (use on logout or data reset)
  */
 export const invalidateAllCaches = async (userId: string): Promise<void> => {
@@ -172,6 +188,7 @@ export const invalidateAllCaches = async (userId: string): Promise<void> => {
       invalidateRecurringCache(userId),
       invalidateGoalsCache(userId),
       invalidateOnboardingCache(userId),
+      invalidateHomeScreenCache(userId),
     ]);
     logger.info(`🗑️ [CACHE] Invalidated all caches for user: ${userId.substring(0, 8)}`);
   } catch (error) {
@@ -189,5 +206,6 @@ export default {
   invalidateRecurringCache,
   invalidateGoalsCache,
   invalidateOnboardingCache,
+  invalidateHomeScreenCache,
   invalidateAllCaches,
 };

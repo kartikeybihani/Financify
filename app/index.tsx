@@ -23,6 +23,9 @@ export default function Index() {
     case NavigationState.PRE_SIGNUP:
       href = "/(auth)/welcome";
       break;
+    case NavigationState.RECOVERY:
+      href = "/(auth)/reset-password";
+      break;
     case NavigationState.ONBOARDING:
       if (onboardingStep === 1) href = "/onboarding-profile";
       else if (onboardingStep === 2) href = "/onboarding-intent1";

@@ -11,6 +11,7 @@ import {
   Dimensions,
   TouchableWithoutFeedback,
   RefreshControl,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, AntDesign, FontAwesome6 } from "@expo/vector-icons";
@@ -189,8 +190,9 @@ export default function InvestmentsScreen({
     null
   );
   const [holdingsSortBy, setHoldingsSortBy] =
-    useState<string>("total_gain_loss");
+    useState<string>("today_gain_loss"); // Default to today, will fallback to total if no data
   const [showSortModal, setShowSortModal] = useState(false);
+  const hasSetInitialSort = useRef(false);
   const [connectionStatus, setConnectionStatus] = useState<{
     isDisabled: boolean;
     connectionId: string | null;
@@ -427,6 +429,9 @@ export default function InvestmentsScreen({
                   const wasAutoSync = true;
                   await loadFromDbWithoutAutoSync();
                   logger.info("✅ Auto-sync complete, data reloaded");
+                  
+                  // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
+                  DeviceEventEmitter.emit("investmentDataSynced");
                 }
               } catch (error) {
                 // Silently handle errors - don't show to user
@@ -1063,9 +1068,16 @@ export default function InvestmentsScreen({
         }
       }
 
+      // Step 7: Final reload to pick up Finnhub price updates
+      logger.info("🔄 Final data reload after stock price update...");
+      await loadFromDbWithoutAutoSync();
+      
       logger.info(
         "✅ Investment refresh completed successfully - data synced and reloaded"
       );
+      
+      // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
+      DeviceEventEmitter.emit("investmentDataSynced");
     } catch (err: any) {
       // Check if this is a 402 disabled connection error
       if (
@@ -1205,6 +1217,9 @@ export default function InvestmentsScreen({
           }
 
           logger.info("✅ Pull-to-refresh completed - data synced from API");
+          
+          // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
+          DeviceEventEmitter.emit("investmentDataSynced");
         } catch (err: any) {
           // Check if this is a 402 disabled connection error
           if (
@@ -1303,6 +1318,9 @@ export default function InvestmentsScreen({
         logger.info(
           "✅ Pull-to-refresh completed - balances recalculated and data reloaded"
         );
+        
+        // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
+        DeviceEventEmitter.emit("investmentDataSynced");
       }
     } catch (error) {
       logger.error("❌ Error during pull-to-refresh:", error);
@@ -1454,6 +1472,9 @@ export default function InvestmentsScreen({
                 logger.info(
                   "✅ Reconnection complete! Data synced successfully."
                 );
+                
+                // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
+                DeviceEventEmitter.emit("investmentDataSynced");
                 setSyncError(null);
               } catch (syncErr) {
                 logger.warn(
@@ -1807,6 +1828,27 @@ export default function InvestmentsScreen({
   };
 
   const todayPerformance = calculateTodayPerformance();
+
+  // Set initial sort based on whether today's data is available
+  // Default to "today_gain_loss" but fallback to "total_gain_loss" if today's value is 0 or null
+  useEffect(() => {
+    if (hasSetInitialSort.current) return;
+    if (isLoading) return;
+    
+    // Check if we have valid today's performance data
+    const hasTodayData = 
+      todayPerformance.amount !== 0 && 
+      todayPerformance.amount !== null && 
+      !isNaN(todayPerformance.amount);
+    
+    if (!hasTodayData) {
+      // Fall back to total gain/loss if today's data is 0 or unavailable
+      setHoldingsSortBy("total_gain_loss");
+    }
+    // else keep it at "today_gain_loss" (the default)
+    
+    hasSetInitialSort.current = true;
+  }, [isLoading, todayPerformance.amount]);
 
   const getBrokerageLogoUrl = (brokerageName: string): string => {
     // Map brokerage names to their domains
