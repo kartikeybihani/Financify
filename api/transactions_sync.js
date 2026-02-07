@@ -1436,6 +1436,45 @@ export default async function handler(req, res) {
       cursor = data.next_cursor;
     }
 
+    // --- Pending → Posted metadata merge (Plaid uses delete + add, matched via pending_transaction_id) ---
+    // Fetch metadata from removed (pending) transactions BEFORE processing, so we can copy user state
+    // (is_reviewed, category_id, etc.) to the new posted transaction when it arrives in added.
+    const removedMetadata = new Map(); // plaid_transaction_id -> { is_reviewed, category_id, new_category, linked_goal_id, if_recurring }
+    if (removed.length > 0) {
+      const removedIds = removed.map((r) => r.transaction_id);
+      const { data: removedTxs, error: removedFetchErr } = await supabase
+        .from("transactions")
+        .select(
+          "plaid_transaction_id, is_reviewed, category_id, new_category, linked_goal_id, if_recurring, recurring_stream_id, amount, account_id, pending"
+        )
+        .eq("user_id", userId)
+        .in("plaid_transaction_id", removedIds);
+
+      if (removedFetchErr) {
+        console.error(
+          "⚠️ Failed to fetch removed transactions for pending→posted merge:",
+          removedFetchErr
+        );
+      } else if (removedTxs) {
+        removedTxs.forEach((tx) => {
+          removedMetadata.set(tx.plaid_transaction_id, {
+            is_reviewed: tx.is_reviewed ?? false,
+            category_id: tx.category_id ?? null,
+            new_category: tx.new_category ?? null,
+            linked_goal_id: tx.linked_goal_id ?? null,
+            // Only copy if_recurring when user manually set it (not from stream)
+            if_recurring:
+              !tx.recurring_stream_id && tx.if_recurring === "yes"
+                ? "yes"
+                : null,
+          });
+        });
+        console.log(
+          `📋 Fetched metadata for ${removedMetadata.size} removed transactions for pending→posted merge`
+        );
+      }
+    }
+
     // 4) Fetch user's categories to build name -> category_id map for ID-based linking
     const { data: userCategories, error: categoriesError } = await supabase
       .from("categories")
@@ -1735,7 +1774,7 @@ export default async function handler(req, res) {
           );
         }
 
-        return {
+        const row = {
           user_id: userId,
           account_id: txn.account_id,
           plaid_transaction_id: txn.transaction_id,
@@ -1743,7 +1782,6 @@ export default async function handler(req, res) {
           amount: txn.amount,
           iso_currency_code: txn.iso_currency_code || null,
           name: txn.name || null,
-          is_reviewed: false, // New transactions default to unreviewed
           merchant_name: txn.merchant_name || null,
           category: category, // Keep original Plaid category (detailed or primary)
           top_category: mappedCategory.top, // Mapped top category
@@ -1755,8 +1793,22 @@ export default async function handler(req, res) {
           if_recurring: ifRecurring, // Set recurring flag based on stream membership
           new_category: newCategory, // Only set for INTERNAL_TRANSFER or stream categories (legacy support)
           category_id: categoryId, // Set category_id for ID-based linking (preferred method)
-          is_reviewed: false, // New transactions default to unreviewed
+          is_reviewed: false, // Default; overwritten below when pending→posted merge applies
+          linked_goal_id: null, // Default; overwritten below when pending→posted merge applies
         };
+
+        // Pending → Posted merge: copy user metadata from removed (pending) to new posted transaction
+        const pendingId = txn.pending_transaction_id ?? null;
+        if (pendingId && removedMetadata.has(pendingId)) {
+          const meta = removedMetadata.get(pendingId);
+          row.is_reviewed = meta.is_reviewed;
+          if (meta.category_id != null) row.category_id = meta.category_id;
+          if (meta.new_category != null) row.new_category = meta.new_category;
+          if (meta.linked_goal_id != null) row.linked_goal_id = meta.linked_goal_id;
+          if (meta.if_recurring === "yes") row.if_recurring = "yes";
+        }
+
+        return row;
       });
 
       // CRITICAL: Validate account_ids exist before processing transactions
@@ -2019,8 +2071,8 @@ export default async function handler(req, res) {
         if (isNewTransaction) {
           // New transaction - keep all fields including new_category and if_recurring from stream
           // No existing user choices to protect
-          // Set is_reviewed to false for new transactions
-          updatedRow.is_reviewed = false;
+          // Keep is_reviewed from pending→posted merge if it was set, otherwise default to false
+          // (row.is_reviewed is already set during row mapping, either from merge or default false)
           return updatedRow;
         }
 

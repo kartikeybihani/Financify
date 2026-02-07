@@ -3,7 +3,7 @@ import { ConfigContext, ExpoConfig } from 'expo/config';
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
   name: "Finny",
-  slug: "finny",
+  slug: "financify",
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/appicon.png",
@@ -22,7 +22,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ...config.ios,
     supportsTablet: true,
     usesAppleSignIn: true,
-    bundleIdentifier: "com.kartikey08.financify",
+    bundleIdentifier: "com.deltatechnologies.financify",
     infoPlist: {
       "ITSAppUsesNonExemptEncryption": false,
       "NSAppTransportSecurity": {
@@ -33,7 +33,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     ...config.android,
-    package: "com.kartikey08.financify",
+    package: "com.deltatechnologies.financify",
     adaptiveIcon: {
       foregroundImage: "./assets/images/adaptive-icon.png",
       backgroundColor: "#ffffff"
