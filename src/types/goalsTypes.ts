@@ -12,6 +12,9 @@ export interface GoalsProps {
   onRefreshStart?: () => void;
   onRefreshEnd?: () => void;
   onGoalAdded?: () => Promise<void>;
+  /** When true, show blurred teaser and upgrade CTA; hide Add Goal; goal taps open paywall. */
+  isPremiumLocked?: boolean;
+  onUpgradePress?: () => void;
 }
 
 export interface GoalsState {

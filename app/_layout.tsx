@@ -16,6 +16,8 @@ import AuthNavigationProvider, {
   useAuthNavigation,
 } from "@/src/contexts/AuthNavigationContext";
 import { DemoProvider } from "@/src/contexts/DemoContext";
+import { SubscriptionProvider, useSubscription } from "@/src/contexts/SubscriptionContext";
+import PaywallModal from "./(auth)/paywall";
 import { runStorageMigrationV2 } from "@/src/utils/core/migrate";
 import { runCacheMigration } from "@/src/shared/utils/cacheMigration";
 import logger from "@/src/utils/core/logger";
@@ -149,23 +151,33 @@ export default function RootLayout() {
 
   if (!loaded) return null;
 
+  function PaywallGate() {
+    const { paywallVisible, hidePaywall } = useSubscription();
+    return (
+      <PaywallModal visible={paywallVisible} onClose={hidePaywall} />
+    );
+  }
+
   // Render app structure first, then wrap with PostHog after bridge is ready
   const appContent = (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <AuthNavigationProvider>
         <DemoProvider>
-          {postHogReady && <PostHogScreenTracker />}
-          <NavigationReadyTracker onReady={() => setNavigationReady(true)} />
-          <ActionSheetProvider>
-            <>
-              <RootLayoutNav />
-              <StatusBar
-                style="light"
-                backgroundColor="transparent"
-                translucent
-              />
-            </>
-          </ActionSheetProvider>
+          <SubscriptionProvider>
+            {postHogReady && <PostHogScreenTracker />}
+            <NavigationReadyTracker onReady={() => setNavigationReady(true)} />
+            <ActionSheetProvider>
+              <>
+                <RootLayoutNav />
+                <PaywallGate />
+                <StatusBar
+                  style="light"
+                  backgroundColor="transparent"
+                  translucent
+                />
+              </>
+            </ActionSheetProvider>
+          </SubscriptionProvider>
         </DemoProvider>
       </AuthNavigationProvider>
     </GestureHandlerRootView>

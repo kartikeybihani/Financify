@@ -40,6 +40,8 @@ import AppStorage from "@/src/utils/storage/storage";
 import CleanChatHeader from "@/src/components/chat/CleanChatHeader";
 import DemoBanner from "@/src/components/demo/DemoBanner";
 import { useDemoMode } from "@/src/contexts/DemoContext";
+import { useSubscription } from "@/src/contexts/SubscriptionContext";
+import { useFreeMessageLimit } from "@/src/hooks/useFreeMessageLimit";
 import logger from "@/src/utils/core/logger";
 
 interface Suggestion {
@@ -66,6 +68,9 @@ const responsiveHeight = (percentage: number) =>
 function ChatScreenContent() {
   const insets = useSafeAreaInsets();
   const { isDemoMode } = useDemoMode();
+  const { isPremium, showPaywall } = useSubscription();
+  const [userId, setUserId] = useState<string | null>(null);
+  const { limitReached, incrementCount } = useFreeMessageLimit(userId);
   const router = useRouter();
   // Safely get PostHog instance - won't crash if PostHog is unavailable
   let posthog;
@@ -88,7 +93,7 @@ function ChatScreenContent() {
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [reportedMessageId, setReportedMessageId] = useState<string | null>(
-    null
+    null,
   );
   const [showFeedbackNotification, setShowFeedbackNotification] =
     useState(false);
@@ -109,13 +114,13 @@ function ChatScreenContent() {
       "keyboardDidShow",
       () => {
         setIsKeyboardOpen(true);
-      }
+      },
     );
     const keyboardDidHideListener = Keyboard.addListener(
       "keyboardDidHide",
       () => {
         setIsKeyboardOpen(false);
-      }
+      },
     );
 
     return () => {
@@ -136,7 +141,7 @@ function ChatScreenContent() {
     updateUserName,
   } = useChatContext();
 
-  // Fetch user's first name and update welcome message
+  // Fetch user's first name and update welcome message; keep userId for free message limit
   useEffect(() => {
     const fetchUserName = async () => {
       try {
@@ -144,6 +149,7 @@ function ChatScreenContent() {
           data: { user },
         } = await supabase.auth.getUser();
         if (user?.id) {
+          setUserId(user.id);
           const { data: profile } = await supabase
             .from("profiles")
             .select("first_name")
@@ -153,6 +159,8 @@ function ChatScreenContent() {
           if (profile?.first_name) {
             updateUserName(profile.first_name);
           }
+        } else {
+          setUserId(null);
         }
       } catch (error) {
         logger.debug("Could not fetch user first name:", error);
@@ -196,7 +204,7 @@ function ChatScreenContent() {
       })();
 
       return () => clearTimeout(timer);
-    }, [handleUserMessage])
+    }, [handleUserMessage]),
   );
 
   const [suggestions] = useState<Suggestion[]>(() => {
@@ -352,22 +360,22 @@ function ChatScreenContent() {
     const startTime = Date.now();
     try {
       logger.debug(
-        `🚀 [CONTEXT_PREBUILD] [${callId}] Starting context pre-building...`
+        `🚀 [CONTEXT_PREBUILD] [${callId}] Starting context pre-building...`,
       );
 
       logger.debug(
-        `🚀 [CONTEXT_PREBUILD] [${callId}] Getting fresh access token (skipping getUser() to avoid hangs)...`
+        `🚀 [CONTEXT_PREBUILD] [${callId}] Getting fresh access token (skipping getUser() to avoid hangs)...`,
       );
       const tokenStartTime = Date.now();
       const accessToken = await getFreshAccessToken();
       const tokenDuration = Date.now() - tokenStartTime;
       logger.debug(
-        `🚀 [CONTEXT_PREBUILD] [${callId}] getFreshAccessToken() completed in ${tokenDuration}ms - hasToken: ${!!accessToken}`
+        `🚀 [CONTEXT_PREBUILD] [${callId}] getFreshAccessToken() completed in ${tokenDuration}ms - hasToken: ${!!accessToken}`,
       );
 
       if (!accessToken) {
         logger.warn(
-          `⚠️ [CONTEXT_PREBUILD] [${callId}] No access token, skipping pre-build`
+          `⚠️ [CONTEXT_PREBUILD] [${callId}] No access token, skipping pre-build`,
         );
         return;
       }
@@ -377,7 +385,7 @@ function ChatScreenContent() {
         "https://financify-rose.vercel.app";
 
       logger.debug(
-        `🚀 [CONTEXT_PREBUILD] [${callId}] Making API call to ${BASE_URL}/api/finny...`
+        `🚀 [CONTEXT_PREBUILD] [${callId}] Making API call to ${BASE_URL}/api/finny...`,
       );
       const apiStartTime = Date.now();
       authenticatedFetch(`${BASE_URL}/api/finny`, {
@@ -393,11 +401,11 @@ function ChatScreenContent() {
             const result = await response.json();
             logger.debug(
               `✅ [CONTEXT_PREBUILD] [${callId}] Context pre-built successfully in ${apiDuration}ms (total: ${totalDuration}ms):`,
-              result
+              result,
             );
           } else {
             logger.warn(
-              `⚠️ [CONTEXT_PREBUILD] [${callId}] Pre-build failed in ${apiDuration}ms (total: ${totalDuration}ms), status: ${response.status}, will fallback to on-demand`
+              `⚠️ [CONTEXT_PREBUILD] [${callId}] Pre-build failed in ${apiDuration}ms (total: ${totalDuration}ms), status: ${response.status}, will fallback to on-demand`,
             );
           }
         })
@@ -406,14 +414,14 @@ function ChatScreenContent() {
           const totalDuration = Date.now() - startTime;
           logger.warn(
             `⚠️ [CONTEXT_PREBUILD] [${callId}] Pre-build error after ${apiDuration}ms (total: ${totalDuration}ms):`,
-            error
+            error,
           );
         });
     } catch (error) {
       const totalDuration = Date.now() - startTime;
       logger.warn(
         `⚠️ [CONTEXT_PREBUILD] [${callId}] Pre-build setup error after ${totalDuration}ms:`,
-        error
+        error,
       );
     }
   };
@@ -422,6 +430,12 @@ function ChatScreenContent() {
     const messageText = nudgeText || userInput;
 
     if (!messageText.trim()) {
+      return;
+    }
+
+    // Free tier: 5 messages per day
+    if (!isPremium && limitReached()) {
+      showPaywall();
       return;
     }
 
@@ -436,6 +450,10 @@ function ChatScreenContent() {
       timeZone: "America/Los_Angeles",
     });
     logger.debug(`📤 Message sent at: ${mstTime} MST`);
+
+    if (!isPremium) {
+      incrementCount();
+    }
 
     pushChat("user", messageText);
     Keyboard.dismiss();
@@ -478,7 +496,7 @@ function ChatScreenContent() {
         }).start();
       }
     },
-    [showScrollButton, scrollButtonAnimation]
+    [showScrollButton, scrollButtonAnimation],
   );
 
   const onContentSizeChange = useCallback((w: number, h: number) => {
@@ -525,13 +543,13 @@ function ChatScreenContent() {
       const parts = chatMessages
         .filter(
           (m) =>
-            m.sender === "finny" && normalizeFinnyFeedbackId(m.id) === baseId
+            m.sender === "finny" && normalizeFinnyFeedbackId(m.id) === baseId,
         )
         .map((m) => m.text)
         .filter((t) => typeof t === "string" && t.trim().length > 0);
       return parts.join("\n\n");
     },
-    [chatMessages, normalizeFinnyFeedbackId]
+    [chatMessages, normalizeFinnyFeedbackId],
   );
 
   // Handle thumb up
@@ -579,7 +597,7 @@ function ChatScreenContent() {
       currentSessionId,
       normalizeFinnyFeedbackId,
       getGroupedFinnyContent,
-    ]
+    ],
   );
 
   // Handle thumb down
@@ -616,7 +634,7 @@ function ChatScreenContent() {
       if (action === "cancel" || action === "cancel_goal") {
         pushChat(
           "finny",
-          "No worries! Let me know if you have any other questions. 😊"
+          "No worries! Let me know if you have any other questions. 😊",
         );
         return;
       }
@@ -663,7 +681,7 @@ function ChatScreenContent() {
       setIsTyping,
       setShowStockTickerModal,
       setStockTickerDraft,
-    ]
+    ],
   );
 
   // Optimized FlatList render item function
@@ -714,7 +732,7 @@ function ChatScreenContent() {
       handleMessageAction,
       handleThumbUp,
       handleThumbDown,
-    ]
+    ],
   );
 
   return (
@@ -879,9 +897,9 @@ function ChatScreenContent() {
                     const nextHeight = Math.min(
                       Math.max(
                         event.nativeEvent.contentSize.height,
-                        minInputHeight
+                        minInputHeight,
                       ),
-                      maxInputHeight
+                      maxInputHeight,
                     );
                     setInputHeight(nextHeight);
                   }}
@@ -969,7 +987,7 @@ function ChatScreenContent() {
               ? (() => {
                   // Find the user's message that prompted this Finny response
                   const messageIndex = chatMessages.findIndex(
-                    (msg) => msg.id === reportedMessageId
+                    (msg) => msg.id === reportedMessageId,
                   );
                   if (messageIndex > 0) {
                     // Look backwards for the last user message

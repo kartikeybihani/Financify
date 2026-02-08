@@ -18,7 +18,9 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import Goals from "@/src/components/goals/Goals";
 import DemoBanner from "@/src/components/demo/DemoBanner";
 import { useDemoMode } from "@/src/contexts/DemoContext";
+import { useSubscription } from "@/src/contexts/SubscriptionContext";
 import { useGoals } from "@/src/hooks/useGoals";
+import { demoGoals } from "@/src/data/demo/demoData";
 import { notificationService } from "@/src/utils/core/notificationService";
 import CleanGoalsHeader from "@/src/components/goals/CleanGoalsHeader";
 import logger from "@/src/utils/core/logger";
@@ -106,17 +108,21 @@ const styles = StyleSheet.create({
 
 export default function GoalsScreen() {
   const { isDemoMode } = useDemoMode();
+  const { isPremium, showPaywall } = useSubscription();
   const insets = useSafeAreaInsets();
   const { goalsData, loading, deleteGoal, updateGoal, refreshGoals } = useGoals(
-    () => {}
+    () => {},
   );
+  const displayGoals = isPremium ? goalsData : demoGoals;
+  const isPremiumLocked = !isPremium;
   // Use only initial-load header spinner; pull-to-refresh spinner is handled inside Goals via RefreshControl
   const [hasInitialData, setHasInitialData] = useState(false);
   const [isTestingNotification, setIsTestingNotification] = useState(false);
+  const prevPremiumRef = React.useRef(isPremium);
   const goalsAnimations = React.useRef<Animated.Value[]>(
     Array(10)
       .fill(0)
-      .map(() => new Animated.Value(0))
+      .map(() => new Animated.Value(0)),
   ).current;
 
   React.useEffect(() => {
@@ -135,6 +141,19 @@ export default function GoalsScreen() {
       setHasInitialData(true);
     }
   }, [goalsData]);
+
+  // Refresh goals when user upgrades to premium (only on transition from false to true)
+  React.useEffect(() => {
+    const wasPremium = prevPremiumRef.current;
+    const isNowPremium = isPremium && !isDemoMode;
+    
+    if (!wasPremium && isNowPremium) {
+      logger.info("🔄 Premium unlocked - refreshing goals");
+      refreshGoals();
+    }
+    
+    prevPremiumRef.current = isPremium;
+  }, [isPremium, isDemoMode]);
 
   const handleTestNotification = async () => {
     try {
@@ -191,11 +210,13 @@ export default function GoalsScreen() {
 
       <View style={styles.contentContainer}>
         <Goals
-          goalsData={goalsData}
+          goalsData={displayGoals}
           goalsAnimations={goalsAnimations}
           deleteGoal={deleteGoal}
           updateGoal={updateGoal}
           refreshGoals={refreshGoals}
+          isPremiumLocked={isPremiumLocked}
+          onUpgradePress={showPaywall}
           // Refresh control manages its own spinner; avoid duplicating header loader
         />
       </View>

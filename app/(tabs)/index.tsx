@@ -12,6 +12,7 @@ import {
   InteractionManager,
   Animated,
 } from "react-native";
+import { PremiumLockOverlay } from "@/src/components/subscription/PremiumLockOverlay";
 import {
   SafeAreaView,
   useSafeAreaInsets,
@@ -26,6 +27,7 @@ import { Goal } from "@/src/types/finny";
 import { useUnifiedFinancialData } from "@/src/hooks/useUnifiedFinancialData";
 import { useSpendingData } from "@/src/hooks/useSpendingData";
 import { useDemoMode } from "@/src/contexts/DemoContext";
+import { useSubscription } from "@/src/contexts/SubscriptionContext";
 import logger from "@/src/utils/core/logger";
 
 // New optimized components
@@ -157,6 +159,7 @@ const getCachedBudgetLazy = (): { budgetProgress: BudgetProgressData | null; has
 
 export default function HomeScreen() {
   const router = useRouter();
+  const { isPremium, showPaywall } = useSubscription();
 
   // OPTIMIZED: Use pre-computed cache state (computed once at module load)
   // This prevents re-running cache checks on every render
@@ -1104,32 +1107,65 @@ export default function HomeScreen() {
             />
           )}
 
-          <HoldingsMoversCard
-            holdings={investmentHoldings}
-            balances={investmentBalances}
-            onPress={() => {
-              router.push("/(tabs)/insights");
-              setTimeout(() => {
-                DeviceEventEmitter.emit("navigateToInsightsSection", {
-                  section: "investments",
-                });
-              }, 200);
-            }}
-          />
+          {/* Holdings & Movers: show when user has holdings; blur when free */}
+          {(function () {
+            const hasHoldings =
+              (investmentHoldings?.length ?? 0) > 0 ||
+              (investmentBalances?.length ?? 0) > 0;
+            if (!hasHoldings) return null;
+            const card = (
+              <HoldingsMoversCard
+                holdings={investmentHoldings}
+                balances={investmentBalances}
+                onPress={() => {
+                  router.push("/(tabs)/insights");
+                  setTimeout(() => {
+                    DeviceEventEmitter.emit("navigateToInsightsSection", {
+                      section: "investments",
+                    });
+                  }, 200);
+                }}
+              />
+            );
+            if (isPremium) return card;
+            return (
+              <View style={{ position: "relative" }}>
+                {card}
+                <PremiumLockOverlay
+                  title="Portfolio movers"
+                  subtitle="See top movers and today's performance"
+                  icon="trending-up"
+                  onUnlock={showPaywall}
+                  blurIntensity={16}
+                />
+              </View>
+            );
+          })()}
 
-          {/* Goals Progress */}
-          <GoalsSection
-            goals={goals.filter((goal) => {
-              const isCompleted =
-                goal.status === "completed" ||
-                (goal.target_amount > 0 &&
-                  goal.current_amount >= goal.target_amount);
-              return !isCompleted;
-            })}
-            closestGoal={closestGoal}
-            formatCurrency={formatCurrency}
-            isInitialLoad={financialInitialLoad}
-          />
+          {/* Goals: always visible; blur when free */}
+          <View style={{ position: "relative" }}>
+            <GoalsSection
+              goals={goals.filter((goal) => {
+                const isCompleted =
+                  goal.status === "completed" ||
+                  (goal.target_amount > 0 &&
+                    goal.current_amount >= goal.target_amount);
+                return !isCompleted;
+              })}
+              closestGoal={closestGoal}
+              formatCurrency={formatCurrency}
+              isInitialLoad={financialInitialLoad}
+            />
+            {!isPremium && (
+              <PremiumLockOverlay
+                title="Your goals"
+                subtitle="Track progress and stay on target"
+                icon="flag"
+                onUnlock={showPaywall}
+                blurIntensity={16}
+              />
+            )}
+          </View>
 
           {/* Add Account Button */}
           <ActionButtons
@@ -1178,23 +1214,25 @@ export default function HomeScreen() {
                 title: "INVESTMENTS",
                 icon: "trending-up" as keyof typeof Ionicons.glyphMap,
                 iconColor: "#4ECDC4",
-                items: categorizedInvestments.map((account, index) => (
-                  <AccountItem
-                    key={index}
-                    name={account.name}
-                    type={account.type}
-                    balance={formatCurrency(getAccountBalance(account), "USD", {
-                      decimals: 0,
-                      useKM: false,
-                    })}
-                    icon="trending-up"
-                    bankName={account.institution_name || "Investment Broker"}
-                    accountId={account.account_id}
-                    accountData={account}
-                    onPress={() => handleAccountPress(account)}
-                  />
-                )),
-                totalAmount: investmentsCategoryTotal,
+                items: isPremium
+                  ? categorizedInvestments.map((account, index) => (
+                      <AccountItem
+                        key={index}
+                        name={account.name}
+                        type={account.type}
+                        balance={formatCurrency(getAccountBalance(account), "USD", {
+                          decimals: 0,
+                          useKM: false,
+                        })}
+                        icon="trending-up"
+                        bankName={account.institution_name || "Investment Broker"}
+                        accountId={account.account_id}
+                        accountData={account}
+                        onPress={() => handleAccountPress(account)}
+                      />
+                    ))
+                  : [],
+                totalAmount: isPremium ? investmentsCategoryTotal : 0,
               },
               {
                 title: "CREDIT CARDS",
@@ -1340,10 +1378,12 @@ export default function HomeScreen() {
                 setShowCashModal(true);
               } else if (category === "liabilities") {
                 setShowCreditModal(true);
-              } else if (category === "investments") {
-                setShowInvestmentModal(true);
-              } else if (category === "retirement") {
-                setShowInvestmentModal(true);
+              } else if (category === "investments" || category === "retirement") {
+                if (isPremium) {
+                  setShowInvestmentModal(true);
+                } else {
+                  showPaywall();
+                }
               }
             }}
           />

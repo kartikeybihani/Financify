@@ -20,6 +20,14 @@ import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
 import { useState, useRef, useEffect } from "react";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ActivityIndicator } from "react-native";
+import Purchases from "react-native-purchases";
+import type {
+  PurchasesOffering,
+  PurchasesPackage,
+} from "react-native-purchases";
+import { useSubscription } from "@/src/contexts/SubscriptionContext";
+import logger from "@/src/utils/core/logger";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const FEATURE_CARD_WIDTH = SCREEN_WIDTH - 56;
@@ -191,13 +199,27 @@ export interface PaywallModalProps {
 
 export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
   const insets = useSafeAreaInsets();
+  const { applyCustomerInfo, refetch } = useSubscription();
   const [selectedPlan, setSelectedPlan] = useState<"annual" | "monthly">(
-    "annual"
+    "annual",
   );
   const [expandedFeatureId, setExpandedFeatureId] = useState<string | null>(
-    null
+    null,
   );
   const [toggleWidth, setToggleWidth] = useState(0);
+  const [purchasing, setPurchasing] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [offerings, setOfferings] = useState<PurchasesOffering | null>(null);
+
+  // Get packages for price display
+  const packages = offerings?.availablePackages || [];
+  const annualPackage = packages.find(
+    (p) => p.identifier === "$rc_annual" || p.packageType === "ANNUAL",
+  );
+  const monthlyPackage = packages.find(
+    (p) => p.identifier === "$rc_monthly" || p.packageType === "MONTHLY",
+  );
   const [scrollContentHeight, setScrollContentHeight] = useState(0);
 
   const SHEET_HANDLE_HEIGHT = 10 + 2 + 3; // sheetHandleContainer padding + handle
@@ -205,7 +227,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
     SCREEN_HEIGHT - Math.max(insets.top, 12) - 12 - Math.max(insets.bottom, 0);
   const sheetHeight = Math.min(
     Math.max(scrollContentHeight + SHEET_HANDLE_HEIGHT + 16, 320),
-    maxSheetHeight
+    maxSheetHeight,
   );
 
   const toggleAnim = useRef(new Animated.Value(1)).current;
@@ -226,7 +248,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
   const handleFeaturePress = (featureId: string) => {
     LayoutAnimation.configureNext(featureTransitionAnimation);
     setExpandedFeatureId((current) =>
-      current === featureId ? null : featureId
+      current === featureId ? null : featureId,
     );
   };
 
@@ -244,9 +266,105 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
     }).start();
   }, [selectedPlan, toggleAnim]);
 
-  const handleSubscribe = () => {
-    // TODO: Implement subscription logic
-    console.log(`Subscribing to ${selectedPlan} plan`);
+  useEffect(() => {
+    if (!visible) return;
+    setError(null);
+    setOfferings(null);
+    let cancelled = false;
+    Purchases.getOfferings()
+      .then((o) => {
+        if (cancelled) return;
+        const current =
+          (o as { current?: PurchasesOffering | null }).current ?? null;
+        setOfferings(current);
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          logger.warn("Paywall getOfferings failed", e);
+          setError("Unable to load plans. Try again later.");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [visible]);
+
+  const handleSubscribe = async () => {
+    if (Platform.OS !== "ios" || purchasing) return;
+    setPurchasing(true);
+    setError(null);
+    try {
+      if (!offerings) {
+        throw new Error("Plans not loaded yet. Please try again.");
+      }
+      const packages = offerings.availablePackages || [];
+      const packageIdentifier =
+        selectedPlan === "annual" ? "$rc_annual" : "$rc_monthly";
+
+      // Log all available packages for debugging
+      logger.info(
+        `Available packages:`,
+        packages.map((p) => ({
+          identifier: p.identifier,
+          packageType: p.packageType,
+          price: p.product.priceString,
+          productId: p.product.identifier,
+        })),
+      );
+
+      const pkg =
+        packages.find((p) => p.identifier === packageIdentifier) ||
+        packages.find((p) =>
+          selectedPlan === "annual"
+            ? p.packageType === "ANNUAL"
+            : p.packageType === "MONTHLY",
+        );
+
+      if (!pkg) {
+        logger.error(
+          `Package not found for ${selectedPlan}. Available:`,
+          packages.map((p) => p.identifier),
+        );
+        throw new Error("Selected plan not available. Please try again.");
+      }
+
+      logger.info(`Subscribing to ${selectedPlan} plan:`, {
+        identifier: pkg.identifier,
+        packageType: pkg.packageType,
+        price: pkg.product.priceString,
+        productId: pkg.product.identifier,
+      });
+
+      const result = await Purchases.purchasePackage(pkg);
+      applyCustomerInfo(result.customerInfo);
+      await refetch();
+      onClose();
+    } catch (e: any) {
+      if (e?.userCancelled) {
+        return;
+      }
+      logger.warn("Purchase failed", e);
+      setError(e?.message || "Purchase failed. Try again.");
+    } finally {
+      setPurchasing(false);
+    }
+  };
+
+  const handleRestore = async () => {
+    if (Platform.OS !== "ios" || restoring) return;
+    setRestoring(true);
+    setError(null);
+    try {
+      const info = await Purchases.restorePurchases();
+      applyCustomerInfo(info);
+      await refetch();
+      onClose();
+    } catch (e: any) {
+      logger.warn("Restore failed", e);
+      setError(e?.message || "Restore failed. Try again.");
+    } finally {
+      setRestoring(false);
+    }
   };
 
   const toggleTranslateX = toggleAnim.interpolate({
@@ -558,12 +676,17 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                             </View>
                             <Text style={styles.pricingCardTitle}>Annual</Text>
                             <View style={styles.pricingAmountRow}>
-                              <Text style={styles.pricingAmount}>$99.99</Text>
+                              <Text style={styles.pricingAmount}>
+                                {annualPackage?.product.priceString || "$99.99"}
+                              </Text>
                               <Text style={styles.pricingPeriod}>/year</Text>
                             </View>
-                            <Text style={styles.pricingEquivalent}>
-                              ${(99.99 / 12).toFixed(2)}/month
-                            </Text>
+                            {annualPackage?.product.price && (
+                              <Text style={styles.pricingEquivalent}>
+                                ${(annualPackage.product.price / 12).toFixed(2)}
+                                /month
+                              </Text>
+                            )}
                           </View>
                           <LinearGradient
                             colors={["#0099FF", "#0066FF"]}
@@ -575,13 +698,19 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                               intensity={12}
                               style={styles.savingsChipBlur}
                             >
-                              <Text style={styles.savingsText}>
-                                Save{" "}
-                                {Math.round(
-                                  ((11.99 - 99.99 / 12) / 11.99) * 100
+                              {annualPackage?.product.price &&
+                                monthlyPackage?.product.price && (
+                                  <Text style={styles.savingsText}>
+                                    Save{" "}
+                                    {Math.round(
+                                      ((monthlyPackage.product.price * 12 -
+                                        annualPackage.product.price) /
+                                        (monthlyPackage.product.price * 12)) *
+                                        100,
+                                    )}
+                                    %
+                                  </Text>
                                 )}
-                                %
-                              </Text>
                             </BlurView>
                           </LinearGradient>
                         </TouchableOpacity>
@@ -612,35 +741,83 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                             </View>
                             <Text style={styles.pricingCardTitle}>Monthly</Text>
                             <View style={styles.pricingAmountRow}>
-                              <Text style={styles.pricingAmount}>$11.99</Text>
+                              <Text style={styles.pricingAmount}>
+                                {monthlyPackage?.product.priceString ||
+                                  "$10.99"}
+                              </Text>
                               <Text style={styles.pricingPeriod}>/month</Text>
                             </View>
                             {/* <Text style={styles.pricingEquivalent}>
-                      ${(11.99 * 12).toFixed(2)}/year
+                      ${(10.99 * 12).toFixed(2)}/year
                     </Text> */}
                           </View>
                         </TouchableOpacity>
                       )}
                     </View>
 
+                    {error && (
+                      <View style={styles.errorContainer}>
+                        <Text style={styles.errorText}>{error}</Text>
+                      </View>
+                    )}
                     <TouchableOpacity
-                      style={styles.ctaButton}
+                      style={[
+                        styles.ctaButton,
+                        purchasing && styles.ctaButtonDisabled,
+                      ]}
                       onPress={handleSubscribe}
                       activeOpacity={0.9}
+                      disabled={purchasing || restoring}
                     >
                       <LinearGradient
-                        colors={["#4A90E2", "#5DA0F2"]}
+                        colors={
+                          purchasing
+                            ? [
+                                "rgba(74, 144, 226, 0.5)",
+                                "rgba(93, 160, 242, 0.5)",
+                              ]
+                            : ["#4A90E2", "#5DA0F2"]
+                        }
                         start={{ x: 0, y: 0 }}
                         end={{ x: 1, y: 0 }}
                         style={styles.ctaGradient}
                       >
-                        <Text style={styles.ctaText}>
-                          Start 1-Month Free Trial
-                        </Text>
-                        <Text style={styles.ctaSubtext}>
-                          Cancel anytime • 1 month free
-                        </Text>
+                        {purchasing ? (
+                          <View style={styles.loadingContainer}>
+                            <ActivityIndicator color="#FFFFFF" size="small" />
+                            <Text style={styles.ctaText}>Processing...</Text>
+                          </View>
+                        ) : (
+                          <>
+                            <Text style={styles.ctaText}>
+                              Start 1-Month Free Trial
+                            </Text>
+                            <Text style={styles.ctaSubtext}>
+                              Cancel anytime • 1 month free
+                            </Text>
+                          </>
+                        )}
                       </LinearGradient>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.restoreButton}
+                      onPress={handleRestore}
+                      activeOpacity={0.7}
+                      disabled={purchasing || restoring}
+                    >
+                      {restoring ? (
+                        <View style={styles.restoreLoadingContainer}>
+                          <ActivityIndicator
+                            color="rgba(255, 255, 255, 0.6)"
+                            size="small"
+                          />
+                          <Text style={styles.restoreText}>Restoring...</Text>
+                        </View>
+                      ) : (
+                        <Text style={styles.restoreText}>
+                          Restore Purchases
+                        </Text>
+                      )}
                     </TouchableOpacity>
                   </View>
                 </ScrollView>
@@ -1141,5 +1318,44 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.75)",
     fontSize: 11,
     fontWeight: "500",
+  },
+  restoreButton: {
+    alignSelf: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  restoreText: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.6)",
+    fontWeight: "500",
+  },
+  errorContainer: {
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 59, 48, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 59, 48, 0.3)",
+  },
+  errorText: {
+    color: "#FF3B30",
+    fontSize: 13,
+    fontWeight: "500",
+    textAlign: "center",
+  },
+  ctaButtonDisabled: {
+    opacity: 0.6,
+  },
+  loadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  restoreLoadingContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
   },
 });

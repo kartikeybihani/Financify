@@ -1,4 +1,5 @@
 import React, { Component, ReactNode } from 'react';
+import { Platform, UIManager } from 'react-native';
 import { PostHogProvider } from 'posthog-react-native';
 import logger from '@/src/utils/core/logger';
 
@@ -41,6 +42,20 @@ export class SafePostHogProvider extends Component<Props, State> {
     if (this.state.hasError) {
       logger.warn('[PostHog] Running without analytics due to initialization error');
       return <>{this.props.children}</>;
+    }
+
+    // Some PostHog RN internals can require RNCMaskedView even when Session Replay is disabled.
+    // Avoid triggering a runtime invariant by skipping initialization when the native view isn't present.
+    if (Platform.OS !== 'web') {
+      const getConfig = (UIManager as any)?.getViewManagerConfig;
+      const maskedViewAvailable =
+        typeof getConfig === 'function' ? Boolean(getConfig('RNCMaskedView')) : false;
+      if (!maskedViewAvailable) {
+        logger.warn(
+          '[PostHog] Skipping analytics: native RNCMaskedView is not available in this build',
+        );
+        return <>{this.props.children}</>;
+      }
     }
 
     try {

@@ -55,7 +55,9 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     },
     supabaseUrl: process.env.EXPO_PUBLIC_SUPABASE_URL,
     supabaseAnonKey: process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY,
-    supabaseServiceRoleKey: process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY
+    supabaseServiceRoleKey: process.env.EXPO_PUBLIC_SUPABASE_SERVICE_ROLE_KEY,
+    revenuecatIosApiKeyTest: process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY_TEST || process.env.REVENUECAT_IOS_API_KEY_TEST,
+    revenuecatIosApiKeyProd: process.env.EXPO_PUBLIC_REVENUECAT_IOS_API_KEY_PROD || process.env.REVENUECAT_IOS_API_KEY_PROD,
   },
   plugins: [
     ...config.plugins || [],

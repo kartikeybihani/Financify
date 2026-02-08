@@ -17,6 +17,7 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { PremiumLockOverlay } from "@/src/components/subscription/PremiumLockOverlay";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import GoalNotification from "@/src/components/goals/GoalNotification";
@@ -45,6 +46,8 @@ const Goals: React.FC<GoalsProps> = ({
   onRefreshStart,
   onRefreshEnd,
   onGoalAdded,
+  isPremiumLocked = false,
+  onUpgradePress,
 }) => {
   const insets = useSafeAreaInsets();
   const { isDemoMode } = useDemoMode();
@@ -98,7 +101,7 @@ const Goals: React.FC<GoalsProps> = ({
         .select("current_balance, available_balance, type")
         .in(
           "item_id",
-          userItems.map((item) => item.item_id)
+          userItems.map((item) => item.item_id),
         );
 
       if (accountsError || !accounts?.length) {
@@ -108,7 +111,7 @@ const Goals: React.FC<GoalsProps> = ({
 
       const totalBalance = accounts.reduce(
         (sum, account) => sum + getAccountBalance(account),
-        0
+        0,
       );
 
       setHasConnectedAccounts(true);
@@ -272,7 +275,7 @@ const Goals: React.FC<GoalsProps> = ({
   const handleOptimisticUpdate = (updatedGoal: Goal) => {
     // Update local goals data immediately for better UX
     setLocalGoalsData((prev) =>
-      prev.map((goal) => (goal.id === updatedGoal.id ? updatedGoal : goal))
+      prev.map((goal) => (goal.id === updatedGoal.id ? updatedGoal : goal)),
     );
 
     // Update selected goal to reflect changes in modal
@@ -290,7 +293,7 @@ const Goals: React.FC<GoalsProps> = ({
           updated_at: new Date().toISOString(),
         } as Goal;
         setLocalGoalsData((prev) =>
-          prev.map((g) => (g.id === id ? optimisticGoal : g))
+          prev.map((g) => (g.id === id ? optimisticGoal : g)),
         );
         setSelectedGoal(optimisticGoal);
       }
@@ -367,6 +370,8 @@ const Goals: React.FC<GoalsProps> = ({
       onRefreshEnd?.();
     }
   };
+
+  const showUpgradeOverlay = isPremiumLocked && sortedGoalsData.length > 0;
 
   return (
     <View style={styles.goalsContainer}>
@@ -504,7 +509,13 @@ const Goals: React.FC<GoalsProps> = ({
                 item={item}
                 index={index}
                 animation={goalsAnimations[index]}
-                onPress={() => setSelectedGoal(item)}
+                onPress={() => {
+                  if (isPremiumLocked && onUpgradePress) {
+                    onUpgradePress();
+                  } else {
+                    setSelectedGoal(item);
+                  }
+                }}
               />
             ))}
             <View
@@ -520,9 +531,25 @@ const Goals: React.FC<GoalsProps> = ({
         )}
       </ScrollView>
 
+      {/* Premium lock: light blur so content is visible + context label + CTA */}
+      {showUpgradeOverlay && onUpgradePress && (
+        <PremiumLockOverlay
+          title="Your financial goals"
+          subtitle="Track progress. Stay on target."
+          icon="flag"
+          onUnlock={onUpgradePress}
+          variant="progressiveBottom"
+          blurIntensity={72}
+          progressiveStart={0.42}
+          progressiveFadeHeight={215}
+          safeAreaBottom={insets.bottom + 25}
+          titleFontSize={21}
+        />
+      )}
+
       {/* Remove overlay loader; rely solely on RefreshControl spinner to avoid duplication */}
 
-      {sortedGoalsData.length !== 0 && (
+      {sortedGoalsData.length !== 0 && !isPremiumLocked && (
         <TouchableOpacity
           style={[
             styles.addGoalButton,

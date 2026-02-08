@@ -12,6 +12,7 @@ import {
   TouchableWithoutFeedback,
   RefreshControl,
   DeviceEventEmitter,
+  StyleSheet,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons, AntDesign, FontAwesome6 } from "@expo/vector-icons";
@@ -40,10 +41,12 @@ import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
 import { styles } from "@/src/styles/investmentsStyles";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
 import { useDemoMode } from "@/src/contexts/DemoContext";
+import { useSubscription } from "@/src/contexts/SubscriptionContext";
 import {
   demoInvestmentHoldings,
   demoInvestmentBalances,
 } from "@/src/data/demo";
+import { PremiumLockOverlay } from "@/src/components/subscription/PremiumLockOverlay";
 import IconButton from "@/src/components/shared/IconButton";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 
@@ -155,6 +158,20 @@ function getDemoBalancesForScreen(): BalanceRow[] {
   }));
 }
 
+function getDemoConnectionsForScreen(): ConnectionRow[] {
+  return [
+    {
+      account_id: demoInvestmentBalances[0]?.account_id ?? "demo",
+      brokerage_name: "Fidelity",
+      account_name: "Brokerage",
+      last_synced_at: new Date().toISOString(),
+      connection_status: "active",
+      is_active: true,
+      provider: "plaid",
+    } as ConnectionRow,
+  ];
+}
+
 export default function InvestmentsScreen({
   preloadedData,
 }: {
@@ -167,19 +184,21 @@ export default function InvestmentsScreen({
 }) {
   const router = useRouter();
   const { isDemoMode } = useDemoMode();
+  const { isPremium, showPaywall } = useSubscription();
+  const isPremiumLocked = !isPremium;
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>(
-    preloadedData?.holdings || []
+    preloadedData?.holdings || [],
   );
   const [options, setOptions] = useState<OptionPosition[]>(
-    preloadedData?.options || []
+    preloadedData?.options || [],
   );
   const [balances, setBalances] = useState<BalanceRow[]>(
-    preloadedData?.balances || []
+    preloadedData?.balances || [],
   );
   const [connections, setConnections] = useState<ConnectionRow[]>(
-    preloadedData?.connections || []
+    preloadedData?.connections || [],
   );
   const [showInstitutionModal, setShowInstitutionModal] = useState(false);
   const [isLoading, setIsLoading] = useState(!preloadedData && !isDemoMode);
@@ -187,7 +206,7 @@ export default function InvestmentsScreen({
     string | null
   >(null);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
-    null
+    null,
   );
   const [holdingsSortBy, setHoldingsSortBy] =
     useState<string>("today_gain_loss"); // Default to today, will fallback to total if no data
@@ -198,16 +217,15 @@ export default function InvestmentsScreen({
     connectionId: string | null;
   }>({ isDisabled: false, connectionId: null });
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [hasCheckedConnections, setHasCheckedConnections] = useState(
-    !!preloadedData
-  );
+  const [hasCheckedConnections, setHasCheckedConnections] =
+    useState(!!preloadedData);
   const hasData = useRef(
     preloadedData
       ? (preloadedData.holdings && preloadedData.holdings.length > 0) ||
           (preloadedData.options && preloadedData.options.length > 0) ||
           (preloadedData.balances && preloadedData.balances.length > 0) ||
           (preloadedData.connections && preloadedData.connections.length > 0)
-      : false
+      : false,
   );
 
   // Track last sync time to force reload after sync
@@ -215,6 +233,9 @@ export default function InvestmentsScreen({
 
   // Track preloaded data to detect changes
   const lastPreloadedDataRef = useRef<any>(null);
+
+  // Track previous premium state to detect transitions
+  const prevPremiumRef = useRef(isPremium);
 
   // CRITICAL: Prevent concurrent syncs and infinite loops
   const isSyncInProgress = useRef<boolean>(false);
@@ -243,6 +264,16 @@ export default function InvestmentsScreen({
         setIsLoading(false);
         return true;
       }
+      if (isPremiumLocked) {
+        setHoldings(getDemoHoldingsForScreen());
+        setOptions([]);
+        setBalances(getDemoBalancesForScreen());
+        setConnections(getDemoConnectionsForScreen());
+        setHasCheckedConnections(true);
+        hasData.current = true;
+        setIsLoading(false);
+        return true;
+      }
       logger.info("Investments: Loading data from Supabase (no auto-sync)...");
 
       const [h, o, b, c] = await Promise.all([
@@ -264,7 +295,7 @@ export default function InvestmentsScreen({
             h?.length || 0
           }, Options: ${o?.length || 0}, Balances: ${
             b?.length || 0
-          }, Connections: ${c?.length || 0}`
+          }, Connections: ${c?.length || 0}`,
         );
 
         // Log balance details for debugging
@@ -274,11 +305,11 @@ export default function InvestmentsScreen({
               b[0]?.total_value || 0
             }, Holdings sum: $${(h || []).reduce(
               (sum, h) => sum + (h.market_value || 0),
-              0
+              0,
             )}, Options sum: $${(o || []).reduce(
               (sum, o) => sum + (o.market_value || 0),
-              0
-            )}`
+              0,
+            )}`,
           );
         }
 
@@ -350,6 +381,16 @@ export default function InvestmentsScreen({
         hasData.current = true;
         return true;
       }
+      if (isPremiumLocked) {
+        setHoldings(getDemoHoldingsForScreen());
+        setOptions([]);
+        setBalances(getDemoBalancesForScreen());
+        setConnections(getDemoConnectionsForScreen());
+        setHasCheckedConnections(true);
+        hasData.current = true;
+        setIsLoading(false);
+        return true;
+      }
       logger.info("Investments: Loading data from Supabase...");
 
       const [h, o, b, c] = await Promise.all([
@@ -371,7 +412,7 @@ export default function InvestmentsScreen({
             h?.length || 0
           }, Options: ${o?.length || 0}, Balances: ${
             b?.length || 0
-          }, Connections: ${c?.length || 0}`
+          }, Connections: ${c?.length || 0}`,
         );
         setHoldings(h || []);
         setOptions(o || []);
@@ -410,7 +451,7 @@ export default function InvestmentsScreen({
               (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60) > 24
             ) {
               logger.info(
-                "Auto-syncing stale investment data (>24 hours old)..."
+                "Auto-syncing stale investment data (>24 hours old)...",
               );
               // Sync silently in background - don't show loading UI
               isAutoSyncInProgress.current = true;
@@ -421,7 +462,7 @@ export default function InvestmentsScreen({
                 if (user) {
                   await syncSnaptradeInvestments(
                     user.id,
-                    connection.account_id
+                    connection.account_id,
                   );
                   // Reload data after sync completes (but don't trigger another sync)
                   logger.info("🔄 Reloading data after auto-sync...");
@@ -429,7 +470,7 @@ export default function InvestmentsScreen({
                   const wasAutoSync = true;
                   await loadFromDbWithoutAutoSync();
                   logger.info("✅ Auto-sync complete, data reloaded");
-                  
+
                   // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
                   DeviceEventEmitter.emit("investmentDataSynced");
                 }
@@ -462,20 +503,20 @@ export default function InvestmentsScreen({
               } = await supabase.auth.getUser();
               if (!authUser) {
                 logger.warn(
-                  "⚠️ Cannot verify connection status - user not authenticated"
+                  "⚠️ Cannot verify connection status - user not authenticated",
                 );
                 return;
               }
 
               const statusCheck = await checkSnaptradeConnectionStatus(
                 authUser.id,
-                connection.account_id
+                connection.account_id,
               );
 
               if (statusCheck.statusChanged) {
                 logger.warn(
                   "⚠️ Connection status mismatch detected and updated:",
-                  statusCheck
+                  statusCheck,
                 );
                 // Reload connections to get updated status
                 const updatedConnections =
@@ -497,7 +538,7 @@ export default function InvestmentsScreen({
             } catch (statusError) {
               logger.warn(
                 "⚠️ Could not verify connection status:",
-                statusError
+                statusError,
               );
               // Continue with DB status if check fails
             }
@@ -531,6 +572,21 @@ export default function InvestmentsScreen({
       return false;
     }
   };
+
+  // Refresh data when user upgrades to premium (only on transition from false to true)
+  useEffect(() => {
+    const wasPremium = prevPremiumRef.current;
+    const isNowPremium = isPremium && !isDemoMode;
+    
+    if (!wasPremium && isNowPremium) {
+      logger.info("🔄 Premium unlocked - refreshing investment data");
+      loadFromDb().catch((err) => {
+        logger.error("Error refreshing investment data after premium unlock:", err);
+      });
+    }
+    
+    prevPremiumRef.current = isPremium;
+  }, [isPremium, isDemoMode]);
 
   useEffect(() => {
     const initializeScreen = async () => {
@@ -589,7 +645,7 @@ export default function InvestmentsScreen({
 
         // Populate investment accounts in main accounts table (non-blocking)
         populateInvestmentAccountsInDB().catch((err) =>
-          logger.error("Failed to populate investment accounts:", err)
+          logger.error("Failed to populate investment accounts:", err),
         );
       } catch (error) {
         logger.error("Error during investment initialization:", error);
@@ -677,8 +733,8 @@ export default function InvestmentsScreen({
                   loadFromDbWithoutAutoSync().catch((err) =>
                     logger.error(
                       "Error reloading data after reactivation:",
-                      err
-                    )
+                      err,
+                    ),
                   );
                 }
 
@@ -697,30 +753,30 @@ export default function InvestmentsScreen({
             // Even if last_synced_at didn't change, webhooks might have updated holdings/balances
             if (!isDisabled) {
               logger.info(
-                "🔄 Screen focused - reloading data to ensure UI reflects database state..."
+                "🔄 Screen focused - reloading data to ensure UI reflects database state...",
               );
               await loadFromDbWithoutAutoSync();
               logger.info(
-                "✅ Data reloaded on focus - UI now in sync with database"
+                "✅ Data reloaded on focus - UI now in sync with database",
               );
             }
           } else {
             // No connections - still try to reload in case data exists
             logger.info(
-              "🔄 Screen focused - reloading data (no connections found)..."
+              "🔄 Screen focused - reloading data (no connections found)...",
             );
             await loadFromDbWithoutAutoSync();
           }
         } catch (error) {
           logger.warn(
             "⚠️ Error checking connection status and reloading data on focus:",
-            error
+            error,
           );
         }
       };
 
       checkConnectionStatusAndReloadDataOnFocus();
-    }, []) // Empty deps - we use functional setState to access current state
+    }, []), // Empty deps - we use functional setState to access current state
   );
 
   const handleSync = async () => {
@@ -733,7 +789,7 @@ export default function InvestmentsScreen({
     // Check if connection is disabled
     if (connectionStatus.isDisabled) {
       setSyncError(
-        "Connection is disabled. Please reconnect your account first."
+        "Connection is disabled. Please reconnect your account first.",
       );
       return;
     }
@@ -775,12 +831,13 @@ export default function InvestmentsScreen({
 
       // Filter to only SnapTrade connections (Plaid syncs via webhooks)
       const snaptradeConnections = connections.filter(
-        (conn: ConnectionRow) => !conn.provider || conn.provider === "snaptrade"
+        (conn: ConnectionRow) =>
+          !conn.provider || conn.provider === "snaptrade",
       );
 
       if (snaptradeConnections.length === 0) {
         logger.info(
-          "ℹ️ No SnapTrade connections to sync (Plaid accounts sync via webhooks)"
+          "ℹ️ No SnapTrade connections to sync (Plaid accounts sync via webhooks)",
         );
         // Still reload data in case Plaid data was updated
         await loadFromDbWithoutAutoSync();
@@ -788,7 +845,7 @@ export default function InvestmentsScreen({
       }
 
       logger.info(
-        `🔄 Starting investment refresh for ${snaptradeConnections.length} SnapTrade account(s)...`
+        `🔄 Starting investment refresh for ${snaptradeConnections.length} SnapTrade account(s)...`,
       );
 
       // Check last_synced_at and split connections into recent (< 3 hours) and stale
@@ -804,8 +861,8 @@ export default function InvestmentsScreen({
           logger.info(
             `📅 Connection ${conn.account_id?.substring(
               0,
-              8
-            )}... never synced - will sync`
+              8,
+            )}... never synced - will sync`,
           );
         } else {
           const lastSynced = new Date(conn.last_synced_at);
@@ -817,18 +874,18 @@ export default function InvestmentsScreen({
             logger.info(
               `⏰ Connection ${conn.account_id?.substring(
                 0,
-                8
+                8,
               )}... synced ${hoursSinceSync.toFixed(
-                1
-              )} hours ago - skipping SnapTrade sync`
+                1,
+              )} hours ago - skipping SnapTrade sync`,
             );
           } else {
             staleConnections.push(conn);
             logger.info(
               `📅 Connection ${conn.account_id?.substring(
                 0,
-                8
-              )}... synced ${hoursSinceSync.toFixed(1)} hours ago - will sync`
+                8,
+              )}... synced ${hoursSinceSync.toFixed(1)} hours ago - will sync`,
             );
           }
         }
@@ -842,7 +899,7 @@ export default function InvestmentsScreen({
           logger.info(
             `🔄 Syncing account ${i + 1}/${staleConnections.length}: ${
               conn.brokerage_name || conn.account_name || conn.account_id
-            }`
+            }`,
           );
 
           // Step 1: Call paid refresh endpoint to trigger SnapTrade to update their cache
@@ -850,7 +907,7 @@ export default function InvestmentsScreen({
 
           // Step 2: Wait for SnapTrade to process the refresh (they need time to update their cache)
           logger.info(
-            "⏳ Waiting for SnapTrade to process refresh (5 seconds)..."
+            "⏳ Waiting for SnapTrade to process refresh (5 seconds)...",
           );
           await new Promise((resolve) => setTimeout(resolve, 5000));
 
@@ -866,12 +923,12 @@ export default function InvestmentsScreen({
           } catch (recalcError) {
             logger.warn(
               "⚠️ Failed to recalculate balances (continuing anyway):",
-              recalcError
+              recalcError,
             );
           }
 
           logger.info(
-            `✅ Successfully synced account ${i + 1}/${staleConnections.length}`
+            `✅ Successfully synced account ${i + 1}/${staleConnections.length}`,
           );
         } catch (err: any) {
           const errorMsg = `Failed to sync ${
@@ -888,7 +945,7 @@ export default function InvestmentsScreen({
           ) {
             logger.error(
               "🔴 Connection disabled detected, stopping sync...",
-              err
+              err,
             );
             throw err; // Re-throw to trigger the disabled connection handler below
           }
@@ -898,12 +955,12 @@ export default function InvestmentsScreen({
       // Log summary of sync strategy
       if (recentConnections.length > 0) {
         logger.info(
-          `⏭️ Skipped SnapTrade sync for ${recentConnections.length} recent connection(s) - will update prices only`
+          `⏭️ Skipped SnapTrade sync for ${recentConnections.length} recent connection(s) - will update prices only`,
         );
       }
       if (staleConnections.length > 0) {
         logger.info(
-          `✅ Completed SnapTrade sync for ${staleConnections.length} stale connection(s)`
+          `✅ Completed SnapTrade sync for ${staleConnections.length} stale connection(s)`,
         );
       }
 
@@ -920,7 +977,7 @@ export default function InvestmentsScreen({
       } else if (syncErrors.length > 0) {
         // Some syncs failed but not all
         logger.warn(
-          `⚠️ Some accounts failed to sync: ${syncErrors.join("; ")}`
+          `⚠️ Some accounts failed to sync: ${syncErrors.join("; ")}`,
         );
       }
 
@@ -951,7 +1008,7 @@ export default function InvestmentsScreen({
               refresh_type: "stock_prices",
               user_id: user.id,
             }),
-          }
+          },
         );
 
         if (priceUpdateRes.ok) {
@@ -962,7 +1019,7 @@ export default function InvestmentsScreen({
             logger.warn(
               `⚠️ Stock price update completed with errors: ${
                 priceData.errors?.join(", ") || "Unknown error"
-              }`
+              }`,
             );
             // Still log success if some holdings were updated
             if (priceData.results?.stock_prices?.holdingsUpdated > 0) {
@@ -970,7 +1027,7 @@ export default function InvestmentsScreen({
               logger.info(
                 `✅ Stock prices partially updated: ${
                   priceData.results?.stock_prices?.holdingsUpdated || 0
-                } holdings at ${finhubSyncTime}`
+                } holdings at ${finhubSyncTime}`,
               );
             }
           } else {
@@ -978,7 +1035,7 @@ export default function InvestmentsScreen({
             logger.info(
               `✅ Stock prices updated: ${
                 priceData.results?.stock_prices?.holdingsUpdated || 0
-              } holdings at ${finhubSyncTime}`
+              } holdings at ${finhubSyncTime}`,
             );
           }
         } else {
@@ -995,13 +1052,13 @@ export default function InvestmentsScreen({
             }
           }
           logger.warn(
-            `⚠️ Stock price update failed (non-critical): ${errorMessage} (Status: ${priceUpdateRes.status})`
+            `⚠️ Stock price update failed (non-critical): ${errorMessage} (Status: ${priceUpdateRes.status})`,
           );
 
           // Fallback: If FinHub update failed for recent connections, run full sync
           if (recentConnections.length > 0) {
             logger.warn(
-              "⚠️ FinHub update failed for recent connections - falling back to full SnapTrade sync"
+              "⚠️ FinHub update failed for recent connections - falling back to full SnapTrade sync",
             );
             // Fallback to full sync for recent connections
             for (const conn of recentConnections) {
@@ -1009,8 +1066,8 @@ export default function InvestmentsScreen({
                 logger.info(
                   `🔄 Fallback: Full sync for recent connection ${conn.account_id?.substring(
                     0,
-                    8
-                  )}...`
+                    8,
+                  )}...`,
                 );
                 await refreshSnaptradeInvestments(user.id, conn.account_id);
                 await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -1020,12 +1077,12 @@ export default function InvestmentsScreen({
               } catch (fallbackError: any) {
                 logger.error(
                   `❌ Fallback sync failed for ${conn.account_id}:`,
-                  fallbackError
+                  fallbackError,
                 );
                 syncErrors.push(
                   `Fallback sync failed: ${
                     fallbackError.message || "Unknown error"
-                  }`
+                  }`,
                 );
               }
             }
@@ -1037,7 +1094,7 @@ export default function InvestmentsScreen({
         // Fallback: If FinHub update failed for recent connections, run full sync
         if (recentConnections.length > 0) {
           logger.warn(
-            "⚠️ FinHub update error for recent connections - falling back to full SnapTrade sync"
+            "⚠️ FinHub update error for recent connections - falling back to full SnapTrade sync",
           );
           // Fallback to full sync for recent connections
           for (const conn of recentConnections) {
@@ -1045,8 +1102,8 @@ export default function InvestmentsScreen({
               logger.info(
                 `🔄 Fallback: Full sync for recent connection ${conn.account_id?.substring(
                   0,
-                  8
-                )}...`
+                  8,
+                )}...`,
               );
               await refreshSnaptradeInvestments(user.id, conn.account_id);
               await new Promise((resolve) => setTimeout(resolve, 5000));
@@ -1056,12 +1113,12 @@ export default function InvestmentsScreen({
             } catch (fallbackError: any) {
               logger.error(
                 `❌ Fallback sync failed for ${conn.account_id}:`,
-                fallbackError
+                fallbackError,
               );
               syncErrors.push(
                 `Fallback sync failed: ${
                   fallbackError.message || "Unknown error"
-                }`
+                }`,
               );
             }
           }
@@ -1071,11 +1128,11 @@ export default function InvestmentsScreen({
       // Step 7: Final reload to pick up Finnhub price updates
       logger.info("🔄 Final data reload after stock price update...");
       await loadFromDbWithoutAutoSync();
-      
+
       logger.info(
-        "✅ Investment refresh completed successfully - data synced and reloaded"
+        "✅ Investment refresh completed successfully - data synced and reloaded",
       );
-      
+
       // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
       DeviceEventEmitter.emit("investmentDataSynced");
     } catch (err: any) {
@@ -1112,7 +1169,7 @@ export default function InvestmentsScreen({
 
         logger.info(
           "🔴 Reconnection UI should now be visible with connectionId:",
-          connectionId
+          connectionId,
         );
       } else {
         const errorMsg =
@@ -1205,7 +1262,7 @@ export default function InvestmentsScreen({
             logger.info(
               `💰 Reloaded balance total_value after sync: $${
                 b[0]?.total_value || 0
-              }`
+              }`,
             );
             setBalances(b || []);
             setHoldings(h || []);
@@ -1217,7 +1274,7 @@ export default function InvestmentsScreen({
           }
 
           logger.info("✅ Pull-to-refresh completed - data synced from API");
-          
+
           // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
           DeviceEventEmitter.emit("investmentDataSynced");
         } catch (err: any) {
@@ -1229,7 +1286,7 @@ export default function InvestmentsScreen({
           ) {
             logger.error(
               "🔴 Connection disabled detected during pull-to-refresh",
-              err
+              err,
             );
 
             // Reload connections from DB
@@ -1250,7 +1307,7 @@ export default function InvestmentsScreen({
 
             setSyncError(
               err.message ||
-                "Your investment account connection has been disabled. Please reconnect your account."
+                "Your investment account connection has been disabled. Please reconnect your account.",
             );
           } else {
             logger.error("❌ Error during pull-to-refresh sync:", err);
@@ -1263,7 +1320,7 @@ export default function InvestmentsScreen({
       } else {
         // Data is fresh (<24 hours) - recalculate balances and reload from database
         logger.info(
-          "💾 Data is fresh (<24 hours), recalculating balances and reloading from database..."
+          "💾 Data is fresh (<24 hours), recalculating balances and reloading from database...",
         );
 
         // Always recalculate balances on pull-to-refresh to ensure accuracy
@@ -1276,7 +1333,7 @@ export default function InvestmentsScreen({
         } catch (recalcError) {
           logger.warn(
             "⚠️ Failed to recalculate balances (continuing anyway):",
-            recalcError
+            recalcError,
           );
         }
 
@@ -1301,7 +1358,7 @@ export default function InvestmentsScreen({
           logger.info(
             `💰 Reloaded balance total_value: $${
               b[0]?.total_value || 0
-            }, Calculated sum: $${calculatedSum}`
+            }, Calculated sum: $${calculatedSum}`,
           );
 
           // Update state immediately with fresh balances
@@ -1316,9 +1373,9 @@ export default function InvestmentsScreen({
         }
 
         logger.info(
-          "✅ Pull-to-refresh completed - balances recalculated and data reloaded"
+          "✅ Pull-to-refresh completed - balances recalculated and data reloaded",
         );
-        
+
         // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
         DeviceEventEmitter.emit("investmentDataSynced");
       }
@@ -1340,7 +1397,7 @@ export default function InvestmentsScreen({
     // CRITICAL: Prevent concurrent reconnect attempts
     if (isSyncInProgress.current) {
       logger.warn(
-        "⚠️ Sync/reconnect already in progress, ignoring duplicate request"
+        "⚠️ Sync/reconnect already in progress, ignoring duplicate request",
       );
       return;
     }
@@ -1384,32 +1441,32 @@ export default function InvestmentsScreen({
       const userSecret = await getSnaptradeUserSecretFromDB(
         user.id,
         creds.userId,
-        connections[0]?.account_id || ""
+        connections[0]?.account_id || "",
       );
 
       // Call reconnect function
       const response = await reconnectSnaptradeConnection(
         creds.userId,
         userSecret,
-        connectionStatus.connectionId
+        connectionStatus.connectionId,
       );
 
       // Open browser with reconnect URL
       if (response.redirectURI) {
         logger.info(
-          "🌐 Opening SnapTrade Connection Portal for reconnection..."
+          "🌐 Opening SnapTrade Connection Portal for reconnection...",
         );
         const browserResult = await WebBrowser.openBrowserAsync(
           response.redirectURI,
           {
             presentationStyle:
               WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
-          }
+          },
         );
 
         logger.info(
           "🔙 Browser closed, checking connection status...",
-          browserResult
+          browserResult,
         );
 
         // CRITICAL: Handle browser cancellation
@@ -1425,7 +1482,7 @@ export default function InvestmentsScreen({
             logger.info("🔍 Verifying connection status after reconnection...");
             const connectionDetails = await getSnaptradeConnectionDetails(
               user.id,
-              connections[0]?.account_id || ""
+              connections[0]?.account_id || "",
             );
 
             if (connectionDetails && !connectionDetails.disabled) {
@@ -1456,7 +1513,7 @@ export default function InvestmentsScreen({
                 if (!accountId) {
                   logger.error("❌ Cannot sync - no account_id found");
                   setSyncError(
-                    "Account ID not found. Please refresh manually."
+                    "Account ID not found. Please refresh manually.",
                   );
                   return;
                 }
@@ -1470,25 +1527,25 @@ export default function InvestmentsScreen({
                 await loadFromDbWithoutAutoSync();
 
                 logger.info(
-                  "✅ Reconnection complete! Data synced successfully."
+                  "✅ Reconnection complete! Data synced successfully.",
                 );
-                
+
                 // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
                 DeviceEventEmitter.emit("investmentDataSynced");
                 setSyncError(null);
               } catch (syncErr) {
                 logger.warn(
                   "⚠️ Sync after reconnection had issues (but connection is active):",
-                  syncErr
+                  syncErr,
                 );
                 // Don't show error - connection is active, sync can happen later
               }
             } else {
               logger.warn(
-                "⚠️ Connection still appears disabled. Webhook may not have fired yet."
+                "⚠️ Connection still appears disabled. Webhook may not have fired yet.",
               );
               logger.info(
-                "💡 User may need to wait a moment or refresh manually."
+                "💡 User may need to wait a moment or refresh manually.",
               );
 
               // Still update UI state optimistically - user completed auth
@@ -1503,13 +1560,13 @@ export default function InvestmentsScreen({
               setConnections(updatedConnections || []);
 
               setSyncError(
-                "Reconnection completed. Please wait a moment and refresh to see updated data."
+                "Reconnection completed. Please wait a moment and refresh to see updated data.",
               );
             }
           } catch (statusErr: any) {
             logger.error(
               "❌ Error checking connection status after reconnection:",
-              statusErr
+              statusErr,
             );
 
             // If it's a 402, connection might still be disabled
@@ -1518,12 +1575,12 @@ export default function InvestmentsScreen({
               statusErr.code === "CONNECTION_DISABLED"
             ) {
               setSyncError(
-                "Connection may still be processing. Please wait a moment and try refreshing."
+                "Connection may still be processing. Please wait a moment and try refreshing.",
               );
             } else {
               // Other error - connection might be active but we can't verify
               logger.warn(
-                "⚠️ Could not verify connection status, but user completed auth"
+                "⚠️ Could not verify connection status, but user completed auth",
               );
               setConnectionStatus({
                 isDisabled: false,
@@ -1536,7 +1593,7 @@ export default function InvestmentsScreen({
               setConnections(updatedConnections || []);
 
               setSyncError(
-                "Reconnection completed. Please refresh to verify connection status."
+                "Reconnection completed. Please refresh to verify connection status.",
               );
             }
           }
@@ -1584,7 +1641,7 @@ export default function InvestmentsScreen({
   // Helper function to check if a holding/balance belongs to the selected account
   const belongsToAccount = (
     item: Holding | OptionPosition | BalanceRow,
-    connection: ConnectionRow
+    connection: ConnectionRow,
   ): boolean => {
     if (connection.provider === "snaptrade") {
       return (
@@ -1604,7 +1661,7 @@ export default function InvestmentsScreen({
   const filteredHoldings = selectedAccountId
     ? holdings.filter((h) => {
         const connection = connections.find(
-          (c) => c.account_id === selectedAccountId
+          (c) => c.account_id === selectedAccountId,
         );
         return connection ? belongsToAccount(h, connection) : false;
       })
@@ -1613,7 +1670,7 @@ export default function InvestmentsScreen({
   const filteredBalances = selectedAccountId
     ? balances.filter((b) => {
         const connection = connections.find(
-          (c) => c.account_id === selectedAccountId
+          (c) => c.account_id === selectedAccountId,
         );
         return connection ? belongsToAccount(b, connection) : false;
       })
@@ -1622,7 +1679,7 @@ export default function InvestmentsScreen({
   const filteredOptions = selectedAccountId
     ? options.filter((o) => {
         const connection = connections.find(
-          (c) => c.account_id === selectedAccountId
+          (c) => c.account_id === selectedAccountId,
         );
         return connection ? belongsToAccount(o, connection) : false;
       })
@@ -1631,7 +1688,7 @@ export default function InvestmentsScreen({
   // Calculate total portfolio value by summing filtered balances
   const totalPortfolioValue = filteredBalances.reduce(
     (sum, b) => sum + (b.total_value || 0),
-    0
+    0,
   );
 
   // Available cash = cash only (not buying_power), per investment_balances.cash
@@ -1644,12 +1701,12 @@ export default function InvestmentsScreen({
       // Sum total_change from filtered balances
       const totalChangeSum = filteredBalances.reduce(
         (sum, b) => sum + (b.total_change || 0),
-        0
+        0,
       );
 
       // Check if we have valid total_change data
       const hasValidTotalChange = filteredBalances.some(
-        (b) => b.total_change !== null && b.total_change !== undefined
+        (b) => b.total_change !== null && b.total_change !== undefined,
       );
 
       if (hasValidTotalChange) {
@@ -1676,8 +1733,8 @@ export default function InvestmentsScreen({
           totalWeight > 0
             ? weightedPercentSum / totalWeight
             : totalPortfolioValue > 0
-            ? (totalChangeSum / totalPortfolioValue) * 100
-            : 0;
+              ? (totalChangeSum / totalPortfolioValue) * 100
+              : 0;
 
         return {
           amount: totalChangeSum,
@@ -1689,7 +1746,7 @@ export default function InvestmentsScreen({
     // Fallback: Calculate from filtered holdings (legacy method)
     const totalUnrealizedPL = filteredHoldings.reduce(
       (sum, h) => sum + (h.unrealized_pl || 0),
-      0
+      0,
     );
 
     // Percentage of total portfolio represented by total unrealized P&L
@@ -1731,7 +1788,7 @@ export default function InvestmentsScreen({
       // Sum day_change from filtered balances
       const dayChangeSum = filteredBalances.reduce(
         (sum, b) => sum + (b.day_change || 0),
-        0
+        0,
       );
 
       // Check if we have valid day_change data from any balance
@@ -1739,7 +1796,7 @@ export default function InvestmentsScreen({
         (b) =>
           b.day_change !== null &&
           b.day_change !== undefined &&
-          !isNaN(b.day_change)
+          !isNaN(b.day_change),
       );
 
       if (hasValidDayChange) {
@@ -1766,8 +1823,8 @@ export default function InvestmentsScreen({
           totalWeight > 0
             ? weightedPercentSum / totalWeight
             : totalPortfolioValue > 0
-            ? (dayChangeSum / totalPortfolioValue) * 100
-            : 0;
+              ? (dayChangeSum / totalPortfolioValue) * 100
+              : 0;
 
         return {
           amount: dayChangeSum,
@@ -1834,19 +1891,19 @@ export default function InvestmentsScreen({
   useEffect(() => {
     if (hasSetInitialSort.current) return;
     if (isLoading) return;
-    
+
     // Check if we have valid today's performance data
-    const hasTodayData = 
-      todayPerformance.amount !== 0 && 
-      todayPerformance.amount !== null && 
+    const hasTodayData =
+      todayPerformance.amount !== 0 &&
+      todayPerformance.amount !== null &&
       !isNaN(todayPerformance.amount);
-    
+
     if (!hasTodayData) {
       // Fall back to total gain/loss if today's data is 0 or unavailable
       setHoldingsSortBy("total_gain_loss");
     }
     // else keep it at "today_gain_loss" (the default)
-    
+
     hasSetInitialSort.current = true;
   }, [isLoading, todayPerformance.amount]);
 
@@ -1912,8 +1969,11 @@ export default function InvestmentsScreen({
             see your holdings in one place.
           </Text>
           <TouchableOpacity
-            style={[styles.emptyStateButton, isDemoMode && { opacity: 0.5 }]}
-            onPress={handleAddInvestmentAccount}
+            style={[
+              styles.emptyStateButton,
+              (isDemoMode || isPremiumLocked) && { opacity: 0.5 },
+            ]}
+            onPress={isPremiumLocked ? showPaywall : handleAddInvestmentAccount}
             activeOpacity={isDemoMode ? 1 : 0.8}
             disabled={isDemoMode}
           >
@@ -1924,7 +1984,9 @@ export default function InvestmentsScreen({
               style={{ marginRight: 8 }}
             />
             <Text style={styles.emptyStateButtonText}>
-              Connect Investment Account
+              {isPremiumLocked
+                ? "Upgrade to connect investments"
+                : "Connect Investment Account"}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1935,7 +1997,7 @@ export default function InvestmentsScreen({
   const renderPortfolioSummary = () => {
     // Format date and time in user's local timezone
     const formatLastUpdated = (
-      timestamp: string | null | undefined
+      timestamp: string | null | undefined,
     ): string => {
       if (!timestamp) return "Never";
       try {
@@ -1956,7 +2018,7 @@ export default function InvestmentsScreen({
 
     // Format last updated time in compact format (e.g., "2h ago", "3d ago")
     const formatLastUpdatedCompact = (
-      timestamp: string | null | undefined
+      timestamp: string | null | undefined,
     ): string => {
       if (!timestamp) return "Never";
       try {
@@ -1987,7 +2049,7 @@ export default function InvestmentsScreen({
             b.account_id === conn.account_id) ||
           (conn.provider === "plaid" &&
             b.item_id === conn.item_id &&
-            b.provider === "plaid")
+            b.provider === "plaid"),
       );
 
       const lastUpdatedTimestamp =
@@ -2016,7 +2078,7 @@ export default function InvestmentsScreen({
 
     return (
       <View style={styles.portfolioSummaryContainer}>
-        {!isDemoMode && (
+        {!isDemoMode && isPremium && (
           <IconButton
             onPress={handleAddInvestmentAccount}
             icon="add-outline"
@@ -2141,7 +2203,7 @@ export default function InvestmentsScreen({
                           ]}
                           onPress={() => {
                             setSelectedAccountId(
-                              isSelected ? null : account.accountId
+                              isSelected ? null : account.accountId,
                             );
                           }}
                           activeOpacity={0.7}
@@ -2260,13 +2322,13 @@ export default function InvestmentsScreen({
     // Apply security type filter
     if (selectedSecurityType) {
       displayHoldings = displayHoldings.filter(
-        (holding) => holding.security_type === selectedSecurityType
+        (holding) => holding.security_type === selectedSecurityType,
       );
     }
 
     // Also filter out Open Ended Fund from holdings display
     displayHoldings = displayHoldings.filter(
-      (holding) => holding.security_type !== "Open Ended Fund"
+      (holding) => holding.security_type !== "Open Ended Fund",
     );
 
     // Keep the same sequence - don't sort, just use filtered holdings
@@ -2375,18 +2437,18 @@ export default function InvestmentsScreen({
                               holdingsSortBy === "percent_of_account"
                                 ? "rgba(74, 144, 226, 0.15)"
                                 : holdingsSortBy === "last_price"
-                                ? "rgba(142, 142, 147, 0.15)"
-                                : displayPercentage >= 0
-                                ? "rgba(78, 205, 196, 0.15)"
-                                : "rgba(255, 107, 107, 0.15)",
+                                  ? "rgba(142, 142, 147, 0.15)"
+                                  : displayPercentage >= 0
+                                    ? "rgba(78, 205, 196, 0.15)"
+                                    : "rgba(255, 107, 107, 0.15)",
                             borderColor:
                               holdingsSortBy === "percent_of_account"
                                 ? "rgba(74, 144, 226, 0.3)"
                                 : holdingsSortBy === "last_price"
-                                ? "rgba(142, 142, 147, 0.3)"
-                                : displayPercentage >= 0
-                                ? "rgba(78, 205, 196, 0.3)"
-                                : "rgba(255, 107, 107, 0.3)",
+                                  ? "rgba(142, 142, 147, 0.3)"
+                                  : displayPercentage >= 0
+                                    ? "rgba(78, 205, 196, 0.3)"
+                                    : "rgba(255, 107, 107, 0.3)",
                           },
                         ]}
                       >
@@ -2398,22 +2460,22 @@ export default function InvestmentsScreen({
                                 holdingsSortBy === "percent_of_account"
                                   ? "#4A90E2"
                                   : holdingsSortBy === "last_price"
-                                  ? "#8E8E93"
-                                  : displayPercentage >= 0
-                                  ? "#4ECDC4"
-                                  : "#FF6B6B",
+                                    ? "#8E8E93"
+                                    : displayPercentage >= 0
+                                      ? "#4ECDC4"
+                                      : "#FF6B6B",
                             },
                           ]}
                         >
                           {holdingsSortBy === "percent_of_account"
                             ? `${displayPercentage.toFixed(1)}%`
                             : holdingsSortBy === "last_price"
-                            ? `${
-                                displayPercentage >= 0 ? "+" : ""
-                              }${displayPercentage.toFixed(1)}%`
-                            : `${
-                                displayPercentage >= 0 ? "+" : ""
-                              }${displayPercentage.toFixed(1)}%`}
+                              ? `${
+                                  displayPercentage >= 0 ? "+" : ""
+                                }${displayPercentage.toFixed(1)}%`
+                              : `${
+                                  displayPercentage >= 0 ? "+" : ""
+                                }${displayPercentage.toFixed(1)}%`}
                         </Text>
                       </View>
                     </View>
@@ -2602,9 +2664,10 @@ export default function InvestmentsScreen({
               renderLoadingState()
             ) : hasNoInvestments() &&
               !isDemoMode &&
+              !isPremiumLocked &&
               !isLoading &&
               hasCheckedConnections ? (
-              // No investments - show empty state (never in demo; demo always has data)
+              // No investments - show empty state (never in demo/locked; demo/locked show teaser)
               renderEmptyState()
             ) : (
               // Data loaded, show content
@@ -2624,6 +2687,18 @@ export default function InvestmentsScreen({
               </>
             )}
           </ScrollView>
+
+          {/* Premium lock: light blur so content is visible + context label + CTA */}
+          {isPremiumLocked && !hasNoInvestments() && (
+            <PremiumLockOverlay
+              title="Your investments"
+              subtitle="View balances, holdings, and performance"
+              icon="pie-chart"
+              onUnlock={showPaywall}
+              blurIntensity={16}
+              centered
+            />
+          )}
         </View>
       </SafeAreaView>
 

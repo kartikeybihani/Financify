@@ -30,13 +30,17 @@ import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 import { notificationService } from "@/src/utils/core/notificationService";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { useDemoMode } from "@/src/contexts/DemoContext";
+import { useSubscription } from "@/src/contexts/SubscriptionContext";
 import { BlurView } from "expo-blur";
+import Purchases from "react-native-purchases";
+import { Platform } from "react-native";
 
 export default function SettingsScreen() {
   const router = useRouter();
   const { userName } = useLocalSearchParams();
   const { clearAllCache } = useAuthNavigation();
   const { isDemoMode } = useDemoMode();
+  const { isPremium } = useSubscription();
   const [userData, setUserData] = useState<any>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(true);
@@ -207,6 +211,25 @@ export default function SettingsScreen() {
       });
     } catch (error) {
       logger.error("Error sharing app:", error);
+    }
+  };
+
+  const handleManageSubscription = async () => {
+    if (Platform.OS !== "ios") {
+      Alert.alert(
+        "Not Available",
+        "Subscription management is only available on iOS."
+      );
+      return;
+    }
+    try {
+      await Purchases.showManageSubscriptions();
+    } catch (error: any) {
+      logger.error("Error showing manage subscriptions:", error);
+      Alert.alert(
+        "Error",
+        error?.message || "Unable to open subscription management. Please try again."
+      );
     }
   };
 
@@ -549,10 +572,23 @@ export default function SettingsScreen() {
               <Ionicons name="share-outline" size={24} color="#4A90E2" />,
               "Share the App",
               handleShareApp,
-              false,
+              true,
               undefined,
               isDemoMode,
               isDemoMode
+            )}
+            {renderSettingsItem(
+              <Ionicons name="card-outline" size={24} color="#4A90E2" />,
+              "Manage Subscription",
+              handleManageSubscription,
+              false,
+              isPremium ? (
+                <View style={styles.premiumBadge}>
+                  <Text style={styles.premiumBadgeText}>PRO</Text>
+                </View>
+              ) : undefined,
+              isDemoMode || Platform.OS !== "ios",
+              isDemoMode || Platform.OS !== "ios"
             )}
           </>
         )}
@@ -734,5 +770,18 @@ const styles = StyleSheet.create({
   copyright: {
     fontSize: 12,
     color: "#666",
+  },
+  premiumBadge: {
+    backgroundColor: "#4A90E2",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    marginRight: 8,
+  },
+  premiumBadgeText: {
+    color: "#fff",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.5,
   },
 });
