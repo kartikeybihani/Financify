@@ -607,17 +607,59 @@ async function handleAccountHoldingsUpdated(user_id, connection_id, account_id =
 
     // Fallback: Find by account_id if connection_id lookup failed and account_id is available
     if (!connection && account_id) {
-      const { data, error: accountError } = await supabase
+      // First try with is_active filter
+      let { data, error: accountError } = await supabase
         .from("snaptrade_connections")
-        .select("user_id, account_id, snaptrade_user_id, connection_id")
+        .select("user_id, account_id, snaptrade_user_id, connection_id, is_active")
         .eq("snaptrade_user_id", user_id)
         .eq("account_id", account_id)
         .eq("is_active", true)
         .maybeSingle();
       
+      // If not found, try without is_active filter (in case connection exists but flag not set)
+      if (!data && !accountError) {
+        console.log("⚠️ Connection not found with is_active=true, trying without filter...");
+        const retryResult = await supabase
+          .from("snaptrade_connections")
+          .select("user_id, account_id, snaptrade_user_id, connection_id, is_active")
+          .eq("snaptrade_user_id", user_id)
+          .eq("account_id", account_id)
+          .maybeSingle();
+        data = retryResult.data;
+        accountError = retryResult.error;
+      }
+      
+      // If still not found, try with just snaptrade_user_id (broader search)
+      if (!data && !accountError) {
+        console.log("⚠️ Connection not found by account_id, trying broader search by snaptrade_user_id only...");
+        const { data: allConnections } = await supabase
+          .from("snaptrade_connections")
+          .select("user_id, account_id, snaptrade_user_id, connection_id, is_active")
+          .eq("snaptrade_user_id", user_id);
+        
+        if (allConnections && allConnections.length > 0) {
+          console.log(`🔍 Found ${allConnections.length} connection(s) for this snaptrade_user_id:`, 
+            allConnections.map(c => ({ account_id: c.account_id, connection_id: c.connection_id, is_active: c.is_active }))
+          );
+          // Try to find by matching account_id (case-insensitive or exact)
+          const matched = allConnections.find(c => 
+            c.account_id === account_id || 
+            c.account_id?.toLowerCase() === account_id?.toLowerCase()
+          );
+          if (matched) {
+            data = matched;
+            console.log("✅ Found connection by broader search");
+          }
+        }
+      }
+      
       if (!accountError && data) {
         connection = data;
-        console.log("✅ Found connection by account_id (fallback)");
+        console.log("✅ Found connection by account_id (fallback)", {
+          account_id: connection.account_id,
+          connection_id: connection.connection_id,
+          is_active: connection.is_active,
+        });
         
         // Update connection_id if it was missing
         if (!connection.connection_id && connection_id) {
@@ -630,13 +672,24 @@ async function handleAccountHoldingsUpdated(user_id, connection_id, account_id =
             .eq("account_id", connection.account_id);
           console.log("✅ Updated connection_id in database");
         }
+        
+        // Ensure is_active is set to true if it wasn't
+        if (!connection.is_active) {
+          console.log("🔄 Updating is_active flag to true...");
+          await supabase
+            .from("snaptrade_connections")
+            .update({ is_active: true })
+            .eq("user_id", connection.user_id)
+            .eq("snaptrade_user_id", connection.snaptrade_user_id)
+            .eq("account_id", connection.account_id);
+        }
       } else {
         error = accountError;
       }
     }
 
     if (!connection) {
-      console.error("❌ Could not find connection for webhook:", error);
+      console.error("❌ Could not find connection for webhook");
       console.error("Query details:", {
         snaptrade_user_id: user_id,
         connection_id: connection_id,
@@ -644,6 +697,28 @@ async function handleAccountHoldingsUpdated(user_id, connection_id, account_id =
         error_code: error?.code,
         error_message: error?.message,
       });
+      
+      // Log what connections actually exist for debugging
+      const { data: allConnections } = await supabase
+        .from("snaptrade_connections")
+        .select("account_id, snaptrade_user_id, connection_id, is_active")
+        .eq("snaptrade_user_id", user_id)
+        .limit(10);
+      
+      if (allConnections && allConnections.length > 0) {
+        console.error("🔍 Existing connections for this snaptrade_user_id:", 
+          allConnections.map(c => ({
+            account_id: c.account_id,
+            connection_id: c.connection_id,
+            is_active: c.is_active,
+            matches_account_id: c.account_id === account_id,
+            matches_connection_id: c.connection_id === connection_id,
+          }))
+        );
+      } else {
+        console.error("🔍 No connections found for snaptrade_user_id:", user_id);
+      }
+      
       return;
     }
 
@@ -663,6 +738,31 @@ async function handleAccountHoldingsUpdated(user_id, connection_id, account_id =
     );
 
     console.log("✅ Triggered sync after holdings update webhook");
+    
+    // Populate investment accounts in main accounts table after webhook sync
+    // This ensures the accounts table has the correct balances from investment_balances
+    // Note: This is a fire-and-forget operation - we don't wait for it to complete
+    try {
+      const baseUrl = process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL}`
+        : process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('/rest/v1', '') || 'http://localhost:3000';
+      
+      fetch(`${baseUrl}/api/store_accounts`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          mode: "populate_investment_accounts",
+          user_id: connection.user_id,
+        }),
+      }).catch((err) => {
+        console.warn("⚠️ Failed to populate investment accounts after webhook (non-critical):", err.message);
+      });
+      console.log("✅ Investment accounts population triggered after webhook");
+    } catch (populateError) {
+      console.warn("⚠️ Error triggering investment account population after webhook (non-critical):", populateError.message);
+    }
   } catch (error) {
     console.error("❌ Error handling account holdings updated:", error);
   }

@@ -620,11 +620,20 @@ export default function InstitutionSelectionModal({
   };
 
   const handleClose = () => {
+    // Reset all modal states before closing
+    setShowConnectionSuccessModal(false);
+    setIsConnecting(false);
+    setConnectingInstitution(null);
+    setConnectedInstitutionName("");
+    setConnectedInstitutionId("");
     onClose();
-    // Reopen the financial sheet after a short delay
-    setTimeout(() => {
-      onReopenFinancialSheet?.();
-    }, 300);
+    // Only reopen financial sheet if we're not navigating away
+    // (i.e., if ConnectionSuccessModal is not showing)
+    if (!showConnectionSuccessModal) {
+      setTimeout(() => {
+        onReopenFinancialSheet?.();
+      }, 300);
+    }
   };
 
   const renderInstitutionCard = (institution: Institution) => {
@@ -677,7 +686,22 @@ export default function InstitutionSelectionModal({
   };
 
   const handleConnectionSuccessComplete = async () => {
+    // Close ConnectionSuccessModal first
     setShowConnectionSuccessModal(false);
+    
+    // Reset all modal states to ensure clean state
+    setIsConnecting(false);
+    setConnectingInstitution(null);
+    setConnectedInstitutionName("");
+    setConnectedInstitutionId("");
+    
+    // Close InstitutionSelectionModal to ensure no modals are blocking UI
+    // This ensures the parent component knows the modal is closed
+    onClose();
+    
+    // Small delay to ensure modals are fully closed and animations complete before navigation
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    
     // Navigate to insights tab with investments section
     // First navigate to the tab, then emit event to switch to investments section
     router.push("/(tabs)/insights?section=investments");
@@ -687,10 +711,6 @@ export default function InstitutionSelectionModal({
         section: "investments",
       });
     }, 100);
-    // Optionally reopen financial sheet after a delay
-    if (onReopenFinancialSheet) {
-      setTimeout(() => onReopenFinancialSheet(), 500);
-    }
   };
 
   const performRefresh = async () => {

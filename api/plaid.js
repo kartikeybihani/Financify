@@ -1882,6 +1882,41 @@ async function handleSnapTradeSync(res, userId, accountId) {
     }
 
     console.log("✅ SnapTrade sync completed successfully");
+    
+    // Populate investment accounts in main accounts table after sync completes
+    // This ensures the accounts table has the correct balances from investment_balances
+    try {
+      console.log("🔄 Populating investment accounts in main accounts table...");
+      const { data: connection } = await supabase
+        .from("snaptrade_connections")
+        .select("user_id")
+        .eq("account_id", accountId)
+        .maybeSingle();
+      
+      if (connection?.user_id) {
+        // Call the populate endpoint internally (fire-and-forget)
+        const baseUrl = process.env.VERCEL_URL 
+          ? `https://${process.env.VERCEL_URL}`
+          : process.env.NEXT_PUBLIC_SUPABASE_URL?.replace('/rest/v1', '') || 'http://localhost:3000';
+        
+        fetch(`${baseUrl}/api/store_accounts`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            mode: "populate_investment_accounts",
+            user_id: connection.user_id,
+          }),
+        }).catch((err) => {
+          console.warn("⚠️ Failed to populate investment accounts (non-critical):", err.message);
+        });
+        console.log("✅ Investment accounts population triggered");
+      }
+    } catch (populateError) {
+      console.warn("⚠️ Error triggering investment account population (non-critical):", populateError.message);
+    }
+    
     return res.status(200).json({
       success: true,
       message: "Investments synced successfully",
