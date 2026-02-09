@@ -177,14 +177,16 @@ export default function AccountDetailModal({
   const handleDeleteAccount = async () => {
     if (!account || !session?.user?.id) return;
 
+    // Set loading state immediately
+    setDeleting(true);
+    setShowActionAlert(false); // Close alert immediately to show spinner
+
     try {
-      setDeleting(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
 
       await deleteAccount(account.account_id, session.user.id);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setShowActionAlert(false);
 
       // Emit event to notify other screens (like insights) that accounts have changed
       DeviceEventEmitter.emit("financialDataRefreshed", {
@@ -207,14 +209,16 @@ export default function AccountDetailModal({
   const handleRemoveInvestmentAccount = async () => {
     if (!account || !session?.user?.id) return;
 
+    // Set loading state immediately
+    setRemoving(true);
+    setShowActionAlert(false); // Close alert immediately to show spinner
+
     try {
-      setRemoving(true);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
 
       await removeSnaptradeBrokerage(session.user.id, account.account_id);
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setShowActionAlert(false);
 
       // Emit event to notify other screens (like insights) that accounts have changed
       DeviceEventEmitter.emit("financialDataRefreshed", {
@@ -601,6 +605,18 @@ export default function AccountDetailModal({
           account?.official_name || account?.name || "Unknown Account"
         }
       />
+
+      {/* Loading Overlay for Delete/Remove */}
+      {(deleting || removing) && (
+        <View style={styles.deleteLoadingOverlay}>
+          <View style={styles.deleteLoadingContainer}>
+            <ActivityIndicator size="large" color="#4A90E2" />
+            <Text style={styles.deleteLoadingText}>
+              {deleting ? "Deleting account..." : "Removing account..."}
+            </Text>
+          </View>
+        </View>
+      )}
     </Modal>
   );
 }
@@ -904,5 +920,27 @@ const styles = StyleSheet.create({
   noTransactionsText: {
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 14,
+  },
+  deleteLoadingOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(0, 0, 0, 0.8)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10001,
+    elevation: 10001,
+  },
+  deleteLoadingContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deleteLoadingText: {
+    color: "#ffffff",
+    fontSize: 16,
+    marginTop: 16,
+    fontWeight: "600",
   },
 });

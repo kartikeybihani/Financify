@@ -62,7 +62,7 @@ export default function WelcomeScreen() {
             duration: 1600,
             useNativeDriver: true,
           }),
-        ])
+        ]),
       ),
     ]).start();
 

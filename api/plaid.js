@@ -2366,7 +2366,7 @@ async function handleSnapTradeRemoveBrokerage(res, userId, accountId) {
         .from("snaptrade_connections")
         .update({
           is_active: false,
-          connection_status: "removed",
+          connection_status: "disabled",
           updated_at: new Date().toISOString(),
         })
         .eq("user_id", userId)
@@ -2384,8 +2384,7 @@ async function handleSnapTradeRemoveBrokerage(res, userId, accountId) {
         const { error: accountDeleteError } = await supabase
           .from("accounts")
           .delete()
-          .eq("account_id", accountId)
-          .eq("user_id", userId);
+          .eq("account_id", accountId);
 
         if (accountDeleteError) {
           console.warn("⚠️ Failed to delete account from accounts table:", accountDeleteError);
@@ -2415,7 +2414,7 @@ async function handleSnapTradeRemoveBrokerage(res, userId, accountId) {
           .from("snaptrade_connections")
           .update({
             is_active: false,
-            connection_status: "removed",
+            connection_status: "disabled",
             updated_at: new Date().toISOString(),
           })
           .eq("user_id", userId)
