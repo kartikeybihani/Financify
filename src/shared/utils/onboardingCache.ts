@@ -39,7 +39,7 @@ export const saveOnboardingToCache = async (
     // Use synchronous operations for better performance
     AppStorage.setItemSync(cacheKey, JSON.stringify(cacheData));
     AppStorage.setItemSync(timestampKey, cacheData.timestamp.toString());
-    logger.info(`💾 [ONBOARDING CACHE] Saved onboarding status for user: ${userId.substring(0, 8)}`);
+    logger.debug(`💾 [ONBOARDING CACHE] Saved onboarding status for user: ${userId.substring(0, 8)}`);
   } catch (error) {
     logger.error("❌ [ONBOARDING CACHE] Failed to save to cache:", error);
   }
@@ -70,7 +70,7 @@ export const loadOnboardingFromCache = (userId: string): OnboardingStatus | null
     const cacheAge = now - timestamp;
 
     if (cacheAge > CACHE_DURATION) {
-      logger.info(`⏰ [ONBOARDING CACHE] Cache expired, age: ${Math.round(cacheAge / 1000)}s`);
+      logger.debug(`⏰ [ONBOARDING CACHE] Cache expired, age: ${Math.round(cacheAge / 1000)}s`);
       return null;
     }
 
@@ -86,7 +86,7 @@ export const loadOnboardingFromCache = (userId: string): OnboardingStatus | null
       return null;
     }
 
-    logger.info(`📦 [ONBOARDING CACHE] Loaded from cache for user: ${userId.substring(0, 8)}, age: ${Math.round(cacheAge / 1000)}s`);
+    logger.debug(`📦 [ONBOARDING CACHE] Loaded from cache for user: ${userId.substring(0, 8)}, age: ${Math.round(cacheAge / 1000)}s`);
     return cachedData.status;
   } catch (error) {
     logger.error("❌ [ONBOARDING CACHE] Failed to load from cache:", error);
@@ -105,7 +105,7 @@ export const clearOnboardingCache = (userId?: string): void => {
       const timestampKey = `${ONBOARDING_CACHE_TIMESTAMP_KEY}_${userId}`;
       AppStorage.removeItemSync(cacheKey);
       AppStorage.removeItemSync(timestampKey);
-      logger.info(`🗑️ [ONBOARDING CACHE] Cache cleared for user: ${userId.substring(0, 8)}`);
+      logger.debug(`🗑️ [ONBOARDING CACHE] Cache cleared for user: ${userId.substring(0, 8)}`);
     } else {
       // Clear all user caches
       const allKeys = AppStorage.getAllKeysSync();
@@ -115,7 +115,7 @@ export const clearOnboardingCache = (userId?: string): void => {
       );
       if (onboardingKeys.length > 0) {
         AppStorage.multiRemoveSync(onboardingKeys);
-        logger.info(`🗑️ [ONBOARDING CACHE] Cleared all user caches: ${onboardingKeys.length} keys`);
+        logger.debug(`🗑️ [ONBOARDING CACHE] Cleared all user caches: ${onboardingKeys.length} keys`);
       }
     }
   } catch (error) {

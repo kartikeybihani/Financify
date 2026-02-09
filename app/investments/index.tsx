@@ -202,7 +202,16 @@ export default function InvestmentsScreen({
     preloadedData?.connections || [],
   );
   const [showInstitutionModal, setShowInstitutionModal] = useState(false);
-  const [isLoading, setIsLoading] = useState(!preloadedData && !isDemoMode);
+  // Show loading until we have confirmed data (avoids empty-state flash for users with holdings)
+  const hasPreloadedContent =
+    preloadedData &&
+    ((preloadedData.holdings?.length ?? 0) > 0 ||
+      (preloadedData.options?.length ?? 0) > 0 ||
+      (preloadedData.balances?.length ?? 0) > 0 ||
+      (preloadedData.connections?.length ?? 0) > 0);
+  const [isLoading, setIsLoading] = useState(
+    !hasPreloadedContent && !isDemoMode,
+  );
   const [selectedSecurityType, setSelectedSecurityType] = useState<
     string | null
   >(null);
@@ -219,7 +228,7 @@ export default function InvestmentsScreen({
   }>({ isDisabled: false, connectionId: null });
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [hasCheckedConnections, setHasCheckedConnections] =
-    useState(!!preloadedData);
+    useState(!!hasPreloadedContent);
   const hasData = useRef(
     preloadedData
       ? (preloadedData.holdings && preloadedData.holdings.length > 0) ||
@@ -275,7 +284,7 @@ export default function InvestmentsScreen({
         setIsLoading(false);
         return true;
       }
-      logger.info("Investments: Loading data from Supabase (no auto-sync)...");
+      logger.debug("Investments: Loading data from Supabase (no auto-sync)...");
 
       const [h, o, b, c] = await Promise.all([
         getSnaptradeHoldingsFromDB(),
@@ -291,7 +300,7 @@ export default function InvestmentsScreen({
         (c && c.length > 0);
 
       if (hasAnyData) {
-        logger.info(
+        logger.debug(
           `Investments: Loaded data from Supabase - Holdings: ${
             h?.length || 0
           }, Options: ${o?.length || 0}, Balances: ${
@@ -301,7 +310,7 @@ export default function InvestmentsScreen({
 
         // Log balance details for debugging
         if (b && b.length > 0) {
-          logger.info(
+          logger.debug(
             `💰 Balance total_value: $${
               b[0]?.total_value || 0
             }, Holdings sum: $${(h || []).reduce(
@@ -392,7 +401,7 @@ export default function InvestmentsScreen({
         setIsLoading(false);
         return true;
       }
-      logger.info("Investments: Loading data from Supabase...");
+      logger.debug("Investments: Loading data from Supabase...");
 
       const [h, o, b, c] = await Promise.all([
         getSnaptradeHoldingsFromDB(), // Gets ALL holdings (both Plaid and SnapTrade)
@@ -408,7 +417,7 @@ export default function InvestmentsScreen({
         (c && c.length > 0);
 
       if (hasAnyData) {
-        logger.info(
+        logger.debug(
           `Investments: Loaded data from Supabase - Holdings: ${
             h?.length || 0
           }, Options: ${o?.length || 0}, Balances: ${
@@ -429,7 +438,7 @@ export default function InvestmentsScreen({
             connection.connection_status === "disabled" ||
             connection.connection_status === "error";
 
-          logger.info("🔍 Connection status check:", {
+          logger.debug("🔍 Connection status check:", {
             account_id: connection.account_id?.substring(0, 8) + "...",
             is_active: connection.is_active,
             connection_status: connection.connection_status,
@@ -451,7 +460,7 @@ export default function InvestmentsScreen({
               !lastSynced ||
               (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60) > 24
             ) {
-              logger.info(
+              logger.debug(
                 "Auto-syncing stale investment data (>24 hours old)...",
               );
               // Sync silently in background - don't show loading UI
@@ -466,11 +475,13 @@ export default function InvestmentsScreen({
                     connection.account_id,
                   );
                   // Reload data after sync completes (but don't trigger another sync)
-                  logger.info("🔄 Reloading data after auto-sync...");
+                  logger.debug("🔄 Reloading data after auto-sync...");
                   // Use a flag to prevent recursive sync
                   const wasAutoSync = true;
                   await loadFromDbWithoutAutoSync();
-                  logger.info("✅ Auto-sync complete, data reloaded");
+                  logger.debug("✅ Auto-sync complete, data reloaded");
+
+                  await populateInvestmentAccountsInDB();
 
                   // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
                   DeviceEventEmitter.emit("investmentDataSynced");
@@ -496,7 +507,7 @@ export default function InvestmentsScreen({
             connection.is_active &&
             connection.connection_status === "active"
           ) {
-            logger.info("🔍 Verifying connection status with SnapTrade API...");
+            logger.debug("🔍 Verifying connection status with SnapTrade API...");
             try {
               // CRITICAL: Get actual user_id from auth, not from connection (connection might not have it)
               const {
@@ -546,7 +557,7 @@ export default function InvestmentsScreen({
           }
         } else {
           // Reset if no connections
-          logger.info("🔍 No connections found, resetting status");
+          logger.debug("🔍 No connections found, resetting status");
           setConnectionStatus({
             isDisabled: false,
             connectionId: null,
@@ -558,7 +569,7 @@ export default function InvestmentsScreen({
         return true;
       }
 
-      logger.info("Investments: No investment data found in database");
+      logger.debug("Investments: No investment data found in database");
       setHoldings([]);
       setOptions([]);
       setBalances([]);
@@ -578,14 +589,17 @@ export default function InvestmentsScreen({
   useEffect(() => {
     const wasPremium = prevPremiumRef.current;
     const isNowPremium = isPremium && !isDemoMode;
-    
+
     if (!wasPremium && isNowPremium) {
       logger.info("🔄 Premium unlocked - refreshing investment data");
       loadFromDb().catch((err) => {
-        logger.error("Error refreshing investment data after premium unlock:", err);
+        logger.error(
+          "Error refreshing investment data after premium unlock:",
+          err,
+        );
       });
     }
-    
+
     prevPremiumRef.current = isPremium;
   }, [isPremium, isDemoMode]);
 
@@ -604,34 +618,40 @@ export default function InvestmentsScreen({
         return;
       }
 
-      // Check if data is preloaded (when embedded in insights screen)
-      if (preloadedData) {
-        // Check if preloaded data has changed
+      // Check if data is preloaded with actual content (when embedded in insights screen)
+      const hasAnyPreloadedData =
+        preloadedData &&
+        ((preloadedData.holdings && preloadedData.holdings.length > 0) ||
+          (preloadedData.options && preloadedData.options.length > 0) ||
+          (preloadedData.balances && preloadedData.balances.length > 0) ||
+          (preloadedData.connections && preloadedData.connections.length > 0));
+
+      if (hasAnyPreloadedData) {
+        // Preloaded data has content - use it and skip DB
         const hasPreloadedDataChanged =
           JSON.stringify(preloadedData) !==
           JSON.stringify(lastPreloadedDataRef.current);
         if (hasPreloadedDataChanged) {
           lastPreloadedDataRef.current = preloadedData;
-
-          // Update state with new preloaded data
-          setHoldings(preloadedData.holdings || []);
-          setOptions(preloadedData.options || []);
-          setBalances(preloadedData.balances || []);
-          setConnections(preloadedData.connections || []);
+          setHoldings(preloadedData!.holdings || []);
+          setOptions(preloadedData!.options || []);
+          setBalances(preloadedData!.balances || []);
+          setConnections(preloadedData!.connections || []);
           setHasCheckedConnections(true);
         }
-
-        // Data is already set in initial state, just ensure loading state is correct
-        const hasAnyData =
-          (preloadedData.holdings && preloadedData.holdings.length > 0) ||
-          (preloadedData.options && preloadedData.options.length > 0) ||
-          (preloadedData.balances && preloadedData.balances.length > 0) ||
-          (preloadedData.connections && preloadedData.connections.length > 0);
-
-        hasData.current = !!hasAnyData;
+        hasData.current = true;
         setIsLoading(false);
         setHasCheckedConnections(true);
-        return; // Skip all database loading/logic when using preloaded data
+        return;
+      }
+
+      // Preloaded data empty or missing - do a quick DB check so we don't flash empty state for users with holdings
+      if (preloadedData) {
+        lastPreloadedDataRef.current = preloadedData;
+        setHoldings(preloadedData.holdings || []);
+        setOptions(preloadedData.options || []);
+        setBalances(preloadedData.balances || []);
+        setConnections(preloadedData.connections || []);
       }
 
       try {
@@ -698,24 +718,27 @@ export default function InvestmentsScreen({
   useEffect(() => {
     const financialDataSubscription = DeviceEventEmitter.addListener(
       "financialDataRefreshed",
-      async (data?: { accountDeleted?: string; accountConnected?: boolean }) => {
+      async (data?: {
+        accountDeleted?: string;
+        accountConnected?: boolean;
+      }) => {
         // If an account was deleted or connected, refresh investment data
         if (data?.accountDeleted) {
-          logger.info(
+          logger.debug(
             "🔄 Account deleted event received, refreshing investment data...",
             data.accountDeleted,
           );
           // Reload data from database to reflect the deletion
           await loadFromDbWithoutAutoSync();
         } else if (data?.accountConnected) {
-          logger.info(
+          logger.debug(
             "🔄 Account connected event received, refreshing investment data...",
           );
           // Reload data from database to show the new account
           await loadFromDbWithoutAutoSync();
         } else {
           // General refresh event - reload data
-          logger.info(
+          logger.debug(
             "🔄 Financial data refresh event received, refreshing investment data...",
           );
           await loadFromDbWithoutAutoSync();
@@ -755,7 +778,7 @@ export default function InvestmentsScreen({
                 prev.isDisabled !== isDisabled ||
                 prev.connectionId !== connection.connection_id
               ) {
-                logger.info("🔄 Connection status updated on focus:", {
+                logger.debug("🔄 Connection status updated on focus:", {
                   wasDisabled: prev.isDisabled,
                   nowDisabled: isDisabled,
                   connectionId: connection.connection_id,
@@ -763,7 +786,7 @@ export default function InvestmentsScreen({
 
                 // If connection was disabled but is now active, reload data
                 if (wasDisabled && !isDisabled) {
-                  logger.info("✅ Connection reactivated! Reloading data...");
+                  logger.debug("✅ Connection reactivated! Reloading data...");
                   // Reload data asynchronously (without triggering auto-sync)
                   loadFromDbWithoutAutoSync().catch((err) =>
                     logger.error(
@@ -787,17 +810,17 @@ export default function InvestmentsScreen({
             // This ensures UI reflects database changes from webhooks or background syncs
             // Even if last_synced_at didn't change, webhooks might have updated holdings/balances
             if (!isDisabled) {
-              logger.info(
+              logger.debug(
                 "🔄 Screen focused - reloading data to ensure UI reflects database state...",
               );
               await loadFromDbWithoutAutoSync();
-              logger.info(
+              logger.debug(
                 "✅ Data reloaded on focus - UI now in sync with database",
               );
             }
           } else {
             // No connections - still try to reload in case data exists
-            logger.info(
+            logger.debug(
               "🔄 Screen focused - reloading data (no connections found)...",
             );
             await loadFromDbWithoutAutoSync();
@@ -871,7 +894,7 @@ export default function InvestmentsScreen({
       );
 
       if (snaptradeConnections.length === 0) {
-        logger.info(
+        logger.debug(
           "ℹ️ No SnapTrade connections to sync (Plaid accounts sync via webhooks)",
         );
         // Still reload data in case Plaid data was updated
@@ -879,7 +902,7 @@ export default function InvestmentsScreen({
         return;
       }
 
-      logger.info(
+      logger.debug(
         `🔄 Starting investment refresh for ${snaptradeConnections.length} SnapTrade account(s)...`,
       );
 
@@ -947,14 +970,14 @@ export default function InvestmentsScreen({
           await new Promise((resolve) => setTimeout(resolve, 5000));
 
           // Step 3: Now sync the fresh data from SnapTrade API to our database
-          logger.info("🔄 Syncing fresh data from SnapTrade API...");
+          logger.debug("🔄 Syncing fresh data from SnapTrade API...");
           await syncSnaptradeInvestments(user.id, conn.account_id);
 
           // Step 3.5: Ensure balances are recalculated from active holdings
-          logger.info("🔄 Recalculating balances from active holdings...");
+          logger.debug("🔄 Recalculating balances from active holdings...");
           try {
             await recalculateInvestmentBalances(user.id, conn.account_id);
-            logger.info("✅ Balances recalculated successfully");
+            logger.debug("✅ Balances recalculated successfully");
           } catch (recalcError) {
             logger.warn(
               "⚠️ Failed to recalculate balances (continuing anyway):",
@@ -1017,7 +1040,7 @@ export default function InvestmentsScreen({
       }
 
       // Step 4: Reload data from database to show updated values (without triggering auto-sync)
-      logger.info("🔄 Reloading data from database...");
+      logger.debug("🔄 Reloading data from database...");
       const hasStoredData = await loadFromDbWithoutAutoSync();
 
       if (hasStoredData) {
@@ -1025,13 +1048,13 @@ export default function InvestmentsScreen({
       }
 
       // Step 5: Update investment accounts in main table (after balances are recalculated)
-      logger.info("🔄 Updating investment accounts in main table...");
+      logger.debug("🔄 Updating investment accounts in main table...");
       // Wait a moment to ensure balances are fully updated
       await new Promise((resolve) => setTimeout(resolve, 500));
       await populateInvestmentAccountsInDB();
 
       // Step 6: Update stock prices from Finnhub (runs for all connections)
-      logger.info("📈 Updating stock prices from Finnhub...");
+      logger.debug("📈 Updating stock prices from Finnhub...");
       let finhubSyncTime: string | null = null;
       try {
         const priceUpdateRes = await authenticatedFetch(
@@ -1161,10 +1184,10 @@ export default function InvestmentsScreen({
       }
 
       // Step 7: Final reload to pick up Finnhub price updates
-      logger.info("🔄 Final data reload after stock price update...");
+      logger.debug("🔄 Final data reload after stock price update...");
       await loadFromDbWithoutAutoSync();
 
-      logger.info(
+      logger.debug(
         "✅ Investment refresh completed successfully - data synced and reloaded",
       );
 
@@ -1216,6 +1239,10 @@ export default function InvestmentsScreen({
       isSyncInProgress.current = false;
       setIsSyncing(false);
       setIsLoading(false);
+      // Always refresh accounts table when investment data may have changed (sync, fallback sync, or price update)
+      populateInvestmentAccountsInDB().catch((err) =>
+        logger.warn("Failed to update investment accounts in main table:", err),
+      );
     }
   };
 
@@ -1241,7 +1268,7 @@ export default function InvestmentsScreen({
 
       // Check if we have connections
       if (connections.length === 0) {
-        logger.info("No connections found, just reloading from DB...");
+        logger.debug("No connections found, just reloading from DB...");
         await loadFromDbWithoutAutoSync();
         setIsRefreshing(false);
         return;
@@ -1259,7 +1286,7 @@ export default function InvestmentsScreen({
         ? (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60)
         : Infinity;
 
-      logger.info("🔄 Pull-to-refresh triggered", {
+      logger.debug("🔄 Pull-to-refresh triggered", {
         lastSynced: lastSynced?.toISOString() || "never",
         hoursSinceSync: hoursSinceSync.toFixed(2),
         needsApiRefresh: hoursSinceSync > 24,
@@ -1267,7 +1294,7 @@ export default function InvestmentsScreen({
 
       if (hoursSinceSync > 24) {
         // Data is stale (>24 hours) - sync from SnapTrade API (not paid refresh endpoint)
-        logger.info("📡 Data is >24 hours old, syncing from SnapTrade API...");
+        logger.debug("📡 Data is >24 hours old, syncing from SnapTrade API...");
 
         isSyncInProgress.current = true;
 
@@ -1308,7 +1335,9 @@ export default function InvestmentsScreen({
             await loadFromDbWithoutAutoSync();
           }
 
-          logger.info("✅ Pull-to-refresh completed - data synced from API");
+          logger.debug("✅ Pull-to-refresh completed - data synced from API");
+
+          await populateInvestmentAccountsInDB();
 
           // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
           DeviceEventEmitter.emit("investmentDataSynced");
@@ -1354,14 +1383,14 @@ export default function InvestmentsScreen({
         }
       } else {
         // Data is fresh (<24 hours) - recalculate balances and reload from database
-        logger.info(
+        logger.debug(
           "💾 Data is fresh (<24 hours), recalculating balances and reloading from database...",
         );
 
         // Always recalculate balances on pull-to-refresh to ensure accuracy
         try {
           await recalculateInvestmentBalances(user.id, connection.account_id);
-          logger.info("✅ Balances recalculated from active holdings");
+          logger.debug("✅ Balances recalculated from active holdings");
 
           // Wait longer for database update to fully commit
           await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -1407,9 +1436,11 @@ export default function InvestmentsScreen({
           await loadFromDbWithoutAutoSync();
         }
 
-        logger.info(
+        logger.debug(
           "✅ Pull-to-refresh completed - balances recalculated and data reloaded",
         );
+
+        await populateInvestmentAccountsInDB();
 
         // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
         DeviceEventEmitter.emit("investmentDataSynced");
@@ -1514,7 +1545,7 @@ export default function InvestmentsScreen({
 
           // Check connection status from SnapTrade API
           try {
-            logger.info("🔍 Verifying connection status after reconnection...");
+            logger.debug("🔍 Verifying connection status after reconnection...");
             const connectionDetails = await getSnaptradeConnectionDetails(
               user.id,
               connections[0]?.account_id || "",
@@ -1535,11 +1566,11 @@ export default function InvestmentsScreen({
               setConnections(updatedConnections || []);
 
               // Reload all investment data (without triggering auto-sync)
-              logger.info("🔄 Reloading investment data after reconnection...");
+              logger.debug("🔄 Reloading investment data after reconnection...");
               await loadFromDbWithoutAutoSync();
 
               // Trigger a sync to get fresh data
-              logger.info("🔄 Triggering sync after reconnection...");
+              logger.debug("🔄 Triggering sync after reconnection...");
               try {
                 // CRITICAL: Ensure we have a valid account_id
                 const accountId =
@@ -1564,6 +1595,8 @@ export default function InvestmentsScreen({
                 logger.info(
                   "✅ Reconnection complete! Data synced successfully.",
                 );
+
+                await populateInvestmentAccountsInDB();
 
                 // Notify other screens (home screen HoldingsMoversCard) that investment data has been updated
                 DeviceEventEmitter.emit("investmentDataSynced");
@@ -1651,12 +1684,12 @@ export default function InvestmentsScreen({
 
   const handleAddInvestmentAccount = () => {
     if (isDemoMode) return;
-    logger.info("Add Investment Account button pressed");
+    logger.debug("Add Investment Account button pressed");
     setShowInstitutionModal(true);
   };
 
   const handleInstitutionSelect = (institutionId: string) => {
-    logger.info("Investment institution selected:", institutionId);
+    logger.debug("Investment institution selected:", institutionId);
     setShowInstitutionModal(false);
   };
 
@@ -2366,8 +2399,44 @@ export default function InvestmentsScreen({
       (holding) => holding.security_type !== "Open Ended Fund",
     );
 
-    // Keep the same sequence - don't sort, just use filtered holdings
-    const nonCashHoldings = displayHoldings;
+    // Sort by gain/loss when applicable - descending (highest gains first)
+    let sortedHoldings = displayHoldings;
+    if (holdingsSortBy === "total_gain_loss") {
+      sortedHoldings = [...displayHoldings].sort((a, b) => {
+        const aVal = a.unrealized_pl ?? 0;
+        const bVal = b.unrealized_pl ?? 0;
+        return bVal - aVal;
+      });
+    } else if (holdingsSortBy === "total_gain_loss_percent") {
+      sortedHoldings = [...displayHoldings].sort((a, b) => {
+        const aVal = a.total_percent_change ?? 0;
+        const bVal = b.total_percent_change ?? 0;
+        return bVal - aVal;
+      });
+    } else if (holdingsSortBy === "today_gain_loss") {
+      sortedHoldings = [...displayHoldings].sort((a, b) => {
+        const aVal =
+          a.day_change ??
+          (a.day_change_percent != null && a.market_value
+            ? (a.market_value * a.day_change_percent) / 100
+            : null) ??
+          0;
+        const bVal =
+          b.day_change ??
+          (b.day_change_percent != null && b.market_value
+            ? (b.market_value * b.day_change_percent) / 100
+            : null) ??
+          0;
+        return bVal - aVal;
+      });
+    } else if (holdingsSortBy === "today_gain_loss_percent") {
+      sortedHoldings = [...displayHoldings].sort((a, b) => {
+        const aVal = a.day_change_percent ?? 0;
+        const bVal = b.day_change_percent ?? 0;
+        return bVal - aVal;
+      });
+    }
+    const nonCashHoldings = sortedHoldings;
 
     if (nonCashHoldings.length === 0) return null;
 
@@ -2378,60 +2447,60 @@ export default function InvestmentsScreen({
             Your Holdings ({nonCashHoldings.length})
           </Text>
           <TouchableOpacity
-            style={styles.filterIconContainer}
+            style={styles.holdingsSortLabelRow}
             onPress={showHoldingsFilterOptions}
+            activeOpacity={0.7}
           >
-            <Ionicons name="filter-outline" size={18} color="#4A90E2" />
+            <Text style={styles.holdingsSortLabel} numberOfLines={1}>
+              {holdingsSortBy === "total_gain_loss"
+                ? "Total gain/loss"
+                : holdingsSortBy === "total_gain_loss_percent"
+                  ? "Total gain/loss by %"
+                  : holdingsSortBy === "today_gain_loss"
+                    ? "Today gain/loss"
+                    : holdingsSortBy === "today_gain_loss_percent"
+                      ? "Today gain/loss by %"
+                      : holdingsSortBy === "last_price"
+                        ? "Last price"
+                        : "% of Account"}
+            </Text>
+            <View style={styles.filterIconContainer}>
+              <Ionicons name="filter-outline" size={18} color="#4A90E2" />
+            </View>
           </TouchableOpacity>
         </View>
         <View style={styles.glassContainer}>
           {nonCashHoldings.map((h, idx) => {
-            // Calculate values based on sort type
-            const getDisplayValue = () => {
-              switch (holdingsSortBy) {
-                case "total_gain_loss":
-                  return h.unrealized_pl || 0;
-                case "today_gain_loss":
-                  return (
-                    h.day_change ||
-                    (h.day_change_percent
-                      ? (h.market_value * h.day_change_percent) / 100
-                      : 0)
-                  );
-                case "last_price":
-                  return h.price || 0;
-                case "percent_of_account":
-                  return totalPortfolioValue > 0
-                    ? (h.market_value / totalPortfolioValue) * 100
-                    : 0;
-                default:
-                  return h.unrealized_pl || 0;
-              }
-            };
-
             const getDisplayPercentage = () => {
               switch (holdingsSortBy) {
                 case "total_gain_loss":
-                  // Use the new total_percent_change column from database
+                case "total_gain_loss_percent":
                   return h.total_percent_change || 0;
                 case "today_gain_loss":
-                  // Use day_change_percent directly from database
+                case "today_gain_loss_percent":
                   return h.day_change_percent || 0;
                 case "last_price":
-                  // For last price, show the daily change percentage in the chip
                   return h.day_change_percent || 0;
                 case "percent_of_account":
                   return totalPortfolioValue > 0
                     ? (h.market_value / totalPortfolioValue) * 100
                     : 0;
                 default:
-                  // Use the new total_percent_change column from database
                   return h.total_percent_change || 0;
               }
             };
-
-            const displayValue = getDisplayValue();
             const displayPercentage = getDisplayPercentage();
+
+            // When "Today gain/loss" or "Today gain/loss by %": show day change; otherwise show total unrealized P&L
+            const displayGainLoss =
+              holdingsSortBy === "today_gain_loss" ||
+              holdingsSortBy === "today_gain_loss_percent"
+                ? (h.day_change ??
+                  (h.day_change_percent != null && h.market_value
+                    ? (h.market_value * h.day_change_percent) / 100
+                    : null))
+                : h.unrealized_pl;
+            const gainLossValue = displayGainLoss ?? 0;
 
             return (
               <View key={idx}>
@@ -2444,75 +2513,80 @@ export default function InvestmentsScreen({
                     />
                     <View style={styles.stockInfo}>
                       <Text style={styles.stockSymbol}>{h.symbol}</Text>
-                      <Text style={styles.stockDescription} numberOfLines={1}>
-                        {h.description}
-                      </Text>
                       <Text style={styles.stockQuantity}>{h.units} Shares</Text>
                     </View>
                   </View>
                   <View style={styles.holdingRight}>
-                    <Text style={styles.stockValue}>
-                      $
-                      {h.market_value?.toLocaleString("en-US", {
-                        minimumFractionDigits: 2,
-                        maximumFractionDigits: 2,
-                      }) || "0.00"}
-                    </Text>
-                    <View style={styles.stockDetails}>
-                      <Text style={styles.stockDetail}>
-                        {holdingsSortBy === "percent_of_account"
-                          ? `${displayValue.toFixed(1)}%`
-                          : `$${displayValue.toFixed(2)}`}
+                    <View style={styles.holdingRightValues}>
+                      <Text style={styles.holdingTotalValue}>
+                        $
+                        {holdingsSortBy === "last_price" && h.price != null
+                          ? Number(h.price).toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            })
+                          : (h.market_value ?? 0).toLocaleString("en-US", {
+                              minimumFractionDigits: 2,
+                              maximumFractionDigits: 2,
+                            }) || "0.00"}
                       </Text>
-                      <View
+                      <Text
                         style={[
-                          styles.percentageChip,
+                          styles.holdingGainLoss,
+                          gainLossValue >= 0
+                            ? styles.holdingGainLossPositive
+                            : styles.holdingGainLossNegative,
+                        ]}
+                      >
+                        {gainLossValue >= 0 ? "+" : "−"}$
+                        {Math.abs(gainLossValue).toLocaleString("en-US", {
+                          minimumFractionDigits: 2,
+                          maximumFractionDigits: 2,
+                        })}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.percentageChip,
+                        {
+                          backgroundColor:
+                            holdingsSortBy === "percent_of_account"
+                              ? "rgba(78, 205, 196, 0.15)"
+                              : holdingsSortBy === "last_price"
+                                ? "rgba(142, 142, 147, 0.15)"
+                                : displayPercentage >= 0
+                                  ? "rgba(78, 205, 196, 0.15)"
+                                  : "rgba(255, 107, 107, 0.15)",
+                          borderColor:
+                            holdingsSortBy === "percent_of_account"
+                              ? "rgba(78, 205, 196, 0.3)"
+                              : holdingsSortBy === "last_price"
+                                ? "rgba(142, 142, 147, 0.3)"
+                                : displayPercentage >= 0
+                                  ? "rgba(78, 205, 196, 0.3)"
+                                  : "rgba(255, 107, 107, 0.3)",
+                        },
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.percentageChipText,
                           {
-                            backgroundColor:
+                            color:
                               holdingsSortBy === "percent_of_account"
-                                ? "rgba(74, 144, 226, 0.15)"
+                                ? "#4ECDC4"
                                 : holdingsSortBy === "last_price"
-                                  ? "rgba(142, 142, 147, 0.15)"
+                                  ? "#8E8E93"
                                   : displayPercentage >= 0
-                                    ? "rgba(78, 205, 196, 0.15)"
-                                    : "rgba(255, 107, 107, 0.15)",
-                            borderColor:
-                              holdingsSortBy === "percent_of_account"
-                                ? "rgba(74, 144, 226, 0.3)"
-                                : holdingsSortBy === "last_price"
-                                  ? "rgba(142, 142, 147, 0.3)"
-                                  : displayPercentage >= 0
-                                    ? "rgba(78, 205, 196, 0.3)"
-                                    : "rgba(255, 107, 107, 0.3)",
+                                    ? "#4ECDC4"
+                                    : "#FF6B6B",
                           },
                         ]}
                       >
-                        <Text
-                          style={[
-                            styles.percentageChipText,
-                            {
-                              color:
-                                holdingsSortBy === "percent_of_account"
-                                  ? "#4A90E2"
-                                  : holdingsSortBy === "last_price"
-                                    ? "#8E8E93"
-                                    : displayPercentage >= 0
-                                      ? "#4ECDC4"
-                                      : "#FF6B6B",
-                            },
-                          ]}
-                        >
-                          {holdingsSortBy === "percent_of_account"
-                            ? `${displayPercentage.toFixed(1)}%`
-                            : holdingsSortBy === "last_price"
-                              ? `${
-                                  displayPercentage >= 0 ? "+" : ""
-                                }${displayPercentage.toFixed(1)}%`
-                              : `${
-                                  displayPercentage >= 0 ? "+" : ""
-                                }${displayPercentage.toFixed(1)}%`}
-                        </Text>
-                      </View>
+                        {holdingsSortBy === "percent_of_account"
+                          ? `${displayPercentage.toFixed(1)}%`
+                          : `${displayPercentage >= 0 ? "+" : ""}${displayPercentage.toFixed(1)}%`}
+                      </Text>
                     </View>
                   </View>
                 </View>
@@ -2590,6 +2664,8 @@ export default function InvestmentsScreen({
       { key: "today_gain_loss", label: "Today gain/loss" },
       { key: "last_price", label: "Last price" },
       { key: "percent_of_account", label: "% of Account" },
+      { key: "total_gain_loss_percent", label: "Total gain/loss by %" },
+      { key: "today_gain_loss_percent", label: "Today gain/loss by %" },
     ];
 
     return (
@@ -2607,7 +2683,7 @@ export default function InvestmentsScreen({
                 style={styles.modalContent}
               >
                 <View style={styles.modalHeader}>
-                  <Text style={styles.modalTitle}>Sort Holdings By</Text>
+                  <Text style={styles.modalTitle}>Sort HOLDINGS BY</Text>
                 </View>
 
                 <View style={styles.sortOptionsContainer}>

@@ -210,6 +210,58 @@ export default function HomeScreen() {
     refreshAll: refreshFinancialData,
   } = useUnifiedFinancialData();
 
+  // Category totals (same as bottom sheet). Used for cards, sheet badges, and net worth.
+  const checkingsSavingsTotal = useMemo(() => {
+    return categorizedDeposits.reduce(
+      (sum, account) => sum + getAccountBalance(account),
+      0
+    );
+  }, [categorizedDeposits]);
+
+  const investmentsCategoryTotal = useMemo(() => {
+    return categorizedInvestments.reduce(
+      (sum, account) => sum + getAccountBalance(account),
+      0
+    );
+  }, [categorizedInvestments]);
+
+  const creditCardsTotal = useMemo(() => {
+    return categorizedLiabilities
+      .filter(
+        (acc) => acc.type === "credit" || (acc as any).subtype === "credit card"
+      )
+      .reduce((sum, account) => sum + getAccountBalance(account), 0);
+  }, [categorizedLiabilities]);
+
+  const loansTotal = useMemo(() => {
+    return categorizedLiabilities
+      .filter(
+        (acc) => acc.type === "loan" || (acc as any).subtype?.includes("loan")
+      )
+      .reduce((sum, account) => sum + getAccountBalance(account), 0);
+  }, [categorizedLiabilities]);
+
+  const cashTotal = useMemo(() => {
+    return cashEntries.reduce((sum, entry) => sum + (entry.amount || 0), 0);
+  }, [cashEntries]);
+
+  // Net worth: checkings + investments + cash (positive), credit cards + loans (negative). Ignore real estate.
+  const netWorth = useMemo(
+    () =>
+      checkingsSavingsTotal +
+      investmentsCategoryTotal +
+      cashTotal -
+      creditCardsTotal -
+      loansTotal,
+    [
+      checkingsSavingsTotal,
+      investmentsCategoryTotal,
+      cashTotal,
+      creditCardsTotal,
+      loansTotal,
+    ]
+  );
+
   // Removed verbose logging - only log on significant state changes
 
   // Modal management with lazy loading
@@ -259,7 +311,7 @@ export default function HomeScreen() {
     spendingData,
     loading: spendingLoading,
     refresh: refreshSpendingData,
-  } = useSpendingData(totalBalance);
+  } = useSpendingData(netWorth);
 
   // Unreviewed transactions for notification badge (hidden in demo)
   const { isDemoMode } = useDemoMode();
@@ -887,41 +939,6 @@ export default function HomeScreen() {
   // Memoized closest goal calculation - use unified goals data
   const closestGoal = useMemo(() => findClosestGoal(goals), [goals]);
 
-  // Calculate category totals
-  const checkingsSavingsTotal = useMemo(() => {
-    return categorizedDeposits.reduce(
-      (sum, account) => sum + getAccountBalance(account),
-      0
-    );
-  }, [categorizedDeposits]);
-
-  const investmentsCategoryTotal = useMemo(() => {
-    return categorizedInvestments.reduce(
-      (sum, account) => sum + getAccountBalance(account),
-      0
-    );
-  }, [categorizedInvestments]);
-
-  const creditCardsTotal = useMemo(() => {
-    return categorizedLiabilities
-      .filter(
-        (acc) => acc.type === "credit" || (acc as any).subtype === "credit card"
-      )
-      .reduce((sum, account) => sum + getAccountBalance(account), 0);
-  }, [categorizedLiabilities]);
-
-  const loansTotal = useMemo(() => {
-    return categorizedLiabilities
-      .filter(
-        (acc) => acc.type === "loan" || (acc as any).subtype?.includes("loan")
-      )
-      .reduce((sum, account) => sum + getAccountBalance(account), 0);
-  }, [categorizedLiabilities]);
-
-  const cashTotal = useMemo(() => {
-    return cashEntries.reduce((sum, entry) => sum + (entry.amount || 0), 0);
-  }, [cashEntries]);
-
   // Show loading skeleton until we have data or hook has finished loading.
   // This prevents flashing zero net worth when signed in with no cache (hook still fetching).
   const hasCachedData =
@@ -992,7 +1009,7 @@ export default function HomeScreen() {
           <FinnyMessage
             goals={goals}
             spendingData={spendingData}
-            totalBalance={totalBalance}
+            totalBalance={netWorth}
             investmentsTotal={investmentsTotal}
             liabilitiesTotal={liabilitiesTotal}
             netWorthChange={spendingData.netWorthChange}
@@ -1004,7 +1021,7 @@ export default function HomeScreen() {
 
           {/* Net Worth Carousel */}
           <QuickStats
-            totalBalance={totalBalance}
+            totalBalance={netWorth}
             spendingData={{
               threeMonths: spendingData.threeMonths,
               lastMonth: spendingData.lastMonth,
@@ -1074,8 +1091,8 @@ export default function HomeScreen() {
             }}
           >
             <FinancialCards
-              accountsTotal={accountsTotal}
-              investmentsTotal={investmentsTotal}
+              accountsTotal={checkingsSavingsTotal + cashTotal}
+              investmentsTotal={investmentsCategoryTotal}
               liabilitiesTotal={liabilitiesTotal}
               formatCurrency={formatCurrency}
               isLoading={financialLoading || financialInitialLoad}

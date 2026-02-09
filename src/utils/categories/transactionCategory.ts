@@ -49,12 +49,19 @@ export function getDisplayCategory(transaction: Transaction): string {
     return transaction.categories.name;
   }
   
-  // Priority 2: User explicit override (but skip INTERNAL_TRANSFER) - legacy fallback
-  if (transaction.new_category && transaction.new_category !== 'INTERNAL_TRANSFER') {
+  // Internal transfer: always show INTERNAL_TRANSFER, never "Other"
+  if (
+    transaction.new_category === 'INTERNAL_TRANSFER' ||
+    transaction.top_category === 'INTERNAL_TRANSFER'
+  ) {
+    return 'INTERNAL_TRANSFER';
+  }
+
+  // Priority 2: User explicit override - legacy fallback
+  if (transaction.new_category) {
     return transaction.new_category;
   }
-  
-  // If INTERNAL_TRANSFER, fall through to Plaid category
+
   // Priority 3: Recurring stream-based category
   if (transaction.recurring_stream_id && transaction.recurring_streams) {
     const stream = Array.isArray(transaction.recurring_streams)

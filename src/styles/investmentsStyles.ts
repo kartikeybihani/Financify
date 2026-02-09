@@ -267,7 +267,7 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 8,
+    paddingVertical: 14,
     paddingHorizontal: 10,
   },
   holdingLeft: {  
@@ -275,9 +275,6 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     flex: 1,
     marginRight: 12,
-  },
-  holdingRight: {
-    alignItems: "flex-end",
   },
   stockLogo: {
     width: 32,
@@ -341,6 +338,36 @@ export const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#4ECDC4",
     marginBottom: 4,
+  },
+  holdingTotalValue: {
+    fontSize: FONTS.base,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 2,
+  },
+  holdingRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  holdingRightValues: {
+    alignItems: "flex-end",
+  },
+  holdingGainLossRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 2,
+  },
+  holdingGainLoss: {
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  holdingGainLossPositive: {
+    color: "#4ECDC4",
+  },
+  holdingGainLossNegative: {
+    color: "#FF6B6B",
   },
   stockDetails: {
     alignItems: "flex-end",
@@ -483,6 +510,17 @@ export const styles = StyleSheet.create({
     alignItems: "center",
     marginBottom: 8,
     paddingHorizontal: 4,
+  },
+  holdingsSortLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    maxWidth: "50%",
+  },
+  holdingsSortLabel: {
+    fontSize: FONTS.xs,
+    color: "rgba(255, 255, 255, 0.65)",
+    fontWeight: "500",
   },
   filterIconContainer: {
     width: 27,
@@ -800,7 +838,7 @@ export const styles = StyleSheet.create({
     fontWeight: "600",
   },
   
-  // Sort Modal Styles
+  // Sort Modal Styles (legacy / fallback)
   modalOverlay: {
     flex: 1,
     backgroundColor: "rgba(0, 0, 0, 0.75)",
@@ -823,10 +861,13 @@ export const styles = StyleSheet.create({
     borderBottomColor: "rgba(255,255,255,0.1)",
   },
   modalTitle: {
-    fontSize: Math.max(18, SCREEN_WIDTH * 0.05),
+    fontSize: FONTS.sm,
     fontWeight: "600",
     color: "#fff",
     textAlign: "center",
+    textTransform: "uppercase",
+    fontFamily: "Manrope",
+    letterSpacing: 0.6,
   },
   sortOptionsContainer: {
     padding: Math.max(20, SCREEN_WIDTH * 0.05),
@@ -860,12 +901,78 @@ export const styles = StyleSheet.create({
     color: "#4A90E2",
     fontWeight: "600",
   },
+
+  // Compact Sort Sheet (small area, closes on selection)
+  sortSheetOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.35)",
+    justifyContent: "flex-end",
+  },
+  sortSheetContent: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    width: SCREEN_WIDTH,
+    paddingBottom: Math.max(24, SCREEN_HEIGHT * 0.03),
+    backgroundColor: "rgba(28, 28, 28, 0.98)",
+    borderWidth: 1,
+    borderBottomWidth: 0,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    overflow: "hidden",
+  },
+  sortSheetHandle: {
+    width: 36,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    alignSelf: "center",
+    marginTop: 10,
+    marginBottom: 4,
+  },
+  sortSheetTitle: {
+    fontSize: FONTS.sm,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.7)",
+    textAlign: "center",
+    marginBottom: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  sortSheetOptionsBox: {
+    marginHorizontal: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    overflow: "hidden",
+  },
+  sortSheetOption: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+  },
+  sortSheetOptionDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    marginLeft: 16,
+    marginRight: 16,
+  },
+  sortSheetOptionText: {
+    fontSize: FONTS.base,
+    color: "rgba(255, 255, 255, 0.88)",
+    fontWeight: "500",
+  },
+  sortSheetOptionTextSelected: {
+    color: "#4A90E2",
+    fontWeight: "600",
+  },
   
   // Percentage Chip Styles
   percentageChip: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 18,
     borderWidth: 1,
     alignSelf: "flex-start",
   },

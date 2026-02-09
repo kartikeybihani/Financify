@@ -646,7 +646,7 @@ export default function InsightsScreen() {
           },
         });
       } else {
-        logger.info(
+        logger.debug(
           "⏭️ [PRELOADER] Skipping transactions preload - cache exists"
         );
       }
@@ -661,7 +661,7 @@ export default function InsightsScreen() {
           },
         });
       } else {
-        logger.info("⏭️ [PRELOADER] Skipping recurring preload - cache exists");
+        logger.debug("⏭️ [PRELOADER] Skipping recurring preload - cache exists");
       }
 
       if (!hasInvestmentCache) {
@@ -679,7 +679,7 @@ export default function InsightsScreen() {
           },
         });
       } else {
-        logger.info(
+        logger.debug(
           "⏭️ [PRELOADER] Skipping investments preload - cache exists"
         );
       }

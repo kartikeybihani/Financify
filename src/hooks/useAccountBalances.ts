@@ -10,7 +10,7 @@ import { useCashEntries } from "./useCashEntries";
 import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
-import { getAccountBalance } from "@/src/utils/accountBalance";
+import { getAccountBalance, getAccountBalanceForTotal } from "@/src/utils/accountBalance";
 import { useDemoMode } from "@/src/contexts/DemoContext";
 import { demoAccounts } from "@/src/data/demo";
 
@@ -294,14 +294,14 @@ export function useAccountBalances() {
     [accounts]
   );
 
-  // Memoized financial totals
+  // Memoized financial totals — home total uses current_balance + available_balance per account
   const accountsTotal = useCallback(() => 
-    categorizedDeposits().reduce((acc, a) => acc + getAccountBalance(a), 0),
+    categorizedDeposits().reduce((acc, a) => acc + getAccountBalanceForTotal(a), 0),
     [categorizedDeposits]
   );
 
   const investmentsTotal = useCallback(() => 
-    categorizedInvestments().reduce((acc, a) => acc + (a.balances?.current || 0), 0),
+    categorizedInvestments().reduce((acc, a) => acc + getAccountBalanceForTotal(a), 0),
     [categorizedInvestments]
   );
 

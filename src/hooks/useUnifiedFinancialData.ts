@@ -11,7 +11,7 @@ import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 import { getSnaptradeBalancesFromDB, getSnaptradeHoldingsFromDB } from "@/src/utils/integrations/snaptrade";
-import { getAccountBalance } from "@/src/utils/accountBalance";
+import { getAccountBalance, getAccountBalanceForTotal } from "@/src/utils/accountBalance";
 import { loadInvestmentFromCacheSync } from "@/src/shared/utils/investmentCache";
 import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
 import { useDemoMode } from "@/src/contexts/DemoContext";
@@ -221,11 +221,11 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       const cacheAge = now - timestamp;
 
       if (cacheAge > CACHE_DURATION) {
-        logger.info("⏰ [UNIFIED CACHE] Cache expired");
+        logger.debug("⏰ [UNIFIED CACHE] Cache expired");
         return null;
       }
 
-      logger.info(`✅ [UNIFIED CACHE] Loaded from cache (age: ${Math.round(cacheAge / 1000)}s)`);
+      logger.debug(`✅ [UNIFIED CACHE] Loaded from cache (age: ${Math.round(cacheAge / 1000)}s)`);
       return JSON.parse(cacheString) as CachedFinancialData;
     } catch (error) {
       logger.error("❌ [UNIFIED CACHE] Failed to load from cache:", error);
@@ -275,7 +275,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       
       const user = authResult.user;
 
-      logger.info("🔄 [UNIFIED] Fetching all financial data in parallel...");
+      logger.debug("🔄 [UNIFIED] Fetching all financial data in parallel...");
       
       // Fetch accounts first to check if user has investment accounts
       const accountsData = await getAllUserAccounts(user.id).catch(err => {
@@ -340,7 +340,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
 
       // Only log on first load or when cache is missing (reduced verbosity)
       if (!hasCache) {
-        logger.info(`✅ [UNIFIED] Loaded ${accountsData?.length || 0} accounts, ${goalsData?.length || 0} goals, ${cashData?.length || 0} cash entries`);
+        logger.debug(`✅ [UNIFIED] Loaded ${accountsData?.length || 0} accounts, ${goalsData?.length || 0} goals, ${cashData?.length || 0} cash entries`);
       }
 
       // Save to cache (including investment balances and holdings)
@@ -366,7 +366,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       const cachedData = loadFromCacheSync();
       
       if (cachedData) {
-        logger.info("⚡ [UNIFIED] Using cached data for immediate display");
+        logger.debug("⚡ [UNIFIED] Using cached data for immediate display");
         setAccounts(cachedData.accounts);
         setGoals(cachedData.goals);
         setCashEntries(cachedData.cashEntries);
@@ -459,7 +459,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
             logger.error("❌ [UNIFIED] Background data fetch failed:", error);
           });
         } else {
-          logger.info("✅ [UNIFIED] Recently synced, skipping background sync");
+          logger.debug("✅ [UNIFIED] Recently synced, skipping background sync");
         }
       } else {
         // No cache or empty cache (e.g. after reinstall) - fetch from DB immediately
@@ -472,7 +472,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     const financialSubscription = DeviceEventEmitter.addListener(
       "financialDataRefreshed",
       () => {
-        logger.info("🔄 [UNIFIED] Financial data refresh event received");
+        logger.debug("🔄 [UNIFIED] Financial data refresh event received");
         fetchAllData(false);
       }
     );
@@ -481,7 +481,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     const goalsSubscription = DeviceEventEmitter.addListener(
       "goalsUpdated",
       () => {
-        logger.info("🔄 [UNIFIED] Goals update event received");
+        logger.debug("🔄 [UNIFIED] Goals update event received");
         fetchAllData(false);
       }
     );
@@ -491,7 +491,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       "authStateChanged",
       async (data) => {
         if (data && data.event === "TOKEN_REFRESHED" && data.validated) {
-          logger.info("🔄 [UNIFIED] Token refreshed, reloading data...");
+          logger.debug("🔄 [UNIFIED] Token refreshed, reloading data...");
           setTimeout(async () => {
             await fetchAllData(false);
           }, 200);
@@ -503,7 +503,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     const investmentSubscription = DeviceEventEmitter.addListener(
       "investmentDataSynced",
       async () => {
-        logger.info("📈 [UNIFIED] Investment data synced event received, refreshing investment data...");
+        logger.debug("📈 [UNIFIED] Investment data synced event received, refreshing investment data...");
         try {
           // Only refresh investment data, not all financial data
           const [balancesData, holdingsData] = await Promise.all([
@@ -519,7 +519,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
           
           setInvestmentBalances(balancesData || []);
           setInvestmentHoldings(holdingsData || []);
-          logger.info(`✅ [UNIFIED] Investment data refreshed: ${holdingsData?.length || 0} holdings, ${balancesData?.length || 0} balances`);
+          logger.debug(`✅ [UNIFIED] Investment data refreshed: ${holdingsData?.length || 0} holdings, ${balancesData?.length || 0} balances`);
           
           // Update cache with new investment data
           await saveToCache({
@@ -559,37 +559,22 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     [accounts]
   );
 
-  // Memoized totals
+  // Memoized totals — home screen total uses current_balance + available_balance per account
   const accountsTotal = useMemo(
-    () => categorizedDeposits.reduce((acc, a) => acc + getAccountBalance(a), 0),
+    () => categorizedDeposits.reduce((acc, a) => acc + getAccountBalanceForTotal(a), 0),
     [categorizedDeposits]
   );
 
-  // Use total_value from investment_balances as single source of truth (same as investments screen)
-  // Sum ALL balances to include both Plaid and SnapTrade accounts
+  // Use current_balance + available_balance from accounts table for home total (same as other accounts)
   const investmentsTotal = useMemo(() => {
-    // Sum total_value from ALL investment_balances (both Plaid and SnapTrade)
-    if (investmentBalances.length > 0) {
-      const total = investmentBalances.reduce(
-        (sum, b) => sum + (b.total_value || 0),
-        0
-      );
-      if (total > 0) {
-        return total;
-      }
-    }
-    
-    // Fallback to accounts table if no balances found (for backwards compatibility)
     if (categorizedInvestments.length > 0) {
-      const accountsTotal = categorizedInvestments.reduce(
-        (acc, a) => acc + (a.balances?.current || 0),
+      return categorizedInvestments.reduce(
+        (acc, a) => acc + getAccountBalanceForTotal(a),
         0
       );
-      return accountsTotal;
     }
-    
     return 0;
-  }, [investmentBalances, categorizedInvestments]);
+  }, [categorizedInvestments]);
 
   const liabilitiesTotal = useMemo(
     () => categorizedLiabilities.reduce((acc, a) => acc + (a.balances?.current || 0), 0),
@@ -611,7 +596,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       // Use synchronous operations
       AppStorage.removeItemSync(UNIFIED_CACHE_KEY);
       AppStorage.removeItemSync(UNIFIED_CACHE_TIMESTAMP_KEY);
-      logger.info("🗑️ [UNIFIED CACHE] Cache cleared");
+      logger.debug("🗑️ [UNIFIED CACHE] Cache cleared");
     } catch (error) {
       logger.error("❌ [UNIFIED CACHE] Failed to clear cache:", error);
     }

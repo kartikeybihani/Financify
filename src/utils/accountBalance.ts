@@ -57,3 +57,17 @@ export function getAccountBalance(account: Account | any): number {
   const balance = account?.current_balance ?? account?.balances?.current ?? 0;
   return balance != null ? Number(balance) : 0;
 }
+
+/**
+ * Gets the balance to use for home screen total: current_balance + available_balance.
+ * Used when displaying total amount so both balance fields are included.
+ */
+export function getAccountBalanceForTotal(account: Account | any): number {
+  const current =
+    account?.current_balance ?? account?.balances?.current ?? 0;
+  const available =
+    account?.available_balance ?? account?.balances?.available ?? 0;
+  const currentNum = current != null ? Number(current) : 0;
+  const availableNum = available != null ? Number(available) : 0;
+  return (isNaN(currentNum) ? 0 : currentNum) + (isNaN(availableNum) ? 0 : availableNum);
+}

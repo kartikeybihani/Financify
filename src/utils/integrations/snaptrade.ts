@@ -693,7 +693,7 @@ export const storeSnaptradeCredentials = async (
 // === Check SnapTrade Connection Status ===
 export const checkSnaptradeConnectionStatus = async (userId: string, accountId: string) => {
   try {
-    logger.info("🔍 Checking SnapTrade connection status...");
+    logger.debug("🔍 Checking SnapTrade connection status...");
     
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
@@ -711,7 +711,7 @@ export const checkSnaptradeConnectionStatus = async (userId: string, accountId: 
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to check connection status");
     
-    logger.info("✅ Connection status checked:", data);
+    logger.debug("✅ Connection status checked:", data);
     return data;
   } catch (error) {
     logger.error("❌ Failed to check connection status:", error);
@@ -722,7 +722,7 @@ export const checkSnaptradeConnectionStatus = async (userId: string, accountId: 
 // === Get Connection Details from SnapTrade API ===
 export const getSnaptradeConnectionDetails = async (userId: string, accountId: string) => {
   try {
-    logger.info("🔍 Getting connection details from SnapTrade API...");
+    logger.debug("🔍 Getting connection details from SnapTrade API...");
     
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
@@ -1031,7 +1031,7 @@ export const getAllInvestmentConnectionsFromDB = async () => {
       return bTime - aTime;
     });
 
-    logger.info("📊 All investment connections loaded:", {
+    logger.debug("📊 All investment connections loaded:", {
       snaptrade: snaptradeConnections?.length || 0,
       plaid: plaidConnections.length,
       total: allConnections.length,
@@ -1060,7 +1060,7 @@ export const getSnaptradeConnectionsFromDB = async () => {
     
     // Debug logging to see connection status
     if (data && data.length > 0) {
-      logger.info("📊 Connections loaded:", {
+      logger.debug("📊 Connections loaded:", {
         count: data.length,
         statuses: data.map((c: any) => ({
           account_id: c.account_id?.substring(0, 8) + "...",
@@ -1084,7 +1084,7 @@ export const populateInvestmentAccountsInDB = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
 
-    logger.info("🔄 Populating investment accounts via API endpoint...");
+    logger.debug("🔄 Populating investment accounts via API endpoint...");
 
     // Call the server-side API endpoint to handle RLS policies
     const res = await authenticatedFetch(`${BASE_URL}/api/store_accounts`, {
@@ -1102,7 +1102,7 @@ export const populateInvestmentAccountsInDB = async () => {
       throw new Error(data.error || "Failed to populate investment accounts");
     }
 
-    logger.info(`✅ Investment accounts population completed: ${data.populated} accounts processed`);
+    logger.debug(`✅ Investment accounts population completed: ${data.populated} accounts processed`);
     return { success: true, populated: data.populated };
   } catch (error) {
     logger.error("❌ Failed to populate investment accounts:", error);

@@ -55,7 +55,7 @@ export const saveSpendingToCache = async (userId: string, data: {
     // Use synchronous operations for better performance
     AppStorage.setItemSync(cacheKey, JSON.stringify(cacheData));
     AppStorage.setItemSync(timestampKey, timestamp);
-    logger.info("💾 [SPENDING CACHE] Saved spending breakdown with", data.categoryBreakdown.length, "categories for user:", userId.substring(0, 8));
+    logger.debug("💾 [SPENDING CACHE] Saved spending breakdown with", data.categoryBreakdown.length, "categories for user:", userId.substring(0, 8));
   } catch (error) {
     logger.error("❌ [SPENDING CACHE] Failed to save to cache:", error);
   }
@@ -80,7 +80,7 @@ export const loadSpendingFromCache = async (userId: string): Promise<CachedSpend
     const timestampStr = AppStorage.getItemSync(timestampKey);
 
     if (!cachedData || !timestampStr) {
-      logger.info("📦 [SPENDING CACHE] No cached data found for user:", userId.substring(0, 8));
+      logger.debug("📦 [SPENDING CACHE] No cached data found for user:", userId.substring(0, 8));
       return null;
     }
 
@@ -89,7 +89,7 @@ export const loadSpendingFromCache = async (userId: string): Promise<CachedSpend
     const age = now - timestamp;
 
     if (age > CACHE_DURATION) {
-      logger.info("⏰ [SPENDING CACHE] Cache expired, age:", Math.round(age / 1000), "seconds");
+      logger.debug("⏰ [SPENDING CACHE] Cache expired, age:", Math.round(age / 1000), "seconds");
       // Clean up expired cache
       await clearSpendingCache(userId);
       return null;
@@ -107,7 +107,7 @@ export const loadSpendingFromCache = async (userId: string): Promise<CachedSpend
       return null;
     }
 
-    logger.info("📦 [SPENDING CACHE] Loaded spending breakdown from cache for user:", userId.substring(0, 8), "age:", Math.round(age / 1000), "seconds");
+    logger.debug("📦 [SPENDING CACHE] Loaded spending breakdown from cache for user:", userId.substring(0, 8), "age:", Math.round(age / 1000), "seconds");
     return data;
   } catch (error) {
     logger.error("❌ [SPENDING CACHE] Failed to load from cache:", error);
@@ -128,7 +128,7 @@ export const clearSpendingCache = async (userId?: string): Promise<void> => {
       // Use synchronous operations
       AppStorage.removeItemSync(cacheKey);
       AppStorage.removeItemSync(timestampKey);
-      logger.info("🗑️ [SPENDING CACHE] Cache cleared for user:", userId.substring(0, 8));
+      logger.debug("🗑️ [SPENDING CACHE] Cache cleared for user:", userId.substring(0, 8));
     } else {
       // Clear all user caches (for migration/logout)
       const allKeys = AppStorage.getAllKeysSync();
@@ -138,7 +138,7 @@ export const clearSpendingCache = async (userId?: string): Promise<void> => {
       );
       if (spendingKeys.length > 0) {
         AppStorage.multiRemoveSync(spendingKeys);
-        logger.info("🗑️ [SPENDING CACHE] Cleared all user caches:", spendingKeys.length, "keys");
+        logger.debug("🗑️ [SPENDING CACHE] Cleared all user caches:", spendingKeys.length, "keys");
       }
     }
   } catch (error) {

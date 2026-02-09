@@ -23,6 +23,9 @@ import {
   fetchSnaptradeAccounts,
   storeSnaptradeCredentials,
   syncSnaptradeInvestments,
+  refreshSnaptradeInvestments,
+  recalculateInvestmentBalances,
+  populateInvestmentAccountsInDB,
   getSnaptradeCredentialsWithFallback,
 } from "@/src/utils/integrations/snaptrade";
 import { supabase } from "@/src/lib/supabase/supabase";
@@ -189,29 +192,7 @@ export default function InstitutionSelectionModal({
       );
     }
 
-    // Sync investments data to database
-    if (accounts.length > 0) {
-      if (firstAccount && firstAccount.id) {
-        try {
-          logger.info(
-            "🔄 Syncing investments data to database for account:",
-            firstAccount.id,
-          );
-          const {
-            data: { user },
-          } = await supabase.auth.getUser();
-          if (user) {
-            await syncSnaptradeInvestments(user.id, firstAccount.id);
-          }
-          logger.info("✅ Investments data synced to database successfully");
-        } catch (syncError) {
-          logger.error(
-            "⚠️ Failed to sync investments to database (continuing anyway):",
-            syncError,
-          );
-        }
-      }
-    }
+    // Sync runs when ConnectionSuccessModal is shown (performRefresh)
 
     setIsConnecting(false);
     setConnectingInstitution(null);
@@ -584,6 +565,9 @@ export default function InstitutionSelectionModal({
   };
 
   const handleClose = () => {
+    // Don't allow closing while "Connecting" is showing (account connection in progress)
+    if (isConnecting) return;
+
     // Stop any active polling
     stopPolling();
 
@@ -682,24 +666,23 @@ export default function InstitutionSelectionModal({
 
   const performRefresh = async () => {
     // This is called by ConnectionSuccessModal while showing loading state
-    // The actual sync already happened during connection, but we do a quick refresh
-    // to ensure data is fresh and show proper loading animation
+    // Full sync (same as investments screen sync button) for fresh data
     try {
       logger.info("🔄 ConnectionSuccessModal refresh triggered");
-      // Get the authenticated user ID
       const {
         data: { user },
       } = await supabase.auth.getUser();
-      if (user && connectedInstitutionId) {
-        // Get credentials to find the account ID
+      if (user) {
         const credentials = await getSnaptradeCredentialsWithFallback();
         if (credentials?.accountId) {
-          // Do a quick sync to ensure fresh data
+          await refreshSnaptradeInvestments(user.id, credentials.accountId);
+          await new Promise((resolve) => setTimeout(resolve, 5000));
           await syncSnaptradeInvestments(user.id, credentials.accountId);
+          await recalculateInvestmentBalances(user.id, credentials.accountId);
+          await populateInvestmentAccountsInDB();
           logger.info("✅ ConnectionSuccessModal refresh completed");
         }
       }
-      // Emit event to refresh FinancialBottomSheet and InvestmentsScreen
       DeviceEventEmitter.emit("financialDataRefreshed", {
         accountConnected: true,
       });
@@ -708,8 +691,6 @@ export default function InstitutionSelectionModal({
         "⚠️ ConnectionSuccessModal refresh failed (non-blocking):",
         error,
       );
-      // Don't fail the modal if refresh fails - data was already synced during connection
-      // Still emit event to refresh UI even if sync failed
       DeviceEventEmitter.emit("financialDataRefreshed", {
         accountConnected: true,
       });
@@ -755,7 +736,12 @@ export default function InstitutionSelectionModal({
                     <View style={styles.titleContainer}>
                       <Text style={styles.title}>Select your institution</Text>
                     </View>
-                    <IconButton onPress={handleClose} icon="close" size={18} />
+                    <IconButton
+                      onPress={handleClose}
+                      icon="close"
+                      size={18}
+                      disabled={isConnecting}
+                    />
                   </View>
 
                   <View style={styles.content}>

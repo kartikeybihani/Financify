@@ -55,7 +55,7 @@ export const saveHomeScreenCache = (
     AppStorage.setItemSync(cacheKey, JSON.stringify(cacheData));
     AppStorage.setItemSync(timestampKey, cacheData.timestamp.toString());
 
-    logger.info(
+    logger.debug(
       `💾 [HOME CACHE] Saved for user: ${userId.substring(0, 8)}`,
       {
         hasBudget: data.hasBudget,
@@ -104,7 +104,7 @@ export const loadHomeScreenCache = (userId: string): HomeScreenCacheData | null 
     const cacheAge = Date.now() - data.timestamp;
     const ageSeconds = Math.round(cacheAge / 1000);
 
-    logger.info(
+    logger.debug(
       `📦 [HOME CACHE] Loaded for user: ${userId.substring(0, 8)}, age: ${ageSeconds}s`
     );
 
@@ -211,14 +211,14 @@ export const clearHomeScreenCache = (userId?: string): void => {
       const timestampKey = getHomeScreenTimestampKey(userId);
       AppStorage.removeItemSync(cacheKey);
       AppStorage.removeItemSync(timestampKey);
-      logger.info(`🗑️ [HOME CACHE] Cleared for user: ${userId.substring(0, 8)}`);
+      logger.debug(`🗑️ [HOME CACHE] Cleared for user: ${userId.substring(0, 8)}`);
     } else {
       // Clear all home screen caches
       const allKeys = AppStorage.getAllKeysSync();
       const homeKeys = allKeys.filter((key) => key.startsWith(CACHE_KEY_PREFIX));
       if (homeKeys.length > 0) {
         AppStorage.multiRemoveSync(homeKeys);
-        logger.info(`🗑️ [HOME CACHE] Cleared all (${homeKeys.length} keys)`);
+        logger.debug(`🗑️ [HOME CACHE] Cleared all (${homeKeys.length} keys)`);
       }
     }
   } catch (error) {

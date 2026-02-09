@@ -32,19 +32,19 @@ export class SmartPreloader {
     }
 
     if (this.runningTasks.has(taskId)) {
-      logger.info(`⏳ [PRELOADER] Task already running: ${taskId}`);
+      logger.debug(`⏳ [PRELOADER] Task already running: ${taskId}`);
       return null;
     }
 
     if (this.completedTasks.has(taskId)) {
-      logger.info(`✅ [PRELOADER] Task already completed: ${taskId}`);
+      logger.debug(`✅ [PRELOADER] Task already completed: ${taskId}`);
       return this.getCachedResult(taskId);
     }
 
     // Check preloader cache first
     const cached = this.getCachedResult(taskId);
     if (cached) {
-      logger.info(`📦 [PRELOADER] Using cached result for: ${taskId}`);
+      logger.debug(`📦 [PRELOADER] Using cached result for: ${taskId}`);
       return cached;
     }
 
@@ -52,19 +52,19 @@ export class SmartPreloader {
     if (task.dependencies) {
       const unmetDependencies = task.dependencies.filter(dep => !this.completedTasks.has(dep));
       if (unmetDependencies.length > 0) {
-        logger.info(`⏸️ [PRELOADER] Waiting for dependencies: ${unmetDependencies.join(', ')}`);
+        logger.debug(`⏸️ [PRELOADER] Waiting for dependencies: ${unmetDependencies.join(', ')}`);
         return null;
       }
     }
 
     this.runningTasks.add(taskId);
-    logger.info(`🚀 [PRELOADER] Executing task: ${taskId}`);
+    logger.debug(`🚀 [PRELOADER] Executing task: ${taskId}`);
 
     try {
       const result = await task.execute();
       this.completedTasks.add(taskId);
       this.cacheResult(taskId, result);
-      logger.info(`✅ [PRELOADER] Completed task: ${taskId}`);
+      logger.debug(`✅ [PRELOADER] Completed task: ${taskId}`);
       return result;
     } catch (error) {
       logger.error(`❌ [PRELOADER] Failed task: ${taskId}`, error);

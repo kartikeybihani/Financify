@@ -17,7 +17,7 @@ class Logger {
   constructor(config: Partial<LoggerConfig> = {}) {
     this.config = {
       enabled: __DEV__,
-      level: 'debug',
+      level: 'info',
       ...config,
     };
   }

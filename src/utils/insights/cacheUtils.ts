@@ -149,7 +149,7 @@ export const loadInitialCache = (userId: string | null): InitialCache => {
       Array.isArray(data.transactions) &&
       data.transactions.length > 0
     ) {
-      logger.info(
+      logger.debug(
         `📦 [INSIGHTS] Loaded ${data.transactions.length} transactions from cache synchronously`,
       );
       return { transactions: data.transactions, hasCache: true };

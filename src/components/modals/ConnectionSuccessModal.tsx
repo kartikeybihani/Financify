@@ -85,7 +85,8 @@ export default function ConnectionSuccessModal({
     return () => loop.stop();
   }, [visible, isComplete, waveProgress]);
 
-  // When visible: slide up, run refresh, then complete
+  // When visible: slide up, wait 2.5s, then run refresh and complete
+  const REFRESH_DELAY_MS = 2500;
   useEffect(() => {
     if (visible) {
       setIsAnimatingOut(false);
@@ -102,40 +103,44 @@ export default function ConnectionSuccessModal({
       }).start();
 
       let cancelled = false;
-      performRefresh()
-        .then(() => {
-          if (cancelled) return;
-          setIsComplete(true);
-          Animated.parallel([
-            Animated.spring(checkmarkScale, {
-              toValue: 1,
-              damping: 10,
-              stiffness: 140,
-              useNativeDriver: true,
-            }),
-            Animated.timing(checkmarkOpacity, {
-              toValue: 1,
-              duration: 300,
-              useNativeDriver: true,
-            }),
-          ]).start();
-        })
-        .catch(() => {
-          if (!cancelled) {
-            setIsAnimatingOut(true);
-            Animated.timing(slideAnim, {
-              toValue: 280,
-              duration: 220,
-              useNativeDriver: true,
-            }).start(() => {
-              onComplete();
-              setIsAnimatingOut(false);
-            });
-          }
-        });
+      const timeoutId = setTimeout(() => {
+        if (cancelled) return;
+        performRefresh()
+          .then(() => {
+            if (cancelled) return;
+            setIsComplete(true);
+            Animated.parallel([
+              Animated.spring(checkmarkScale, {
+                toValue: 1,
+                damping: 10,
+                stiffness: 140,
+                useNativeDriver: true,
+              }),
+              Animated.timing(checkmarkOpacity, {
+                toValue: 1,
+                duration: 300,
+                useNativeDriver: true,
+              }),
+            ]).start();
+          })
+          .catch(() => {
+            if (!cancelled) {
+              setIsAnimatingOut(true);
+              Animated.timing(slideAnim, {
+                toValue: 280,
+                duration: 220,
+                useNativeDriver: true,
+              }).start(() => {
+                onComplete();
+                setIsAnimatingOut(false);
+              });
+            }
+          });
+      }, REFRESH_DELAY_MS);
 
       return () => {
         cancelled = true;
+        clearTimeout(timeoutId);
       };
     } else if (isAnimatingOut) {
       Animated.timing(slideAnim, {
