@@ -2508,22 +2508,18 @@ async function handleSnapTradeRemoveBrokerage(res, userId, accountId) {
         console.warn("⚠️ Error deleting investment options:", optionsErr);
       }
 
-      // Update database to mark connection as inactive/deleted
-      const { error: updateError } = await supabase
+      // Delete the SnapTrade connection record from database
+      const { error: deleteConnectionError } = await supabase
         .from("snaptrade_connections")
-        .update({
-          is_active: false,
-          connection_status: "disabled",
-          updated_at: new Date().toISOString(),
-        })
+        .delete()
         .eq("user_id", userId)
         .eq("account_id", accountId);
 
-      if (updateError) {
-        console.error("⚠️ Failed to update database after removal:", updateError);
+      if (deleteConnectionError) {
+        console.error("⚠️ Failed to delete connection from database:", deleteConnectionError);
         // Don't fail the request - the removal was successful on SnapTrade side
       } else {
-        console.log("✅ Database updated - connection marked as removed");
+        console.log("✅ SnapTrade connection deleted from database");
       }
 
       // Also delete the investment account from the accounts table if it exists
@@ -2606,16 +2602,22 @@ async function handleSnapTradeRemoveBrokerage(res, userId, accountId) {
           console.warn("⚠️ Error deleting account:", accountErr);
         }
         
-        // Update database anyway since it's already removed on SnapTrade side
-        await supabase
-          .from("snaptrade_connections")
-          .update({
-            is_active: false,
-            connection_status: "disabled",
-            updated_at: new Date().toISOString(),
-          })
-          .eq("user_id", userId)
-          .eq("account_id", accountId);
+        // Delete SnapTrade connection from database
+        try {
+          const { error: deleteConnectionError } = await supabase
+            .from("snaptrade_connections")
+            .delete()
+            .eq("user_id", userId)
+            .eq("account_id", accountId);
+          
+          if (deleteConnectionError) {
+            console.warn("⚠️ Error deleting SnapTrade connection:", deleteConnectionError);
+          } else {
+            console.log("✅ SnapTrade connection deleted from database");
+          }
+        } catch (connectionErr) {
+          console.warn("⚠️ Error deleting SnapTrade connection:", connectionErr);
+        }
 
         return res.status(200).json({
           success: true,
