@@ -694,6 +694,34 @@ export default function InvestmentsScreen({
     }
   }, [preloadedData]);
 
+  // Listen for account deletion events and refresh investment data
+  useEffect(() => {
+    const financialDataSubscription = DeviceEventEmitter.addListener(
+      "financialDataRefreshed",
+      async (data?: { accountDeleted?: string }) => {
+        // If an account was deleted, refresh investment data
+        if (data?.accountDeleted) {
+          logger.info(
+            "🔄 Account deleted event received, refreshing investment data...",
+            data.accountDeleted,
+          );
+          // Reload data from database to reflect the deletion
+          await loadFromDbWithoutAutoSync();
+        } else {
+          // General refresh event - reload data
+          logger.info(
+            "🔄 Financial data refresh event received, refreshing investment data...",
+          );
+          await loadFromDbWithoutAutoSync();
+        }
+      },
+    );
+
+    return () => {
+      financialDataSubscription.remove();
+    };
+  }, []);
+
   // Check connection status when screen comes into focus (catches webhook updates)
   useFocusEffect(
     React.useCallback(() => {

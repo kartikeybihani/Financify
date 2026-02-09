@@ -55,7 +55,7 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
     Map<string, Animated.Value>
   >(new Map());
   const [categoryChangedIds, setCategoryChangedIds] = useState<Set<string>>(
-    new Set()
+    new Set(),
   );
   const [showFirstTimeMessage, setShowFirstTimeMessage] = useState(false);
   const [showThankYouMessage, setShowThankYouMessage] = useState(false);
@@ -85,14 +85,14 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
       (event: { transactionId?: string }) => {
         if (event.transactionId) {
           setCategoryChangedIds((prev) =>
-            new Set(prev).add(event.transactionId!)
+            new Set(prev).add(event.transactionId!),
           );
           // Refresh to remove the transaction from the list (category change auto-marks as reviewed)
           setTimeout(() => {
             refresh();
           }, 300); // Small delay to ensure DB update completes
         }
-      }
+      },
     );
 
     return () => {
@@ -111,7 +111,7 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
             setShowAllModal(true);
           }
         }, 150);
-      }
+      },
     );
 
     return () => {
@@ -224,7 +224,7 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
 
   const handleMarkAsReviewed = async (
     transactionId: string,
-    transaction: UnreviewedTransaction
+    transaction: UnreviewedTransaction,
   ) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -285,15 +285,9 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
     setAnimatingIds(new Set());
   };
 
+  // Don't show anything while loading - load in background
   if (loading) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.card}>
-          <ActivityIndicator size="small" color="#4A90E2" />
-          <Text style={styles.loadingText}>Loading transactions...</Text>
-        </View>
-      </View>
-    );
+    return null;
   }
 
   if (!previewTransaction) {
@@ -479,7 +473,7 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
                     merchant_name: transaction.merchant_name ?? undefined,
                   };
                   const displayCategory = getDisplayCategory(
-                    transactionAsTransaction
+                    transactionAsTransaction,
                   );
                   const categoryIcon = getCategoryIcon(displayCategory);
                   const categoryColor = getCategoryColor(displayCategory);

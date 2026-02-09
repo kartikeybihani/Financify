@@ -875,7 +875,8 @@ async function handleSnapTradeSync(res, userId, accountId) {
 
         // Get existing balance to read previous_total_value before updating
         // CRITICAL: Also fetch cash to reconstruct previous_total_value if needed (no buying_power)
-        const { data: existingBalance } = await supabase
+        // Use maybeSingle() instead of single() to handle case when no balance exists yet (first connection)
+        const { data: existingBalance, error: existingBalanceError } = await supabase
           .from("investment_balances")
           .select(
             "day_change, day_change_percent, total_change, total_change_percent, previous_total_value, total_value, last_updated, cash"
@@ -884,7 +885,12 @@ async function handleSnapTradeSync(res, userId, accountId) {
           .eq("snaptrade_user_id", connection.snaptrade_user_id)
           .eq("account_id", accountId)
           .eq("is_current", true)
-          .single();
+          .maybeSingle();
+        
+        // Log if there's an error (but don't fail - maybeSingle returns null if not found, which is OK)
+        if (existingBalanceError && existingBalanceError.code !== "PGRST116") {
+          console.warn("⚠️ Error fetching existing balance (non-critical):", existingBalanceError);
+        }
 
         // Get previous portfolio total value - use day-boundary logic like holdings
         // Only update previous_total_value when rolling to a new calendar day (UTC)
