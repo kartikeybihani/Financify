@@ -521,6 +521,9 @@ export default function BudgetCreationModal({
                     </View>
                   </View>
 
+                  <Text style={styles.hint}>
+                    How much do you want to save each month?
+                  </Text>
                   <View style={styles.inputGroup}>
                     <Text style={styles.label}>
                       Monthly Savings{" "}
@@ -537,9 +540,6 @@ export default function BudgetCreationModal({
                         keyboardType="decimal-pad"
                       />
                     </View>
-                    <Text style={styles.hint}>
-                      How much do you want to save each month?
-                    </Text>
                   </View>
 
                   {error && (
@@ -717,7 +717,7 @@ export default function BudgetCreationModal({
                   </View>
 
                   <View style={styles.totalRow}>
-                    <Text style={styles.totalLabel}>Total</Text>
+                    <Text style={styles.totalLabel}>Total Budget</Text>
                     <Text style={styles.totalAmount}>
                       $
                       {generatedCategories
@@ -950,7 +950,7 @@ const styles = StyleSheet.create({
     gap: 20,
   },
   inputGroup: {
-    gap: 10,
+    gap: 8,
   },
   label: {
     fontSize: 14,
@@ -991,6 +991,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "rgba(255, 255, 255, 0.5)",
     fontFamily: "Manrope",
+    marginTop: 8,
   },
   errorContainer: {
     flexDirection: "row",
