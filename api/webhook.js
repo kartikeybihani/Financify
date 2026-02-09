@@ -583,119 +583,130 @@ async function handleAccountHoldingsUpdated(user_id, connection_id, account_id =
     console.log(`📈 Account holdings updated:`, { user_id, connection_id, account_id });
 
     // Note: user_id here is the SnapTrade user_id (snaptrade_user_id), not Supabase user_id
-    // Try to find connection by connection_id first, then fallback to account_id if connection_id not stored yet
+    // Retry mechanism to handle race conditions where webhook arrives before connection is stored
+    const MAX_RETRIES = 3;
+    const INITIAL_DELAY_MS = 500; // Small initial delay to give database write time to complete
+    const RETRY_DELAY_MS = 1000; // Delay between retries
     let connection = null;
-    let error = null;
+    let attempt = 0;
 
-    // First attempt: Find by connection_id (most reliable)
-    if (connection_id) {
-      const { data, error: connError } = await supabase
-        .from("snaptrade_connections")
-        .select("user_id, account_id, snaptrade_user_id, connection_id")
-        .eq("snaptrade_user_id", user_id)
-        .eq("connection_id", connection_id)
-        .eq("is_active", true)
-        .maybeSingle();
-      
-      if (!connError && data) {
-        connection = data;
-        console.log("✅ Found connection by connection_id");
-      } else {
-        console.log("⚠️ Connection not found by connection_id, trying fallback...");
+    // Small initial delay before first attempt (handles immediate webhooks)
+    await new Promise(resolve => setTimeout(resolve, INITIAL_DELAY_MS));
+
+    // Retry loop with exponential backoff
+    while (!connection && attempt <= MAX_RETRIES) {
+      if (attempt > 0) {
+        const delayMs = RETRY_DELAY_MS * Math.pow(2, attempt - 1); // Exponential backoff: 1s, 2s, 4s
+        console.log(`⏳ Retry attempt ${attempt}/${MAX_RETRIES} - waiting ${delayMs}ms before retry...`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
       }
-    }
 
-    // Fallback: Find by account_id if connection_id lookup failed and account_id is available
-    if (!connection && account_id) {
-      // First try with is_active filter
-      let { data, error: accountError } = await supabase
-        .from("snaptrade_connections")
-        .select("user_id, account_id, snaptrade_user_id, connection_id, is_active")
-        .eq("snaptrade_user_id", user_id)
-        .eq("account_id", account_id)
-        .eq("is_active", true)
-        .maybeSingle();
-      
-      // If not found, try without is_active filter (in case connection exists but flag not set)
-      if (!data && !accountError) {
-        console.log("⚠️ Connection not found with is_active=true, trying without filter...");
-        const retryResult = await supabase
+      attempt++;
+      console.log(`🔍 Connection lookup attempt ${attempt}/${MAX_RETRIES + 1}...`);
+
+      // First attempt: Find by connection_id (most reliable)
+      if (connection_id) {
+        const { data, error: connError } = await supabase
+          .from("snaptrade_connections")
+          .select("user_id, account_id, snaptrade_user_id, connection_id, is_active")
+          .eq("snaptrade_user_id", user_id)
+          .eq("connection_id", connection_id)
+          .eq("is_active", true)
+          .maybeSingle();
+        
+        if (!connError && data) {
+          connection = data;
+          console.log("✅ Found connection by connection_id");
+          break;
+        }
+      }
+
+      // Fallback: Find by account_id if connection_id lookup failed and account_id is available
+      if (!connection && account_id) {
+        // First try with is_active filter
+        let { data, error: accountError } = await supabase
           .from("snaptrade_connections")
           .select("user_id, account_id, snaptrade_user_id, connection_id, is_active")
           .eq("snaptrade_user_id", user_id)
           .eq("account_id", account_id)
+          .eq("is_active", true)
           .maybeSingle();
-        data = retryResult.data;
-        accountError = retryResult.error;
-      }
-      
-      // If still not found, try with just snaptrade_user_id (broader search)
-      if (!data && !accountError) {
-        console.log("⚠️ Connection not found by account_id, trying broader search by snaptrade_user_id only...");
-        const { data: allConnections } = await supabase
-          .from("snaptrade_connections")
-          .select("user_id, account_id, snaptrade_user_id, connection_id, is_active")
-          .eq("snaptrade_user_id", user_id);
         
-        if (allConnections && allConnections.length > 0) {
-          console.log(`🔍 Found ${allConnections.length} connection(s) for this snaptrade_user_id:`, 
-            allConnections.map(c => ({ account_id: c.account_id, connection_id: c.connection_id, is_active: c.is_active }))
-          );
-          // Try to find by matching account_id (case-insensitive or exact)
-          const matched = allConnections.find(c => 
-            c.account_id === account_id || 
-            c.account_id?.toLowerCase() === account_id?.toLowerCase()
-          );
-          if (matched) {
-            data = matched;
-            console.log("✅ Found connection by broader search");
+        // If not found, try without is_active filter (in case connection exists but flag not set)
+        if (!data && !accountError) {
+          const retryResult = await supabase
+            .from("snaptrade_connections")
+            .select("user_id, account_id, snaptrade_user_id, connection_id, is_active")
+            .eq("snaptrade_user_id", user_id)
+            .eq("account_id", account_id)
+            .maybeSingle();
+          data = retryResult.data;
+          accountError = retryResult.error;
+        }
+        
+        // If still not found, try with just snaptrade_user_id (broader search)
+        if (!data && !accountError) {
+          const { data: allConnections } = await supabase
+            .from("snaptrade_connections")
+            .select("user_id, account_id, snaptrade_user_id, connection_id, is_active")
+            .eq("snaptrade_user_id", user_id);
+          
+          if (allConnections && allConnections.length > 0) {
+            // Try to find by matching account_id (case-insensitive or exact)
+            const matched = allConnections.find(c => 
+              c.account_id === account_id || 
+              c.account_id?.toLowerCase() === account_id?.toLowerCase()
+            );
+            if (matched) {
+              data = matched;
+            }
           }
         }
-      }
-      
-      if (!accountError && data) {
-        connection = data;
-        console.log("✅ Found connection by account_id (fallback)", {
-          account_id: connection.account_id,
-          connection_id: connection.connection_id,
-          is_active: connection.is_active,
-        });
         
-        // Update connection_id if it was missing
-        if (!connection.connection_id && connection_id) {
-          console.log("🔄 Updating connection_id in database...");
-          await supabase
-            .from("snaptrade_connections")
-            .update({ connection_id: connection_id })
-            .eq("user_id", connection.user_id)
-            .eq("snaptrade_user_id", connection.snaptrade_user_id)
-            .eq("account_id", connection.account_id);
-          console.log("✅ Updated connection_id in database");
+        if (!accountError && data) {
+          connection = data;
+          console.log("✅ Found connection by account_id (fallback)", {
+            account_id: connection.account_id,
+            connection_id: connection.connection_id,
+            is_active: connection.is_active,
+            attempt: attempt,
+          });
+          
+          // Update connection_id if it was missing
+          if (!connection.connection_id && connection_id) {
+            console.log("🔄 Updating connection_id in database...");
+            await supabase
+              .from("snaptrade_connections")
+              .update({ connection_id: connection_id })
+              .eq("user_id", connection.user_id)
+              .eq("snaptrade_user_id", connection.snaptrade_user_id)
+              .eq("account_id", connection.account_id);
+            console.log("✅ Updated connection_id in database");
+          }
+          
+          // Ensure is_active is set to true if it wasn't
+          if (!connection.is_active) {
+            console.log("🔄 Updating is_active flag to true...");
+            await supabase
+              .from("snaptrade_connections")
+              .update({ is_active: true })
+              .eq("user_id", connection.user_id)
+              .eq("snaptrade_user_id", connection.snaptrade_user_id)
+              .eq("account_id", connection.account_id);
+          }
+          break;
         }
-        
-        // Ensure is_active is set to true if it wasn't
-        if (!connection.is_active) {
-          console.log("🔄 Updating is_active flag to true...");
-          await supabase
-            .from("snaptrade_connections")
-            .update({ is_active: true })
-            .eq("user_id", connection.user_id)
-            .eq("snaptrade_user_id", connection.snaptrade_user_id)
-            .eq("account_id", connection.account_id);
-        }
-      } else {
-        error = accountError;
       }
     }
 
+    // If connection still not found after all retries, handle gracefully (idempotent)
     if (!connection) {
-      console.error("❌ Could not find connection for webhook");
-      console.error("Query details:", {
+      console.warn("⚠️ Could not find connection for webhook after all retries (likely race condition)");
+      console.warn("Query details:", {
         snaptrade_user_id: user_id,
         connection_id: connection_id,
         account_id: account_id,
-        error_code: error?.code,
-        error_message: error?.message,
+        attempts: attempt,
       });
       
       // Log what connections actually exist for debugging
@@ -706,7 +717,7 @@ async function handleAccountHoldingsUpdated(user_id, connection_id, account_id =
         .limit(10);
       
       if (allConnections && allConnections.length > 0) {
-        console.error("🔍 Existing connections for this snaptrade_user_id:", 
+        console.warn("🔍 Existing connections for this snaptrade_user_id:", 
           allConnections.map(c => ({
             account_id: c.account_id,
             connection_id: c.connection_id,
@@ -716,9 +727,12 @@ async function handleAccountHoldingsUpdated(user_id, connection_id, account_id =
           }))
         );
       } else {
-        console.error("🔍 No connections found for snaptrade_user_id:", user_id);
+        console.warn("🔍 No connections found for snaptrade_user_id (connection may not be stored yet):", user_id);
       }
       
+      // Idempotent: Return success even if connection not found
+      // The frontend sync will handle the initial sync, and future webhooks will work once connection is stored
+      console.log("ℹ️ Webhook processed successfully (connection not found - likely timing issue, frontend sync will handle)");
       return;
     }
 

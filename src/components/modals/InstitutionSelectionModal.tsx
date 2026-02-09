@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Modal,
   View,
@@ -27,7 +27,6 @@ import {
 } from "@/src/utils/integrations/snaptrade";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
-import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid/plaid";
 import {
   INVESTMENT_INSTITUTIONS,
   INSTITUTION_LOGO_MAP,
@@ -104,10 +103,185 @@ export default function InstitutionSelectionModal({
     connections: [],
   });
   const [isSyncing, setIsSyncing] = useState(false);
-  const [showConnectionSuccessModal, setShowConnectionSuccessModal] = useState(false);
-  const [connectedInstitutionName, setConnectedInstitutionName] = useState<string>("");
-  const [connectedInstitutionId, setConnectedInstitutionId] = useState<string>("");
+  const [showConnectionSuccessModal, setShowConnectionSuccessModal] =
+    useState(false);
+  const [connectedInstitutionName, setConnectedInstitutionName] =
+    useState<string>("");
+  const [connectedInstitutionId, setConnectedInstitutionId] =
+    useState<string>("");
   const router = useRouter();
+
+  // Refs to track polling intervals and browser state
+  const pollingIntervalRef = useRef<ReturnType<typeof setInterval> | null>(
+    null,
+  );
+  const browserOpenRef = useRef<boolean>(false);
+
+  // Cleanup polling on unmount
+  useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    };
+  }, []);
+
+  // Helper function to stop polling
+  const stopPolling = () => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+    browserOpenRef.current = false;
+  };
+
+  // Helper function to handle successful account connection
+  const handleAccountConnectionSuccess = async (
+    accounts: any[],
+    registerResponse: { userId: string; userSecret: string },
+    institutionName: string,
+    institutionId: string,
+  ) => {
+    // Stop polling since we found accounts
+    stopPolling();
+
+    // Determine the actual institution name (for "Other Institutions", use the brokerage name from account)
+    const firstAccount = accounts[0];
+    const actualInstitutionName =
+      institutionId === "other"
+        ? firstAccount?.brokerage || "Other Institutions"
+        : institutionName;
+
+    // Store credentials securely in database
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user) {
+        const connectionId = firstAccount?.brokerage_authorization || null;
+
+        await storeSnaptradeCredentials(
+          user.id,
+          registerResponse.userId,
+          firstAccount.id,
+          registerResponse.userSecret,
+          {
+            brokerage_name: actualInstitutionName,
+            account_name:
+              firstAccount.name || `${actualInstitutionName} Account`,
+            account_type: "investment",
+            connection_id: connectionId,
+            brokerage_authorization: connectionId,
+          },
+        );
+        logger.info(
+          "✅ SnapTrade credentials stored securely in database",
+          connectionId
+            ? `with connection_id: ${connectionId}`
+            : "without connection_id",
+        );
+      }
+    } catch (storageError) {
+      logger.error(
+        "⚠️ Failed to store credentials in database (continuing anyway):",
+        storageError,
+      );
+    }
+
+    // Sync investments data to database
+    if (accounts.length > 0) {
+      if (firstAccount && firstAccount.id) {
+        try {
+          logger.info(
+            "🔄 Syncing investments data to database for account:",
+            firstAccount.id,
+          );
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+          if (user) {
+            await syncSnaptradeInvestments(user.id, firstAccount.id);
+          }
+          logger.info("✅ Investments data synced to database successfully");
+        } catch (syncError) {
+          logger.error(
+            "⚠️ Failed to sync investments to database (continuing anyway):",
+            syncError,
+          );
+        }
+      }
+    }
+
+    setIsConnecting(false);
+    setConnectingInstitution(null);
+
+    // Close the institution selection modal first
+    onClose();
+
+    // Show connection success modal for investment accounts
+    setConnectedInstitutionName(actualInstitutionName);
+    setConnectedInstitutionId(institutionId);
+    setTimeout(() => {
+      setShowConnectionSuccessModal(true);
+    }, 300);
+
+    // Call onConnectionSuccess callback
+    onConnectionSuccess?.(actualInstitutionName, institutionId);
+  };
+
+  // Helper function to start polling for accounts
+  const startAccountPolling = (
+    registerResponse: { userId: string; userSecret: string },
+    institutionName: string,
+    institutionId: string,
+  ) => {
+    browserOpenRef.current = true;
+
+    // Start polling every 5 seconds
+    pollingIntervalRef.current = setInterval(async () => {
+      if (!browserOpenRef.current) {
+        stopPolling();
+        return;
+      }
+
+      try {
+        logger.info("🔄 Polling for SnapTrade accounts...");
+        const accounts = await fetchSnaptradeAccounts(
+          registerResponse.userId,
+          registerResponse.userSecret,
+        );
+
+        if (accounts && accounts.length > 0) {
+          logger.info("✅ Accounts found! Closing browser automatically...");
+
+          // Close the browser programmatically
+          try {
+            await WebBrowser.dismissBrowser();
+          } catch (dismissError) {
+            logger.warn(
+              "⚠️ Could not dismiss browser programmatically:",
+              dismissError,
+            );
+            // Browser might already be closed, continue anyway
+          }
+
+          // Handle successful connection
+          await handleAccountConnectionSuccess(
+            accounts,
+            registerResponse,
+            institutionName,
+            institutionId,
+          );
+        } else {
+          logger.info("⏳ No accounts found yet, continuing to poll...");
+        }
+      } catch (pollError) {
+        logger.error("❌ Error during account polling:", pollError);
+        // Continue polling on error - might be temporary
+      }
+    }, 5000); // Poll every 5 seconds
+  };
 
   const handleInstitutionConnection = async (institutionId: string) => {
     logger.info(`🔄 Starting ${institutionId} connection...`);
@@ -166,6 +340,10 @@ export default function InstitutionSelectionModal({
           loginResponse.redirectURI,
         );
 
+        // Start polling for accounts immediately when browser opens
+        startAccountPolling(registerResponse, institutionName, institutionId);
+
+        // Open browser and wait for it to close
         const result = await WebBrowser.openBrowserAsync(
           loginResponse.redirectURI,
           {
@@ -176,7 +354,10 @@ export default function InstitutionSelectionModal({
 
         logger.info("🔗 WebBrowser result:", result);
 
-        // After the browser closes, check if connection was successful
+        // Stop polling when browser closes (user may have closed manually)
+        stopPolling();
+
+        // After the browser closes, verify connection was successful
         // Note: result.type === "cancel" means browser was dismissed (could be completed OR cancelled)
         // We need to verify by checking if accounts exist
         if (result.type === "cancel" || result.type === "dismiss") {
@@ -203,106 +384,26 @@ export default function InstitutionSelectionModal({
               return;
             }
 
-            // Store credentials securely in database
-            try {
-              // Get the actual authenticated user ID
-              const {
-                data: { user },
-              } = await supabase.auth.getUser();
-              if (user) {
-                // Extract brokerage_authorization from account response (this is the connection_id)
-                const firstAccount = accounts[0];
-                const connectionId = firstAccount?.brokerage_authorization || null;
-                
-                await storeSnaptradeCredentials(
-                  user.id, // Actual authenticated user ID
-                  registerResponse.userId, // SnapTrade user ID
-                  firstAccount.id, // Account ID
-                  registerResponse.userSecret,
-                  {
-                    brokerage_name: institutionName,
-                    account_name:
-                      firstAccount.name || `${institutionName} Account`,
-                    account_type: "investment",
-                    connection_id: connectionId, // Pass brokerage_authorization as connection_id
-                    brokerage_authorization: connectionId, // Also pass as brokerage_authorization for clarity
-                  },
-                );
-                logger.info(
-                  "✅ SnapTrade credentials stored securely in database",
-                  connectionId ? `with connection_id: ${connectionId}` : "without connection_id",
-                );
-              }
-            } catch (storageError) {
-              logger.error(
-                "⚠️ Failed to store credentials in database (continuing anyway):",
-                storageError,
-              );
-              // Don't fail the whole connection if storage fails
-            }
-
-            // Sync investments data to database
-            if (accounts.length > 0) {
-              const firstAccount = accounts[0];
-              if (firstAccount && firstAccount.id) {
-                try {
-                  logger.info(
-                    "🔄 Syncing investments data to database for account:",
-                    firstAccount.id,
-                  );
-                  // Get the actual authenticated user ID
-                  const {
-                    data: { user },
-                  } = await supabase.auth.getUser();
-                  if (user) {
-                    await syncSnaptradeInvestments(
-                      user.id, // Actual authenticated user ID
-                      firstAccount.id,
-                    );
-                  }
-                  logger.info(
-                    "✅ Investments data synced to database successfully",
-                  );
-                } catch (syncError) {
-                  logger.error(
-                    "⚠️ Failed to sync investments to database (continuing anyway):",
-                    syncError,
-                  );
-                  // Don't fail the whole flow if sync fails
-                }
-              }
-            }
-
-            setIsConnecting(false);
-            setConnectingInstitution(null);
-
-            // Close the institution selection modal first
-            onClose();
-            
-            // Show connection success modal for investment accounts
-            setConnectedInstitutionName(institutionName);
-            setConnectedInstitutionId(institutionId);
-            // Small delay to ensure smooth modal transition
-            setTimeout(() => {
-              setShowConnectionSuccessModal(true);
-            }, 300);
-            
-            // Call onConnectionSuccess callback
-            onConnectionSuccess?.(institutionName, institutionId);
+            // If accounts were found but polling didn't catch it (race condition), handle it now
+            await handleAccountConnectionSuccess(
+              accounts,
+              registerResponse,
+              institutionName,
+              institutionId,
+            );
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
 
             // Still store credentials in database even if account fetch fails
             try {
-              // Get the actual authenticated user ID
               const {
                 data: { user },
               } = await supabase.auth.getUser();
               if (user) {
                 await storeSnaptradeCredentials(
-                  user.id, // Actual authenticated user ID
-                  registerResponse.userId, // SnapTrade user ID
-                  "unknown", // Account ID unknown due to fetch failure
+                  user.id,
+                  registerResponse.userId,
+                  "unknown",
                   registerResponse.userSecret,
                   {
                     brokerage_name: institutionName,
@@ -334,6 +435,7 @@ export default function InstitutionSelectionModal({
       }
     } catch (error) {
       logger.error(`❌ Failed to connect ${institutionId} account:`, error);
+      stopPolling(); // Stop polling on error
       setIsConnecting(false);
       setConnectingInstitution(null);
     }
@@ -367,86 +469,8 @@ export default function InstitutionSelectionModal({
   };
 
   const handleInstitutionPress = async (institutionId: string) => {
-    // Wells Fargo uses Plaid, all others use SnapTrade
-    if (institutionId === "wells_fargo") {
-      await handleWellsFargoPlaidConnect();
-    } else {
-      handleInstitutionConnection(institutionId);
-    }
-  };
-
-  const handleWellsFargoPlaidConnect = async () => {
-    logger.info("🔄 Starting Wells Fargo Plaid connection...");
-    setIsConnecting(true);
-    setConnectingInstitution("wells_fargo");
-
-    try {
-      const linkToken = await fetchLinkToken();
-      await handlePlaidConnect(
-        linkToken,
-        async (itemId: string) => {
-          logger.info("✅ Wells Fargo Plaid connection successful:", {
-            itemId,
-          });
-          setIsConnecting(false);
-          setConnectingInstitution(null);
-
-          // Notify parent that connection was successful
-          if (onReopenFinancialSheet) {
-            setTimeout(() => {
-              onReopenFinancialSheet();
-            }, 1000);
-          }
-
-          onClose();
-        },
-        (error?: any) => {
-          logger.error("❌ Wells Fargo Plaid connection failed:", error);
-          setIsConnecting(false);
-          setConnectingInstitution(null);
-
-          if (
-            error?.code === "DUPLICATE_ITEM" ||
-            error?.message?.includes("already linked")
-          ) {
-            Alert.alert(
-              "Account Already Connected",
-              error.message ||
-                "This account is already connected to your account.",
-              [{ text: "OK" }],
-            );
-          } else if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
-            Alert.alert(
-              "Connection Expired",
-              "The connection session expired. Please try again.",
-              [{ text: "OK" }],
-            );
-          } else if (error?.message) {
-            Alert.alert(
-              "Connection Failed",
-              `Unable to connect: ${error.message}`,
-              [{ text: "Try Again" }],
-            );
-          } else {
-            Alert.alert("Connection Cancelled", "You can try again anytime.", [
-              { text: "OK" },
-            ]);
-          }
-        },
-      );
-    } catch (error) {
-      logger.error(
-        "❌ Failed to initiate Wells Fargo Plaid connection:",
-        error,
-      );
-      setIsConnecting(false);
-      setConnectingInstitution(null);
-      Alert.alert(
-        "Connection Error",
-        "Failed to start connection. Please try again.",
-        [{ text: "OK" }],
-      );
-    }
+    // All investment institutions now use SnapTrade
+    handleInstitutionConnection(institutionId);
   };
 
   const handleOtherInstitutions = async () => {
@@ -489,6 +513,10 @@ export default function InstitutionSelectionModal({
           loginResponse.redirectURI,
         );
 
+        // Start polling for accounts immediately when browser opens
+        startAccountPolling(registerResponse, "Other Institutions", "other");
+
+        // Open browser and wait for it to close
         const result = await WebBrowser.openBrowserAsync(
           loginResponse.redirectURI,
           {
@@ -499,7 +527,10 @@ export default function InstitutionSelectionModal({
 
         logger.info("🔗 WebBrowser result:", result);
 
-        // After the browser closes, check if connection was successful
+        // Stop polling when browser closes (user may have closed manually)
+        stopPolling();
+
+        // After the browser closes, verify connection was successful
         if (result.type === "cancel" || result.type === "dismiss") {
           logger.info("🔄 Browser closed, verifying connection...");
 
@@ -523,82 +554,14 @@ export default function InstitutionSelectionModal({
               return;
             }
 
-            // Store credentials securely in database
-            try {
-              const {
-                data: { user },
-              } = await supabase.auth.getUser();
-              if (user) {
-                // Extract brokerage_authorization from account response (this is the connection_id)
-                const firstAccount = accounts[0];
-                const connectionId = firstAccount?.brokerage_authorization || null;
-                
-                await storeSnaptradeCredentials(
-                  user.id,
-                  registerResponse.userId,
-                  firstAccount.id,
-                  registerResponse.userSecret,
-                  {
-                    brokerage_name:
-                      firstAccount.brokerage || "Other Institution",
-                    account_name: firstAccount.name || "Investment Account",
-                    account_type: "investment",
-                    connection_id: connectionId, // Pass brokerage_authorization as connection_id
-                    brokerage_authorization: connectionId, // Also pass as brokerage_authorization for clarity
-                  },
-                );
-                logger.info(
-                  "✅ SnapTrade credentials stored securely in database",
-                  connectionId ? `with connection_id: ${connectionId}` : "without connection_id",
-                );
-              }
-            } catch (storageError) {
-              logger.error(
-                "⚠️ Failed to store credentials in database:",
-                storageError,
-              );
-            }
-
-            // Sync investments data to database
-            if (accounts.length > 0) {
-              const firstAccount = accounts[0];
-              if (firstAccount && firstAccount.id) {
-                try {
-                  const {
-                    data: { user },
-                  } = await supabase.auth.getUser();
-                  if (user) {
-                    await syncSnaptradeInvestments(user.id, firstAccount.id);
-                  }
-                  logger.info(
-                    "✅ Investments data synced to database successfully",
-                  );
-                } catch (syncError) {
-                  logger.error(
-                    "⚠️ Failed to sync investments to database:",
-                    syncError,
-                  );
-                }
-              }
-            }
-
-            setIsConnecting(false);
-            setConnectingInstitution(null);
-
-            // Close the institution selection modal first
-            onClose();
-            
-            // Show connection success modal for investment accounts
+            // If accounts were found but polling didn't catch it (race condition), handle it now
             const otherName = accounts[0]?.brokerage || "Other Institutions";
-            setConnectedInstitutionName(otherName);
-            setConnectedInstitutionId("other");
-            // Small delay to ensure smooth modal transition
-            setTimeout(() => {
-              setShowConnectionSuccessModal(true);
-            }, 300);
-            
-            // Call onConnectionSuccess callback
-            onConnectionSuccess?.(otherName, "other");
+            await handleAccountConnectionSuccess(
+              accounts,
+              registerResponse,
+              otherName,
+              "other",
+            );
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
             setIsConnecting(false);
@@ -614,12 +577,16 @@ export default function InstitutionSelectionModal({
       }
     } catch (error) {
       logger.error("❌ Failed to connect other institutions:", error);
+      stopPolling(); // Stop polling on error
       setIsConnecting(false);
       setConnectingInstitution(null);
     }
   };
 
   const handleClose = () => {
+    // Stop any active polling
+    stopPolling();
+
     // Reset all modal states before closing
     setShowConnectionSuccessModal(false);
     setIsConnecting(false);
@@ -688,20 +655,20 @@ export default function InstitutionSelectionModal({
   const handleConnectionSuccessComplete = async () => {
     // Close ConnectionSuccessModal first
     setShowConnectionSuccessModal(false);
-    
+
     // Reset all modal states to ensure clean state
     setIsConnecting(false);
     setConnectingInstitution(null);
     setConnectedInstitutionName("");
     setConnectedInstitutionId("");
-    
+
     // Close InstitutionSelectionModal to ensure no modals are blocking UI
     // This ensures the parent component knows the modal is closed
     onClose();
-    
+
     // Small delay to ensure modals are fully closed and animations complete before navigation
     await new Promise((resolve) => setTimeout(resolve, 300));
-    
+
     // Navigate to insights tab with investments section
     // First navigate to the tab, then emit event to switch to investments section
     router.push("/(tabs)/insights?section=investments");
@@ -737,7 +704,10 @@ export default function InstitutionSelectionModal({
         accountConnected: true,
       });
     } catch (error) {
-      logger.error("⚠️ ConnectionSuccessModal refresh failed (non-blocking):", error);
+      logger.error(
+        "⚠️ ConnectionSuccessModal refresh failed (non-blocking):",
+        error,
+      );
       // Don't fail the modal if refresh fails - data was already synced during connection
       // Still emit event to refresh UI even if sync failed
       DeviceEventEmitter.emit("financialDataRefreshed", {
