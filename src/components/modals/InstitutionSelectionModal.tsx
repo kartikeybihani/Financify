@@ -712,9 +712,17 @@ export default function InstitutionSelectionModal({
           logger.info("✅ ConnectionSuccessModal refresh completed");
         }
       }
+      // Emit event to refresh FinancialBottomSheet and InvestmentsScreen
+      DeviceEventEmitter.emit("financialDataRefreshed", {
+        accountConnected: true,
+      });
     } catch (error) {
       logger.error("⚠️ ConnectionSuccessModal refresh failed (non-blocking):", error);
       // Don't fail the modal if refresh fails - data was already synced during connection
+      // Still emit event to refresh UI even if sync failed
+      DeviceEventEmitter.emit("financialDataRefreshed", {
+        accountConnected: true,
+      });
     }
   };
 

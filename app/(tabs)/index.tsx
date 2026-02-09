@@ -1406,6 +1406,10 @@ export default function HomeScreen() {
                         itemId
                       );
                       await fetchFreshData();
+                      // Emit event to refresh FinancialBottomSheet and InvestmentsScreen
+                      DeviceEventEmitter.emit("financialDataRefreshed", {
+                        accountConnected: true,
+                      });
                     },
                     (error) => {
                       logger.error("Failed to add new cash account:", error);
@@ -1420,6 +1424,10 @@ export default function HomeScreen() {
                         itemId
                       );
                       await fetchFreshData();
+                      // Emit event to refresh FinancialBottomSheet and InvestmentsScreen
+                      DeviceEventEmitter.emit("financialDataRefreshed", {
+                        accountConnected: true,
+                      });
                     },
                     (error) => {
                       logger.error("Failed to add new cash account:", error);
@@ -1446,6 +1454,10 @@ export default function HomeScreen() {
                       itemId
                     );
                     await fetchFreshData();
+                    // Emit event to refresh FinancialBottomSheet and InvestmentsScreen
+                    DeviceEventEmitter.emit("financialDataRefreshed", {
+                      accountConnected: true,
+                    });
                   },
                   (error) => {
                     logger.error(
@@ -1485,13 +1497,17 @@ export default function HomeScreen() {
             onComplete={() => {
               setShowConnectionSuccessModal(false);
               setConnectionSuccessInstitution(null);
-              DeviceEventEmitter.emit("financialDataRefreshed", {});
+              DeviceEventEmitter.emit("financialDataRefreshed", {
+                accountConnected: true,
+              });
             }}
             performRefresh={async () => {
               const user = (await getAuthenticatedUser())?.user;
               if (user?.id) await clearInvestmentCache(user.id);
               await refreshFinancialData();
-              DeviceEventEmitter.emit("financialDataRefreshed", {});
+              DeviceEventEmitter.emit("financialDataRefreshed", {
+                accountConnected: true,
+              });
               await new Promise((r) => setTimeout(r, 2200));
             }}
           />

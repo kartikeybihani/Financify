@@ -694,18 +694,24 @@ export default function InvestmentsScreen({
     }
   }, [preloadedData]);
 
-  // Listen for account deletion events and refresh investment data
+  // Listen for account deletion/connection events and refresh investment data
   useEffect(() => {
     const financialDataSubscription = DeviceEventEmitter.addListener(
       "financialDataRefreshed",
-      async (data?: { accountDeleted?: string }) => {
-        // If an account was deleted, refresh investment data
+      async (data?: { accountDeleted?: string; accountConnected?: boolean }) => {
+        // If an account was deleted or connected, refresh investment data
         if (data?.accountDeleted) {
           logger.info(
             "🔄 Account deleted event received, refreshing investment data...",
             data.accountDeleted,
           );
           // Reload data from database to reflect the deletion
+          await loadFromDbWithoutAutoSync();
+        } else if (data?.accountConnected) {
+          logger.info(
+            "🔄 Account connected event received, refreshing investment data...",
+          );
+          // Reload data from database to show the new account
           await loadFromDbWithoutAutoSync();
         } else {
           // General refresh event - reload data

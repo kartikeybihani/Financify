@@ -1599,8 +1599,26 @@ async function handleSnapTradeSync(res, userId, accountId) {
           })
           .filter((h) => h.symbol_id !== null); // CRITICAL: Filter out holdings without valid symbol_id
 
-        // Use upsert to handle existing holdings properly
-        try {
+        // CRITICAL: Double-check connection is still active before upserting
+        // This prevents reactivating holdings for deleted accounts
+        const { data: connectionCheck } = await supabase
+          .from("snaptrade_connections")
+          .select("is_active, connection_status")
+          .eq("user_id", connection.user_id)
+          .eq("account_id", accountId)
+          .single();
+
+        if (
+          !connectionCheck ||
+          !connectionCheck.is_active ||
+          connectionCheck.connection_status === "disabled"
+        ) {
+          console.log("⚠️ Connection is inactive - skipping holdings upsert to prevent reactivation");
+          // Skip holdings upsert - connection was deleted
+          holdingsSynced = true;
+        } else {
+          // Use upsert to handle existing holdings properly
+          try {
           const { error: holdingsErr } = await supabase
             .from("investment_holdings")
             .upsert(holdingsRows, {
@@ -1639,11 +1657,28 @@ async function handleSnapTradeSync(res, userId, accountId) {
               holdingsRows.length
             );
           }
+          } catch (holdingsUpsertErr) {
+            console.error("❌ Error during holdings upsert:", holdingsUpsertErr);
+            throw holdingsUpsertErr;
+          }
 
           // CRITICAL: Mark holdings as inactive if they're no longer in the API response
           // This handles the case where stocks are sold
           // SAFETY: Only run this AFTER successful upsert and only if we have valid symbol_ids
-          if (holdingsRows.length > 0) {
+          // Also check connection is still active before marking holdings inactive
+          const { data: connectionCheck2 } = await supabase
+            .from("snaptrade_connections")
+            .select("is_active, connection_status")
+            .eq("user_id", connection.user_id)
+            .eq("account_id", accountId)
+            .single();
+
+          if (
+            connectionCheck2 &&
+            connectionCheck2.is_active &&
+            connectionCheck2.connection_status !== "disabled" &&
+            holdingsRows.length > 0
+          ) {
             // CRITICAL: Wait a moment for upsert to fully commit to database
             await new Promise((resolve) => setTimeout(resolve, 500));
 
@@ -1784,17 +1819,13 @@ async function handleSnapTradeSync(res, userId, accountId) {
                 );
               }
             }
+          } else {
+            console.log("⚠️ Connection is inactive - skipping holdings deactivation check");
           }
           // SAFETY: Removed automatic deactivation when holdingsRows.length === 0
           // This could happen if API returns empty array temporarily - better to preserve existing data
-        } catch (upsertError) {
-          console.error(
-            "❌ Critical error during holdings upsert:",
-            upsertError
-          );
-          // Continue with sync even if holdings fail
+          holdingsSynced = true;
         }
-        holdingsSynced = true;
       } else {
         console.log("ℹ️ No holdings data to sync");
         // SAFETY: Don't automatically mark all holdings as inactive if positions array is empty
@@ -2387,6 +2418,61 @@ async function handleSnapTradeRemoveBrokerage(res, userId, accountId) {
 
       console.log("✅ Brokerage authorization removed from SnapTrade:", removeResponse.data);
 
+      // CRITICAL: Delete all investment data BEFORE marking connection as inactive
+      // This prevents sync operations from reactivating deleted holdings
+      console.log("🗑️ Cleaning up investment data for account:", accountId);
+      
+      // Delete investment holdings
+      try {
+        const { error: holdingsDeleteError } = await supabase
+          .from("investment_holdings")
+          .delete()
+          .eq("user_id", userId)
+          .eq("account_id", accountId);
+
+        if (holdingsDeleteError) {
+          console.warn("⚠️ Failed to delete investment holdings:", holdingsDeleteError);
+        } else {
+          console.log("✅ Investment holdings deleted");
+        }
+      } catch (holdingsErr) {
+        console.warn("⚠️ Error deleting investment holdings:", holdingsErr);
+      }
+
+      // Delete investment balances
+      try {
+        const { error: balancesDeleteError } = await supabase
+          .from("investment_balances")
+          .delete()
+          .eq("user_id", userId)
+          .eq("account_id", accountId);
+
+        if (balancesDeleteError) {
+          console.warn("⚠️ Failed to delete investment balances:", balancesDeleteError);
+        } else {
+          console.log("✅ Investment balances deleted");
+        }
+      } catch (balancesErr) {
+        console.warn("⚠️ Error deleting investment balances:", balancesErr);
+      }
+
+      // Delete investment options
+      try {
+        const { error: optionsDeleteError } = await supabase
+          .from("investment_options")
+          .delete()
+          .eq("user_id", userId)
+          .eq("account_id", accountId);
+
+        if (optionsDeleteError) {
+          console.warn("⚠️ Failed to delete investment options:", optionsDeleteError);
+        } else {
+          console.log("✅ Investment options deleted");
+        }
+      } catch (optionsErr) {
+        console.warn("⚠️ Error deleting investment options:", optionsErr);
+      }
+
       // Update database to mark connection as inactive/deleted
       const { error: updateError } = await supabase
         .from("snaptrade_connections")
@@ -2433,7 +2519,57 @@ async function handleSnapTradeRemoveBrokerage(res, userId, accountId) {
 
       // Check if it's a 404 (already removed) or other error
       if (apiError.status === 404 || apiError.response?.status === 404) {
-        console.log("ℹ️ Connection already removed from SnapTrade, updating database...");
+        console.log("ℹ️ Connection already removed from SnapTrade, cleaning up database...");
+        
+        // CRITICAL: Delete all investment data even if already removed from SnapTrade
+        console.log("🗑️ Cleaning up investment data for account:", accountId);
+        
+        // Delete investment holdings
+        try {
+          await supabase
+            .from("investment_holdings")
+            .delete()
+            .eq("user_id", userId)
+            .eq("account_id", accountId);
+          console.log("✅ Investment holdings deleted");
+        } catch (holdingsErr) {
+          console.warn("⚠️ Error deleting investment holdings:", holdingsErr);
+        }
+
+        // Delete investment balances
+        try {
+          await supabase
+            .from("investment_balances")
+            .delete()
+            .eq("user_id", userId)
+            .eq("account_id", accountId);
+          console.log("✅ Investment balances deleted");
+        } catch (balancesErr) {
+          console.warn("⚠️ Error deleting investment balances:", balancesErr);
+        }
+
+        // Delete investment options
+        try {
+          await supabase
+            .from("investment_options")
+            .delete()
+            .eq("user_id", userId)
+            .eq("account_id", accountId);
+          console.log("✅ Investment options deleted");
+        } catch (optionsErr) {
+          console.warn("⚠️ Error deleting investment options:", optionsErr);
+        }
+
+        // Delete account from accounts table
+        try {
+          await supabase
+            .from("accounts")
+            .delete()
+            .eq("account_id", accountId);
+          console.log("✅ Investment account removed from accounts table");
+        } catch (accountErr) {
+          console.warn("⚠️ Error deleting account:", accountErr);
+        }
         
         // Update database anyway since it's already removed on SnapTrade side
         await supabase

@@ -200,7 +200,9 @@ export default function FinancialBottomSheet({
           onClose();
 
           // Trigger data refresh
-          DeviceEventEmitter.emit("financialDataRefreshed");
+          DeviceEventEmitter.emit("financialDataRefreshed", {
+            accountConnected: true,
+          });
 
           // Call the optional callback
           onAccountAdded?.();
@@ -268,7 +270,9 @@ export default function FinancialBottomSheet({
           onClose();
 
           // Trigger data refresh
-          DeviceEventEmitter.emit("financialDataRefreshed");
+          DeviceEventEmitter.emit("financialDataRefreshed", {
+            accountConnected: true,
+          });
 
           // Call the optional callback
           onAccountAdded?.();
