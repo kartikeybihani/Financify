@@ -13,7 +13,7 @@ import { Feather, Ionicons } from "@expo/vector-icons";
 const { width: screenWidth } = Dimensions.get("window");
 
 // Shimmer animation component
-const ShimmerView = ({
+export const ShimmerView = ({
   width,
   height,
   borderRadius = 8,
@@ -40,7 +40,7 @@ const ShimmerView = ({
             duration: 1000,
             useNativeDriver: false,
           }),
-        ])
+        ]),
       ).start();
     };
 

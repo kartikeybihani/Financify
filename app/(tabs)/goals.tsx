@@ -114,7 +114,8 @@ export default function GoalsScreen() {
     () => {},
   );
   const displayGoals = isPremium ? goalsData : demoGoals;
-  const isPremiumLocked = !isPremium;
+  // In demo mode, don't lock goals section
+  const isPremiumLocked = isDemoMode ? false : !isPremium;
   // Use only initial-load header spinner; pull-to-refresh spinner is handled inside Goals via RefreshControl
   const [hasInitialData, setHasInitialData] = useState(false);
   const [isTestingNotification, setIsTestingNotification] = useState(false);

@@ -16,7 +16,10 @@ import {
   startTokenRefresh,
 } from "@/src/utils/auth/authToken";
 import { isRecoveryInProgress } from "@/src/utils/auth/recoveryState";
-import { saveCurrentUserId, clearCurrentUserId } from "@/src/utils/insights/cacheUtils";
+import {
+  saveCurrentUserId,
+  clearCurrentUserId,
+} from "@/src/utils/insights/cacheUtils";
 
 // Constants
 const PROFILE_FETCH_TIMEOUT_MS = 8000; // 8 seconds timeout for profile fetch
@@ -77,7 +80,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
   // Navigation state
   const [navigationState, setNavigationState] = useState<NavigationState>(
-    NavigationState.PRE_SIGNUP
+    NavigationState.PRE_SIGNUP,
   );
   const [onboardingStep, setOnboardingStep] = useState(0);
   const [onboardingCompleted, setOnboardingCompleted] = useState(false);
@@ -113,7 +116,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
    */
   const createTimeoutPromise = (
     ms: number,
-    message: string
+    message: string,
   ): Promise<never> => {
     return new Promise((_, reject) => {
       setTimeout(() => reject(new Error(message)), ms);
@@ -141,7 +144,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
   const fetchProfile = async (
     userId: string,
     retryCount: number = 0,
-    useCache: boolean = true
+    useCache: boolean = true,
   ): Promise<Profile | null> => {
     // Check cache first if enabled and valid
     if (
@@ -150,7 +153,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       profileCacheUserId.current === userId
     ) {
       logger.info(
-        `[AUTH] Using cached profile for user: ${userId.substring(0, 8)}...`
+        `[AUTH] Using cached profile for user: ${userId.substring(0, 8)}...`,
       );
       return profileCache.current;
     }
@@ -165,7 +168,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
       const timeoutPromise = createTimeoutPromise(
         PROFILE_FETCH_TIMEOUT_MS,
-        `Profile fetch timeout after ${PROFILE_FETCH_TIMEOUT_MS}ms`
+        `Profile fetch timeout after ${PROFILE_FETCH_TIMEOUT_MS}ms`,
       );
 
       const result = await Promise.race([profilePromise, timeoutPromise]);
@@ -180,7 +183,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       if (error) {
         logger.error(
           `[AUTH] Error fetching profile (attempt ${retryCount + 1}):`,
-          error
+          error,
         );
 
         // Retry on network errors (not on 404s or auth errors)
@@ -192,10 +195,13 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
           logger.info(
             `[AUTH] Retrying profile fetch in ${
               TOKEN_REFRESH_RETRY_DELAY_MS * (retryCount + 1)
-            }ms...`
+            }ms...`,
           );
           await new Promise((resolve) =>
-            setTimeout(resolve, TOKEN_REFRESH_RETRY_DELAY_MS * (retryCount + 1))
+            setTimeout(
+              resolve,
+              TOKEN_REFRESH_RETRY_DELAY_MS * (retryCount + 1),
+            ),
           );
           return fetchProfile(userId, retryCount + 1, useCache);
         }
@@ -222,15 +228,18 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         logger.error(
           `[AUTH] Profile fetch timeout for user ${userId.substring(
             0,
-            8
-          )}... (attempt ${retryCount + 1})`
+            8,
+          )}... (attempt ${retryCount + 1})`,
         );
 
         // Retry on timeout
         if (retryCount < 1) {
           logger.info(`[AUTH] Retrying profile fetch after timeout...`);
           await new Promise((resolve) =>
-            setTimeout(resolve, TOKEN_REFRESH_RETRY_DELAY_MS * (retryCount + 1))
+            setTimeout(
+              resolve,
+              TOKEN_REFRESH_RETRY_DELAY_MS * (retryCount + 1),
+            ),
           );
           return fetchProfile(userId, retryCount + 1, useCache);
         }
@@ -257,7 +266,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
     state: NavigationState,
     userId: string | null,
     step: number,
-    completed: boolean
+    completed: boolean,
   ) => {
     try {
       if (!userId) {
@@ -269,7 +278,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       // Don't cache if user is in onboarding stage
       if (!completed) {
         logger.info(
-          `[AUTH] Skipping navigation cache for user in onboarding stage`
+          `[AUTH] Skipping navigation cache for user in onboarding stage`,
         );
         AppStorage.removeItemSync(NAV_STATE_CACHE_KEY);
         return;
@@ -286,8 +295,8 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       logger.info(
         `[AUTH] Cached navigation state: ${state} for user ${userId.substring(
           0,
-          8
-        )}...`
+          8,
+        )}...`,
       );
     } catch (error) {
       logger.error("[AUTH] Error caching navigation state:", error);
@@ -299,7 +308,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
    * Returns null if cache is missing, stale, or for different user.
    */
   const loadCachedNavigationState = async (
-    currentUserId: string | null
+    currentUserId: string | null,
   ): Promise<{
     state: NavigationState;
     onboardingStep: number;
@@ -353,7 +362,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
    */
   const determineNavigationState = (
     hasSession: boolean,
-    profile: Profile | null
+    profile: Profile | null,
   ): NavigationState => {
     if (!hasSession) {
       return NavigationState.PRE_SIGNUP;
@@ -457,7 +466,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         newState,
         currentSession.user.id,
         step,
-        completed
+        completed,
       );
     } catch (error) {
       logger.error("[AUTH] Error in updateNavigationState:", error);
@@ -473,7 +482,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
             newState,
             uid,
             cachedProfile?.onboarding_step || 0,
-            cachedProfile?.onboarding_completed || false
+            cachedProfile?.onboarding_completed || false,
           );
         }
       }
@@ -491,18 +500,14 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
   const clearAllCache = async () => {
     try {
       // Import cache clearing functions dynamically to avoid circular dependencies
-      const { clearInvestmentCache } = await import(
-        "@/src/shared/utils/investmentCache"
-      );
-      const { clearRecurringCache } = await import(
-        "@/src/shared/utils/recurringCache"
-      );
-      const { clearTransactionsCache } = await import(
-        "@/src/shared/utils/transactionCache"
-      );
-      const { clearSpendingCache } = await import(
-        "@/src/shared/utils/spendingCache"
-      );
+      const { clearInvestmentCache } =
+        await import("@/src/shared/utils/investmentCache");
+      const { clearRecurringCache } =
+        await import("@/src/shared/utils/recurringCache");
+      const { clearTransactionsCache } =
+        await import("@/src/shared/utils/transactionCache");
+      const { clearSpendingCache } =
+        await import("@/src/shared/utils/spendingCache");
 
       // Clear all user-specific caches (passing undefined clears all user caches)
       await Promise.all([
@@ -513,10 +518,19 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       ]);
 
       // Clear profile cache (finny_style, checkin_frequency)
-      const { clearProfileCache } = await import(
-        "@/src/utils/profile/profileCache"
-      );
+      const { clearProfileCache } =
+        await import("@/src/utils/profile/profileCache");
       await clearProfileCache();
+
+      // Clear home screen cache (firstName, budget progress)
+      const { clearHomeScreenCache } =
+        await import("@/src/shared/utils/homeScreenCache");
+      clearHomeScreenCache(); // Clear all home screen caches (no userId = clear all)
+
+      // Clear userId cache to prevent cross-user ID leakage
+      const { clearCurrentUserId } =
+        await import("@/src/utils/insights/cacheUtils");
+      clearCurrentUserId();
 
       // Clear other app-specific cache keys (synchronous operations)
       const keysToRemove = [
@@ -611,7 +625,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
 
     try {
       await new Promise((resolve) =>
-        setTimeout(resolve, INITIALIZATION_BUFFER_MS)
+        setTimeout(resolve, INITIALIZATION_BUFFER_MS),
       );
 
       let user = null as Session["user"] | null;
@@ -630,7 +644,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         retryCount++;
         if (retryCount < TOKEN_REFRESH_MAX_RETRIES) {
           await new Promise((resolve) =>
-            setTimeout(resolve, TOKEN_REFRESH_RETRY_DELAY_MS * retryCount)
+            setTimeout(resolve, TOKEN_REFRESH_RETRY_DELAY_MS * retryCount),
           );
         }
       }
@@ -689,7 +703,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
     // Ignore stale queued refreshes (older than 30 seconds)
     if (age > PENDING_REFRESH_STALE_MS) {
       logger.warn(
-        `[AUTH] Ignoring stale pending token refresh (age: ${age}ms, max: ${PENDING_REFRESH_STALE_MS}ms)`
+        `[AUTH] Ignoring stale pending token refresh (age: ${age}ms, max: ${PENDING_REFRESH_STALE_MS}ms)`,
       );
       pendingTokenRefreshRef.current = null;
       return;
@@ -698,7 +712,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
     pendingTokenRefreshRef.current = null;
 
     logger.info(
-      `[AUTH] Processing pending token refresh from initialization (age: ${age}ms)`
+      `[AUTH] Processing pending token refresh from initialization (age: ${age}ms)`,
     );
     await handleTokenRefresh(pending.session);
   };
@@ -712,9 +726,8 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
     const initializeAuth = async () => {
       try {
         // Initialize profile cache from AsyncStorage (non-blocking)
-        const { initializeProfileCache } = await import(
-          "@/src/utils/profile/profileCache"
-        );
+        const { initializeProfileCache } =
+          await import("@/src/utils/profile/profileCache");
         initializeProfileCache().catch((error) => {
           logger.warn("[AUTH] Failed to initialize profile cache:", error);
         });
@@ -735,7 +748,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
           if (error || !user) {
             logger.error(
               "Invalid session, signing out:",
-              error?.message ?? "no user"
+              error?.message ?? "no user",
             );
             await supabase.auth.signOut();
             await clearAllCache();
@@ -752,7 +765,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         } else {
           // No session at first tick: may be opening from email-confirm link. Wait briefly before committing to welcome (same idea as always-await-profile for reopen).
           await new Promise((resolve) =>
-            setTimeout(resolve, SESSION_FROM_LINK_WAIT_MS)
+            setTimeout(resolve, SESSION_FROM_LINK_WAIT_MS),
           );
           if (!mounted) return;
 
@@ -774,7 +787,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
                 NavigationState.PRE_SIGNUP,
                 null,
                 0,
-                false
+                false,
               );
               setIsAuthLoading(false);
               isInitializedRef.current = true;
@@ -791,7 +804,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
               NavigationState.PRE_SIGNUP,
               null,
               0,
-              false
+              false,
             );
             setIsAuthLoading(false);
             isInitializedRef.current = true;
@@ -812,7 +825,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         // This prevents processing stale refreshes after a failed init
         if (pendingTokenRefreshRef.current) {
           logger.warn(
-            "[AUTH] Clearing pending token refresh due to initialization error"
+            "[AUTH] Clearing pending token refresh due to initialization error",
           );
           pendingTokenRefreshRef.current = null;
         }
@@ -908,7 +921,7 @@ export const useAuthNavigation = (): AuthNavigationContextType => {
   const context = useContext(AuthNavigationContext);
   if (context === undefined) {
     throw new Error(
-      "useAuthNavigation must be used within an AuthNavigationProvider"
+      "useAuthNavigation must be used within an AuthNavigationProvider",
     );
   }
   return context;

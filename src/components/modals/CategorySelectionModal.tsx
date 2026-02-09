@@ -1,12 +1,22 @@
 import React from "react";
-import { Modal, View, Text, TouchableOpacity } from "react-native";
+import {
+  Modal,
+  View,
+  Text,
+  TouchableOpacity,
+  Alert,
+  StyleSheet,
+} from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import * as WebBrowser from "expo-web-browser";
 import {
   ModalBlurOverlay,
   ModalHandle,
   ModalHeader,
 } from "../shared/modal-components";
 import { MODAL_SHARED_STYLES as styles } from "@/src/styles/modalStyles";
+import { useDemoMode } from "@/src/contexts/DemoContext";
+import logger from "@/src/utils/core/logger";
 
 interface CategorySelectionModalProps {
   visible: boolean;
@@ -50,7 +60,13 @@ export default function CategorySelectionModal({
   onClose,
   onCategorySelect,
 }: CategorySelectionModalProps) {
+  const { isDemoMode } = useDemoMode();
+
   const handleCategoryPress = (categoryId: string) => {
+    // Don't allow category selection in demo mode
+    if (isDemoMode) {
+      return;
+    }
     onCategorySelect(categoryId);
     onClose();
   };
@@ -61,7 +77,8 @@ export default function CategorySelectionModal({
         key={category.id}
         style={styles.categoryCard}
         onPress={() => handleCategoryPress(category.id)}
-        activeOpacity={0.7}
+        activeOpacity={isDemoMode ? 1 : 0.7}
+        disabled={isDemoMode}
       >
         <LinearGradient
           colors={[`${category.color}20`, `${category.color}10`]}
@@ -108,6 +125,31 @@ export default function CategorySelectionModal({
               <View style={styles.categoriesGrid}>
                 {categories.map((category) => renderCategoryCard(category))}
               </View>
+
+              {/* Safety link */}
+              <TouchableOpacity
+                style={safetyStyles.safetyLinkButton}
+                onPress={async () => {
+                  try {
+                    await WebBrowser.openBrowserAsync(
+                      "https://www.usefinny.com/safety",
+                      {
+                        presentationStyle:
+                          WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+                        controlsColor: "#4A90E2",
+                        showTitle: true,
+                      },
+                    );
+                  } catch (error) {
+                    Alert.alert("Error", "Cannot open safety page");
+                    logger.error("Failed to open safety page:", error);
+                  }
+                }}
+              >
+                <Text style={safetyStyles.safetyLinkText}>
+                  Learn more about Finny's safety commitment
+                </Text>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -115,3 +157,19 @@ export default function CategorySelectionModal({
     </Modal>
   );
 }
+
+const safetyStyles = StyleSheet.create({
+  safetyLinkButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 20,
+    paddingVertical: 8,
+  },
+  safetyLinkText: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.6)",
+    textDecorationLine: "underline",
+  },
+});

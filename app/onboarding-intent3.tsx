@@ -89,6 +89,7 @@ export default function IntentQuestion3Screen() {
       nextRoute="/onboarding-connect"
       logStage="q1_3"
       screenKey="onboarding-intent3"
+      backRoute="/onboarding-intent2"
       onBeforeNavigate={handleBeforeNavigate}
     />
   );

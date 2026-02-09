@@ -105,7 +105,7 @@ export default function AccountConnectionScreen() {
     const { data: transactions, error: txError } = await supabase
       .from("transactions")
       .select(
-        "date, amount, merchant_name, name, category, top_category, new_category"
+        "date, amount, merchant_name, name, category, top_category, new_category",
       )
       .eq("user_id", userId)
       .gte("date", startDateStr)
@@ -152,7 +152,7 @@ export default function AccountConnectionScreen() {
 
   const logLast30DaysTransactionsPreview = async (
     userId: string,
-    itemId?: string
+    itemId?: string,
   ) => {
     const key = getTxPreviewKey(userId, itemId);
     const alreadyLogged = AppStorage.getItemSync(key);
@@ -171,7 +171,7 @@ export default function AccountConnectionScreen() {
 
     if (transactions.length === 0) {
       logger.info(
-        "🧾 Transactions preview: no transactions found in last 30 days"
+        "🧾 Transactions preview: no transactions found in last 30 days",
       );
       AppStorage.setItemSync(key, "1");
       return;
@@ -189,7 +189,7 @@ export default function AccountConnectionScreen() {
 
       return `${tx.date} | ${effectiveName.slice(
         0,
-        34
+        34,
       )} | ${amountStr} | ${effectiveCategory.slice(0, 22)}`;
     });
 
@@ -211,7 +211,7 @@ export default function AccountConnectionScreen() {
         logger.error("Error fetching link token:", error);
         Alert.alert(
           "Connection Error",
-          "Unable to initialize bank connection. Please try again."
+          "Unable to initialize bank connection. Please try again.",
         );
       }
     };
@@ -272,7 +272,7 @@ export default function AccountConnectionScreen() {
   }, []);
 
   const fetchConnectedAccounts = async (
-    userId: string
+    userId: string,
   ): Promise<ConnectedAccount[]> => {
     try {
       const { data: accounts, error } = await supabase
@@ -288,7 +288,7 @@ export default function AccountConnectionScreen() {
           current_balance,
           available_balance,
           user_items!inner(institution_name, user_id)
-        `
+        `,
         )
         .eq("user_items.user_id", userId)
         .order("created_at", { ascending: false });
@@ -387,7 +387,7 @@ export default function AccountConnectionScreen() {
     if (!linkToken) {
       Alert.alert(
         "Not Ready",
-        "Please try again in 5 seconds while we prepare..."
+        "Please try again in 5 seconds while we prepare...",
       );
       return;
     }
@@ -436,7 +436,7 @@ export default function AccountConnectionScreen() {
           setIsClosingPlaid(false);
 
           logger.info(
-            "✅ AccountConnectionScreen: Successfully connected account"
+            "✅ AccountConnectionScreen: Successfully connected account",
           );
           logOnboardingEvent({ stage: "plaid", action: "success" });
 
@@ -471,21 +471,21 @@ export default function AccountConnectionScreen() {
                   text: "OK",
                   onPress: async () => setLinkToken(await fetchLinkToken()),
                 },
-              ]
+              ],
             );
           } else if (error?.message) {
             // This handles our token exchange errors
             Alert.alert(
               "Connection Failed",
               `Unable to connect your bank account: ${error.message}`,
-              [{ text: "Try Again" }]
+              [{ text: "Try Again" }],
             );
           } else if (error) {
             Alert.alert("Connection Cancelled", "You can try again anytime.", [
               { text: "OK" },
             ]);
           }
-        }
+        },
       );
     } catch (error) {
       logger.error("Error connecting bank:", error);
@@ -496,7 +496,7 @@ export default function AccountConnectionScreen() {
       });
       Alert.alert(
         "Connection Failed",
-        "Unable to connect your bank account. Please try again."
+        "Unable to connect your bank account. Please try again.",
       );
       setIsLoading(false);
     }
@@ -505,7 +505,7 @@ export default function AccountConnectionScreen() {
   const handleContinue = async () => {
     try {
       logger.info(
-        "🧭 AccountConnectionScreen: Moving to final onboarding stage"
+        "🧭 AccountConnectionScreen: Moving to final onboarding stage",
       );
 
       // Update profiles step -> 4 (final screen next)
@@ -522,12 +522,12 @@ export default function AccountConnectionScreen() {
       } catch (e) {
         logger.error(
           "❌ AccountConnectionScreen: profiles step update failed",
-          e
+          e,
         );
       }
 
       logger.info(
-        "✅ AccountConnectionScreen: Moved to final onboarding stage"
+        "✅ AccountConnectionScreen: Moved to final onboarding stage",
       );
       logOnboardingEvent({ stage: "plaid", action: "continue" });
 
@@ -538,7 +538,7 @@ export default function AccountConnectionScreen() {
       Alert.alert(
         "Could not continue",
         "We couldn't move to the next step. Please try again.",
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
     }
   };
@@ -698,8 +698,7 @@ export default function AccountConnectionScreen() {
                   </View>
                   <Text style={styles.plaidDescription}>
                     Plaid powers bank connections for Venmo, Robinhood,
-                    Coinbase, and 8,000+ apps. Your credentials go directly to
-                    your bank—we never see them.
+                    Coinbase, and 8,000+ apps.
                   </Text>
                 </View>
               </View>
@@ -737,7 +736,7 @@ export default function AccountConnectionScreen() {
                             WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
                           controlsColor: "#4A90E2",
                           showTitle: true,
-                        }
+                        },
                       );
                     } catch (error) {
                       Alert.alert("Error", "Cannot open safety page");
@@ -927,8 +926,8 @@ export default function AccountConnectionScreen() {
                 {isClosingPlaid
                   ? "Closing Plaid..."
                   : isConnecting
-                  ? "Loading your accounts..."
-                  : "Working with Plaid..."}
+                    ? "Loading your accounts..."
+                    : "Working with Plaid..."}
               </Text>
             </View>
           </View>
@@ -948,20 +947,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "flex-end",
     paddingHorizontal: 20,
-    paddingTop: Platform.OS === "ios" ? 8 : 12,
-    paddingBottom: 8,
+    paddingTop: Platform.OS === "ios" ? 4 : 6,
+    paddingBottom: 4,
   },
   topBarSpacer: {
     flex: 1,
   },
   skipButton: {
-    paddingVertical: 8,
+    paddingVertical: 4,
     paddingHorizontal: 4,
   },
   skipButtonText: {
     fontSize: 16,
     color: "rgba(255, 255, 255, 0.8)",
     fontWeight: "500",
+    textDecorationLine: "underline",
   },
   container: {
     flex: 1,

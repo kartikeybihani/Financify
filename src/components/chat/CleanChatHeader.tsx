@@ -11,6 +11,7 @@ import { FontAwesome6 } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 
 interface CleanChatHeaderProps {
   rotate?: Animated.AnimatedInterpolation<string>;
@@ -23,6 +24,7 @@ export default function CleanChatHeader({
 }: CleanChatHeaderProps) {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const { isDemoMode } = useDemoMode();
 
   return (
     <LinearGradient
@@ -38,7 +40,11 @@ export default function CleanChatHeader({
       style={[
         styles.gradientContainer,
         {
-          paddingTop: insets.top + (Platform.OS === "ios" ? 0 : 8),
+          paddingTop: isDemoMode
+            ? Platform.OS === "ios"
+              ? 8
+              : 12
+            : insets.top + (Platform.OS === "ios" ? 0 : 8),
         },
       ]}
     >

@@ -177,8 +177,10 @@ function ChatScreenContent() {
         scrollToAbsoluteBottom();
       }, 150);
 
-      // Trigger context pre-building when user enters chat tab
-      triggerContextPrebuild();
+      // Trigger context pre-building when user enters chat tab (skip in demo mode)
+      if (!isDemoMode) {
+        triggerContextPrebuild();
+      }
 
       // Check for initial message from other screens (e.g., Goals)
       // Pre-fill the input box instead of auto-sending

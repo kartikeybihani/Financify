@@ -89,7 +89,13 @@ export const loadHomeScreenCache = (userId: string): HomeScreenCacheData | null 
 
     // Security check: ensure cache belongs to current user
     if (data.userId !== userId) {
-      logger.error("🔒 [HOME CACHE] Security: Cache belongs to different user");
+      logger.error(
+        `🔒 [HOME CACHE] Security: Cache belongs to different user (cache: ${data.userId?.substring(0, 8)}, current: ${userId.substring(0, 8)}). Clearing stale cache.`
+      );
+      // Clear the stale cache to prevent future issues
+      AppStorage.removeItemSync(cacheKey);
+      const timestampKey = getHomeScreenTimestampKey(data.userId);
+      AppStorage.removeItemSync(timestampKey);
       return null;
     }
 

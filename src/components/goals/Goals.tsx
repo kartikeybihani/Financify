@@ -17,9 +17,9 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { PremiumLockOverlay } from "@/src/components/subscription/PremiumLockOverlay";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 import GoalNotification from "@/src/components/goals/GoalNotification";
 import AddGoalModal from "@/src/components/goals/AddGoalModal";
 import GoalItem from "@/src/components/goals/GoalItem";
@@ -531,20 +531,145 @@ const Goals: React.FC<GoalsProps> = ({
         )}
       </ScrollView>
 
-      {/* Premium lock: light blur so content is visible + context label + CTA */}
+      {/* Premium lock: simple blur overlay with unlock button box */}
       {showUpgradeOverlay && onUpgradePress && (
-        <PremiumLockOverlay
-          title="Your financial goals"
-          subtitle="Track progress. Stay on target."
-          icon="flag"
-          onUnlock={onUpgradePress}
-          variant="progressiveBottom"
-          blurIntensity={72}
-          progressiveStart={0.42}
-          progressiveFadeHeight={215}
-          safeAreaBottom={insets.bottom + 25}
-          titleFontSize={21}
-        />
+        <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+          {/* Simple full blur */}
+          <BlurView
+            intensity={15}
+            tint="dark"
+            style={StyleSheet.absoluteFill}
+          />
+
+          {/* Unlock button box */}
+          <View
+            style={[
+              {
+                position: "absolute",
+                left: 0,
+                right: 0,
+                bottom: 0,
+                paddingHorizontal: 18,
+                paddingTop: 26,
+                paddingBottom: Math.max(16, insets.bottom + 25) + 28,
+                alignItems: "center",
+              },
+            ]}
+            pointerEvents="box-none"
+          >
+            <View
+              style={{
+                width: "100%",
+                maxWidth: 440,
+                borderRadius: 22,
+                overflow: "hidden",
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.12)",
+                backgroundColor: "rgba(12, 16, 22, 0.35)",
+              }}
+              pointerEvents="auto"
+            >
+              <BlurView
+                intensity={Platform.OS === "ios" ? 28 : 20}
+                tint="dark"
+                style={StyleSheet.absoluteFill}
+              />
+              <LinearGradient
+                colors={["rgba(255,255,255,0.10)", "rgba(255,255,255,0.03)"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={StyleSheet.absoluteFill}
+              />
+              <View
+                style={{
+                  paddingHorizontal: 18,
+                  paddingTop: 30,
+                  paddingBottom: 30,
+                  alignItems: "center",
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    marginBottom: 6,
+                    alignSelf: "center",
+                    maxWidth: 320,
+                  }}
+                >
+                  <Ionicons
+                    name="flag"
+                    size={20}
+                    color="rgba(255, 255, 255, 0.92)"
+                    style={{ marginRight: 6 }}
+                  />
+                  <Text
+                    style={{
+                      color: "rgba(255, 255, 255, 0.95)",
+                      fontSize: 21,
+                      fontWeight: "700",
+                      ...(Platform.OS === "ios" ? { letterSpacing: 0.2 } : {}),
+                    }}
+                    numberOfLines={1}
+                  >
+                    Your financial goals
+                  </Text>
+                </View>
+                <Text
+                  style={{
+                    color: "rgba(255, 255, 255, 0.7)",
+                    fontSize: 14,
+                    marginBottom: 20,
+                    textAlign: "center",
+                    maxWidth: 280,
+                  }}
+                  numberOfLines={3}
+                >
+                  Track progress. Stay on target.
+                </Text>
+                <TouchableOpacity
+                  onPress={onUpgradePress}
+                  activeOpacity={0.88}
+                  style={{
+                    borderRadius: 24,
+                    borderWidth: 1,
+                    borderColor: "rgba(74, 144, 226, 0.3)",
+                  }}
+                >
+                  <LinearGradient
+                    colors={[
+                      "rgba(74, 144, 226, 0.40)",
+                      "rgba(74, 145, 226, 0.78)",
+                    ]}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 8,
+                      paddingVertical: 14,
+                      paddingHorizontal: 24,
+                      borderRadius: 24,
+                    }}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                  >
+                    <Ionicons name="lock-open" size={18} color="#fff" />
+                    <Text
+                      style={{
+                        color: "#fff",
+                        fontSize: 16,
+                        fontWeight: "700",
+                        letterSpacing: 0.3,
+                      }}
+                    >
+                      Unlock with Finny Pro
+                    </Text>
+                  </LinearGradient>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </View>
       )}
 
       {/* Remove overlay loader; rely solely on RefreshControl spinner to avoid duplication */}

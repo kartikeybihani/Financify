@@ -18,13 +18,11 @@ import * as AppleAuthentication from "expo-apple-authentication";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
-import PaywallModal from "./paywall";
 
 const { width } = Dimensions.get("window");
 
 export default function WelcomeScreen() {
   const router = useRouter();
-  const [showPaywall, setShowPaywall] = useState(false);
 
   const imageSlideAnim = useRef(new Animated.Value(40)).current;
   const titleSlideAnim = useRef(new Animated.Value(30)).current;
@@ -153,10 +151,6 @@ export default function WelcomeScreen() {
 
   return (
     <View style={styles.container}>
-      <PaywallModal
-        visible={showPaywall}
-        onClose={() => setShowPaywall(false)}
-      />
       <StatusBar barStyle="light-content" />
       <LinearGradient
         colors={[
@@ -266,12 +260,6 @@ export default function WelcomeScreen() {
                     Already have an account?{" "}
                     <Text style={styles.loginTextBold}>Login</Text>
                   </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.paywallLink}
-                  onPress={() => setShowPaywall(true)}
-                >
-                  <Text style={styles.paywallLinkText}>View plans</Text>
                 </TouchableOpacity>
               </View>
             </View>
@@ -540,14 +528,6 @@ const styles = StyleSheet.create({
   loginTextBold: {
     color: "#4A90E2",
     fontWeight: "600",
-  },
-  paywallLink: {
-    marginTop: 12,
-    alignItems: "center",
-  },
-  paywallLinkText: {
-    color: "rgba(255, 255, 255, 0.4)",
-    fontSize: 13,
   },
   cardCaption: {
     color: "rgba(255, 255, 255, 0.6)",

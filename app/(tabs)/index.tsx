@@ -1127,7 +1127,8 @@ export default function HomeScreen() {
                 }}
               />
             );
-            if (isPremium) return card;
+            // In demo mode, always show card without premium lock
+            if (isDemoMode || isPremium) return card;
             return (
               <View style={{ position: "relative" }}>
                 {card}
@@ -1156,7 +1157,8 @@ export default function HomeScreen() {
               formatCurrency={formatCurrency}
               isInitialLoad={financialInitialLoad}
             />
-            {!isPremium && (
+            {/* In demo mode, don't show premium lock */}
+            {!isDemoMode && !isPremium && (
               <PremiumLockOverlay
                 title="Your goals"
                 subtitle="Track progress and stay on target"

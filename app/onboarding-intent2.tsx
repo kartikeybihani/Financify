@@ -36,6 +36,7 @@ export default function IntentQuestion2Screen() {
       nextRoute="/onboarding-intent3"
       logStage="q1_2"
       screenKey="onboarding-intent2"
+      backRoute="/onboarding-intent1"
     />
   );
 }

@@ -17,6 +17,7 @@ import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import { supabase } from "@/src/lib/supabase/supabase";
 import FinanceFact from "@/src/components/onboarding/FinanceFact";
+import IconButton from "@/src/components/shared/IconButton";
 
 export interface IntentOption {
   id: string;
@@ -35,6 +36,7 @@ export interface IntentQuestionScreenProps {
   logStage: string; // e.g., "q1_1", "q1_2", "q1_3"
   screenKey: string; // e.g., "onboarding-intent1", "onboarding-intent2", "onboarding-intent3"
   onBeforeNavigate?: (selectedId: string) => Promise<void>; // Optional callback for extra logic (e.g., intent3 memory storage)
+  backRoute?: string; // Optional route to navigate back to (e.g., "/onboarding-profile", "/onboarding-intent1", "/onboarding-intent2")
 }
 
 export default function IntentQuestionScreen({
@@ -47,6 +49,7 @@ export default function IntentQuestionScreen({
   logStage,
   screenKey,
   onBeforeNavigate,
+  backRoute,
 }: IntentQuestionScreenProps) {
   const isMounted = useRef(true);
   const router = useRouter();
@@ -128,7 +131,7 @@ export default function IntentQuestionScreen({
         }
       }
 
-      router.replace(nextRoute as any);
+      router.push(nextRoute as any);
       logOnboardingEvent({ stage: logStage, action: "complete" });
     } catch (error) {
       setIsProcessing(false);
@@ -174,6 +177,24 @@ export default function IntentQuestionScreen({
       >
         <StatusBar barStyle="light-content" />
 
+        {backRoute && (
+          <View style={styles.backButtonContainer}>
+            <IconButton
+              icon="chevron-back"
+              onPress={() => {
+                // Use router.back() for proper left-to-right animation
+                // Fallback to push if back() is not available
+                if (router.canGoBack()) {
+                  router.back();
+                } else {
+                  router.push(backRoute as any);
+                }
+              }}
+              size={20}
+            />
+          </View>
+        )}
+
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
@@ -209,6 +230,12 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 28,
+  },
+  backButtonContainer: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 60 : 30,
+    left: 16,
+    zIndex: 10,
   },
   title: {
     fontSize: 28,

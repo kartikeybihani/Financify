@@ -185,7 +185,8 @@ export default function InvestmentsScreen({
   const router = useRouter();
   const { isDemoMode } = useDemoMode();
   const { isPremium, showPaywall } = useSubscription();
-  const isPremiumLocked = !isPremium;
+  // In demo mode, don't lock investments screen
+  const isPremiumLocked = isDemoMode ? false : !isPremium;
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>(
