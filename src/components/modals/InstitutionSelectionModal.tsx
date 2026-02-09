@@ -10,6 +10,7 @@ import {
   Pressable,
   Alert,
   ActivityIndicator,
+  DeviceEventEmitter,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
@@ -22,6 +23,7 @@ import {
   fetchSnaptradeAccounts,
   storeSnaptradeCredentials,
   syncSnaptradeInvestments,
+  getSnaptradeCredentialsWithFallback,
 } from "@/src/utils/integrations/snaptrade";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
@@ -32,6 +34,7 @@ import {
   LIGHT_BG_LOGO_IDS,
   type Institution,
 } from "../shared/modal-constants";
+import ConnectionSuccessModal from "./ConnectionSuccessModal";
 
 interface Holding {
   symbol: string;
@@ -101,6 +104,9 @@ export default function InstitutionSelectionModal({
     connections: [],
   });
   const [isSyncing, setIsSyncing] = useState(false);
+  const [showConnectionSuccessModal, setShowConnectionSuccessModal] = useState(false);
+  const [connectedInstitutionName, setConnectedInstitutionName] = useState<string>("");
+  const [connectedInstitutionId, setConnectedInstitutionId] = useState<string>("");
   const router = useRouter();
 
   const handleInstitutionConnection = async (institutionId: string) => {
@@ -204,20 +210,27 @@ export default function InstitutionSelectionModal({
                 data: { user },
               } = await supabase.auth.getUser();
               if (user) {
+                // Extract brokerage_authorization from account response (this is the connection_id)
+                const firstAccount = accounts[0];
+                const connectionId = firstAccount?.brokerage_authorization || null;
+                
                 await storeSnaptradeCredentials(
                   user.id, // Actual authenticated user ID
                   registerResponse.userId, // SnapTrade user ID
-                  accounts[0].id, // Account ID
+                  firstAccount.id, // Account ID
                   registerResponse.userSecret,
                   {
                     brokerage_name: institutionName,
                     account_name:
-                      accounts[0].name || `${institutionName} Account`,
+                      firstAccount.name || `${institutionName} Account`,
                     account_type: "investment",
+                    connection_id: connectionId, // Pass brokerage_authorization as connection_id
+                    brokerage_authorization: connectionId, // Also pass as brokerage_authorization for clarity
                   },
                 );
                 logger.info(
                   "✅ SnapTrade credentials stored securely in database",
+                  connectionId ? `with connection_id: ${connectionId}` : "without connection_id",
                 );
               }
             } catch (storageError) {
@@ -263,11 +276,19 @@ export default function InstitutionSelectionModal({
             setIsConnecting(false);
             setConnectingInstitution(null);
 
-            onConnectionSuccess?.(institutionName, institutionId);
-            if (onReopenFinancialSheet) {
-              setTimeout(() => onReopenFinancialSheet(), 1000);
-            }
+            // Close the institution selection modal first
             onClose();
+            
+            // Show connection success modal for investment accounts
+            setConnectedInstitutionName(institutionName);
+            setConnectedInstitutionId(institutionId);
+            // Small delay to ensure smooth modal transition
+            setTimeout(() => {
+              setShowConnectionSuccessModal(true);
+            }, 300);
+            
+            // Call onConnectionSuccess callback
+            onConnectionSuccess?.(institutionName, institutionId);
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
 
@@ -508,20 +529,27 @@ export default function InstitutionSelectionModal({
                 data: { user },
               } = await supabase.auth.getUser();
               if (user) {
+                // Extract brokerage_authorization from account response (this is the connection_id)
+                const firstAccount = accounts[0];
+                const connectionId = firstAccount?.brokerage_authorization || null;
+                
                 await storeSnaptradeCredentials(
                   user.id,
                   registerResponse.userId,
-                  accounts[0].id,
+                  firstAccount.id,
                   registerResponse.userSecret,
                   {
                     brokerage_name:
-                      accounts[0].brokerage || "Other Institution",
-                    account_name: accounts[0].name || "Investment Account",
+                      firstAccount.brokerage || "Other Institution",
+                    account_name: firstAccount.name || "Investment Account",
                     account_type: "investment",
+                    connection_id: connectionId, // Pass brokerage_authorization as connection_id
+                    brokerage_authorization: connectionId, // Also pass as brokerage_authorization for clarity
                   },
                 );
                 logger.info(
                   "✅ SnapTrade credentials stored securely in database",
+                  connectionId ? `with connection_id: ${connectionId}` : "without connection_id",
                 );
               }
             } catch (storageError) {
@@ -557,12 +585,20 @@ export default function InstitutionSelectionModal({
             setIsConnecting(false);
             setConnectingInstitution(null);
 
-            const otherName = accounts[0]?.brokerage || "Other Institutions";
-            onConnectionSuccess?.(otherName, "other");
-            if (onReopenFinancialSheet) {
-              setTimeout(() => onReopenFinancialSheet(), 1000);
-            }
+            // Close the institution selection modal first
             onClose();
+            
+            // Show connection success modal for investment accounts
+            const otherName = accounts[0]?.brokerage || "Other Institutions";
+            setConnectedInstitutionName(otherName);
+            setConnectedInstitutionId("other");
+            // Small delay to ensure smooth modal transition
+            setTimeout(() => {
+              setShowConnectionSuccessModal(true);
+            }, 300);
+            
+            // Call onConnectionSuccess callback
+            onConnectionSuccess?.(otherName, "other");
           } catch (accountError) {
             logger.error("❌ Failed to fetch accounts:", accountError);
             setIsConnecting(false);
@@ -640,10 +676,61 @@ export default function InstitutionSelectionModal({
     );
   };
 
-  if (!visible) return null;
+  const handleConnectionSuccessComplete = async () => {
+    setShowConnectionSuccessModal(false);
+    // Navigate to insights tab with investments section
+    // First navigate to the tab, then emit event to switch to investments section
+    router.push("/(tabs)/insights?section=investments");
+    // Also emit event in case insights screen is already mounted
+    setTimeout(() => {
+      DeviceEventEmitter.emit("navigateToInsightsSection", {
+        section: "investments",
+      });
+    }, 100);
+    // Optionally reopen financial sheet after a delay
+    if (onReopenFinancialSheet) {
+      setTimeout(() => onReopenFinancialSheet(), 500);
+    }
+  };
+
+  const performRefresh = async () => {
+    // This is called by ConnectionSuccessModal while showing loading state
+    // The actual sync already happened during connection, but we do a quick refresh
+    // to ensure data is fresh and show proper loading animation
+    try {
+      logger.info("🔄 ConnectionSuccessModal refresh triggered");
+      // Get the authenticated user ID
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (user && connectedInstitutionId) {
+        // Get credentials to find the account ID
+        const credentials = await getSnaptradeCredentialsWithFallback();
+        if (credentials?.accountId) {
+          // Do a quick sync to ensure fresh data
+          await syncSnaptradeInvestments(user.id, credentials.accountId);
+          logger.info("✅ ConnectionSuccessModal refresh completed");
+        }
+      }
+    } catch (error) {
+      logger.error("⚠️ ConnectionSuccessModal refresh failed (non-blocking):", error);
+      // Don't fail the modal if refresh fails - data was already synced during connection
+    }
+  };
+
+  if (!visible && !showConnectionSuccessModal) return null;
 
   return (
     <>
+      {/* Connection Success Modal - shown after successful investment account connection */}
+      <ConnectionSuccessModal
+        visible={showConnectionSuccessModal}
+        institutionName={connectedInstitutionName}
+        institutionId={connectedInstitutionId}
+        onComplete={handleConnectionSuccessComplete}
+        performRefresh={performRefresh}
+      />
+
       <Modal
         visible={visible}
         transparent

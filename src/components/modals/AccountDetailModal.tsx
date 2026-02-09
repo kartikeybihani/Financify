@@ -25,6 +25,7 @@ import {
   AccountDetailModalProps,
 } from "@/src/types/plaid";
 import { getAccountBalance } from "@/src/utils/accountBalance";
+import { removeSnaptradeBrokerage } from "@/src/utils/integrations/snaptrade";
 
 const formatCurrency = (amount: number) => {
   return new Intl.NumberFormat("en-US", {
@@ -61,6 +62,7 @@ export default function AccountDetailModal({
   const [transactionsLoading, setTransactionsLoading] = useState(false);
   const [showActionAlert, setShowActionAlert] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   // Responsive layout flags
   const isLandscape = width > height;
@@ -168,6 +170,7 @@ export default function AccountDetailModal({
     setTransactionsLoading(false);
     setShowActionAlert(false);
     setDeleting(false);
+    setRemoving(false);
     onClose();
   };
 
@@ -198,6 +201,38 @@ export default function AccountDetailModal({
       );
     } finally {
       setDeleting(false);
+    }
+  };
+
+  const handleRemoveInvestmentAccount = async () => {
+    if (!account || !session?.user?.id) return;
+
+    try {
+      setRemoving(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
+      await removeSnaptradeBrokerage(session.user.id, account.account_id);
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setShowActionAlert(false);
+
+      // Emit event to notify other screens (like insights) that accounts have changed
+      DeviceEventEmitter.emit("financialDataRefreshed", {
+        accountDeleted: account.account_id,
+      });
+
+      // Close modal and let parent component handle refresh
+      handleClose();
+    } catch (error) {
+      console.error("Error removing investment account:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Failed to remove investment account",
+      );
+    } finally {
+      setRemoving(false);
     }
   };
 
@@ -250,13 +285,13 @@ export default function AccountDetailModal({
                     ? (account.subtype || account.type).toUpperCase()
                     : "ACCOUNT DETAILS"}
                 </Text>
-                {/* Filter Icon - Only show when account is loaded and not an investment */}
-                {account && account.type !== "investment" && (
+                {/* Filter Icon - Show for all account types */}
+                {account && (
                   <TouchableOpacity
                     style={styles.filterButton}
                     onPress={handleFilterIconPress}
                     activeOpacity={0.6}
-                    disabled={deleting}
+                    disabled={deleting || removing}
                   >
                     <Ionicons
                       name="ellipsis-horizontal"
@@ -557,7 +592,11 @@ export default function AccountDetailModal({
       <AccountActionAlert
         visible={showActionAlert}
         onClose={() => setShowActionAlert(false)}
-        onDelete={handleDeleteAccount}
+        onDelete={
+          account?.type === "investment"
+            ? handleRemoveInvestmentAccount
+            : handleDeleteAccount
+        }
         accountName={
           account?.official_name || account?.name || "Unknown Account"
         }

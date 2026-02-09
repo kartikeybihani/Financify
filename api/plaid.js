@@ -206,6 +206,7 @@ async function handleSnapTradeRequest(req, res, mode, params) {
       "snaptrade_check_status",
       "snaptrade_get_connection_details",
       "snaptrade_recalculate",
+      "snaptrade_remove_brokerage",
     ];
 
     let supabaseUserId = user_id || null;
@@ -373,6 +374,14 @@ async function handleSnapTradeRequest(req, res, mode, params) {
           });
         }
         return await handleSnapTradeRecalculate(res, supabaseUserId, accountId);
+
+      case "snaptrade_remove_brokerage":
+        if (!accountId) {
+          return res.status(400).json({
+            error: "Missing accountId",
+          });
+        }
+        return await handleSnapTradeRemoveBrokerage(res, supabaseUserId, accountId);
 
       default:
         return res.status(400).json({ error: "Invalid SnapTrade mode" });
@@ -2296,6 +2305,134 @@ async function handleSnapTradeGetConnectionDetails(res, userId, accountId) {
     console.error("❌ Error getting connection details:", error);
     return res.status(500).json({
       error: error.message || "Failed to get connection details",
+    });
+  }
+}
+
+async function handleSnapTradeRemoveBrokerage(res, userId, accountId) {
+  try {
+    console.log("🗑️ Removing SnapTrade brokerage authorization:", {
+      userId,
+      accountId,
+    });
+
+    // Get connection from DB
+    const { data: connection, error: connErr } = await supabase
+      .from("snaptrade_connections")
+      .select(
+        "user_id, snaptrade_user_id, user_secret, connection_id, connection_status, is_active"
+      )
+      .eq("user_id", userId)
+      .eq("account_id", accountId)
+      .single();
+
+    if (connErr || !connection) {
+      console.error("SnapTrade connection lookup error:", connErr);
+      return res.status(404).json({ error: "SnapTrade connection not found" });
+    }
+
+    // CRITICAL: Additional security check
+    if (connection.user_id !== userId) {
+      console.error(
+        "❌ Security violation: User attempting to remove another user's account"
+      );
+      return res.status(403).json({
+        error: "Unauthorized: Cannot remove this account",
+      });
+    }
+
+    // Check if connection_id exists
+    if (!connection.connection_id) {
+      return res.status(400).json({
+        error: "Connection ID not found",
+        message: "Cannot remove account without connection ID. Please reconnect your account first.",
+      });
+    }
+
+    // Use shared SnapTrade SDK instance to remove brokerage authorization
+    try {
+      const removeResponse = await snaptrade.connections.removeBrokerageAuthorization(
+        {
+          authorizationId: connection.connection_id,
+          userId: connection.snaptrade_user_id,
+          userSecret: connection.user_secret,
+        }
+      );
+
+      console.log("✅ Brokerage authorization removed from SnapTrade:", removeResponse.data);
+
+      // Update database to mark connection as inactive/deleted
+      const { error: updateError } = await supabase
+        .from("snaptrade_connections")
+        .update({
+          is_active: false,
+          connection_status: "removed",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("user_id", userId)
+        .eq("account_id", accountId);
+
+      if (updateError) {
+        console.error("⚠️ Failed to update database after removal:", updateError);
+        // Don't fail the request - the removal was successful on SnapTrade side
+      } else {
+        console.log("✅ Database updated - connection marked as removed");
+      }
+
+      // Also delete the investment account from the accounts table if it exists
+      try {
+        const { error: accountDeleteError } = await supabase
+          .from("accounts")
+          .delete()
+          .eq("account_id", accountId)
+          .eq("user_id", userId);
+
+        if (accountDeleteError) {
+          console.warn("⚠️ Failed to delete account from accounts table:", accountDeleteError);
+          // Don't fail - this is a cleanup operation
+        } else {
+          console.log("✅ Investment account removed from accounts table");
+        }
+      } catch (accountDeleteErr) {
+        console.warn("⚠️ Error deleting account from accounts table:", accountDeleteErr);
+        // Continue anyway
+      }
+
+      return res.status(200).json({
+        success: true,
+        message: "Investment account removed successfully",
+        data: removeResponse.data,
+      });
+    } catch (apiError) {
+      console.error("❌ Error removing brokerage authorization:", apiError);
+
+      // Check if it's a 404 (already removed) or other error
+      if (apiError.status === 404 || apiError.response?.status === 404) {
+        console.log("ℹ️ Connection already removed from SnapTrade, updating database...");
+        
+        // Update database anyway since it's already removed on SnapTrade side
+        await supabase
+          .from("snaptrade_connections")
+          .update({
+            is_active: false,
+            connection_status: "removed",
+            updated_at: new Date().toISOString(),
+          })
+          .eq("user_id", userId)
+          .eq("account_id", accountId);
+
+        return res.status(200).json({
+          success: true,
+          message: "Investment account was already removed",
+        });
+      }
+
+      throw apiError;
+    }
+  } catch (error) {
+    console.error("❌ Error removing brokerage authorization:", error);
+    return res.status(500).json({
+      error: error.message || "Failed to remove brokerage authorization",
     });
   }
 }

@@ -627,31 +627,15 @@ export const storeSnaptradeCredentials = async (
   try {
     logger.info("🔄 Storing SnapTrade credentials directly in database...");
     
-    // Try to get connection_id from SnapTrade API if not provided
-    let connectionId = metadata?.connection_id;
+    // Extract connection_id from metadata (should be brokerage_authorization from account response)
+    // The account response includes brokerage_authorization which is the connection_id
+    let connectionId = metadata?.connection_id || metadata?.brokerage_authorization;
+    
     if (!connectionId) {
-      try {
-        logger.info("🔍 Fetching connection_id from SnapTrade API...");
-        // Call SnapTrade API to get connections/authorizations
-        const connectionsResponse = await callSnapTradeAPI("snaptrade_connections", {
-          userId: snaptradeUserId,
-          userSecret: userSecret,
-        });
-        
-        // Find the connection that matches this account
-        if (connectionsResponse?.data && Array.isArray(connectionsResponse.data)) {
-          const matchingConnection = connectionsResponse.data.find(
-            (conn: any) => conn.id === accountId || conn.account_id === accountId
-          );
-          if (matchingConnection?.id) {
-            connectionId = matchingConnection.id;
-            logger.info("✅ Found connection_id from API:", connectionId);
-          }
-        }
-      } catch (connError) {
-        logger.warn("⚠️ Could not fetch connection_id from API (will store without it):", connError);
-        // Continue without connection_id - it can be updated later
-      }
+      logger.warn("⚠️ No connection_id provided in metadata - will store without it");
+      // Continue without connection_id - it can be updated later from webhook
+    } else {
+      logger.info("✅ Using connection_id from account response:", connectionId);
     }
     
     // Store directly in Supabase database
@@ -838,6 +822,31 @@ export const recalculateInvestmentBalances = async (userId: string, accountId: s
     return data;
   } catch (error) {
     logger.error("❌ Failed to recalculate investment balances:", error);
+    throw error;
+  }
+};
+
+// === Remove SnapTrade Brokerage Authorization ===
+export const removeSnaptradeBrokerage = async (userId: string, accountId: string) => {
+  try {
+    logger.info("🗑️ Removing SnapTrade brokerage authorization...");
+    
+    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ 
+        mode: "snaptrade_remove_brokerage", 
+        userId: userId,
+        accountId: accountId
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Failed to remove brokerage authorization");
+    
+    logger.info("✅ SnapTrade brokerage authorization removed successfully");
+    return data;
+  } catch (error) {
+    logger.error("❌ Failed to remove SnapTrade brokerage authorization:", error);
     throw error;
   }
 };
@@ -1141,6 +1150,9 @@ const snaptradeUtils = {
   // Sync operations
   syncSnaptradeInvestments,
   refreshSnaptradeInvestments,
+  
+  // Account management
+  removeSnaptradeBrokerage,
   
   // Database operations
   getSnaptradeHoldingsFromDB,
