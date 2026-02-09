@@ -926,9 +926,29 @@ async function handleSnapTradeSync(res, userId, accountId) {
         // Cash-equivalent symbols (avoid double-counting: broker "cash" often = SPAXX/sweep in holdings)
         const cashEqSymbols = ["SPAXX", "SPRXX", "FZFXX", "FDRXX", "SNAXX"];
         const isCashEquivalent = (h) => {
-          const sym = (h.symbol || "").toUpperCase();
-          const st = (h.security_type || "").toLowerCase();
-          const desc = (h.description || "").toLowerCase();
+          // Extract symbol string from nested structure: holding.symbol.symbol.symbol or holding.symbol.symbol.raw_symbol
+          const sym = (
+            h.symbol?.symbol?.symbol ||
+            h.symbol?.symbol?.raw_symbol ||
+            h.symbol ||
+            ""
+          ).toString().toUpperCase();
+          
+          // Extract security_type from nested structure: holding.symbol.symbol.type.description
+          const st = (
+            h.symbol?.symbol?.type?.description ||
+            h.security_type?.description ||
+            h.security_type ||
+            ""
+          ).toString().toLowerCase();
+          
+          // Extract description from nested structure: holding.symbol.symbol.description
+          const desc = (
+            h.symbol?.symbol?.description ||
+            h.description ||
+            ""
+          ).toString().toLowerCase();
+          
           if (cashEqSymbols.includes(sym)) return true;
           if (
             st.includes("money market") ||

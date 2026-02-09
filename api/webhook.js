@@ -324,7 +324,7 @@ export default async function handler(req, res) {
 // SnapTrade webhook handler
 async function handleSnapTradeWebhook(req, res, payload) {
   try {
-    const { event_type, user_id, connection_id, webhookSecret, data } = payload;
+    const { event_type, user_id, connection_id, webhookSecret, data, accountId } = payload;
 
     console.log(`🔔 SnapTrade webhook received: ${event_type}`, {
       user_id: user_id?.substring(0, 8) + "...",
@@ -383,7 +383,7 @@ async function handleSnapTradeWebhook(req, res, payload) {
       case "ACCOUNT_HOLDINGS_UPDATED":
       case "holdings.updated":
       case "HOLDINGS_UPDATED":
-        await handleAccountHoldingsUpdated(user_id, connection_id);
+        await handleAccountHoldingsUpdated(user_id, connection_id, accountId);
         break;
 
       case "user.registered":
@@ -578,25 +578,69 @@ async function handleConnectionFixed(user_id, connection_id) {
   }
 }
 
-async function handleAccountHoldingsUpdated(user_id, connection_id) {
+async function handleAccountHoldingsUpdated(user_id, connection_id, account_id = null) {
   try {
-    console.log(`📈 Account holdings updated:`, { user_id, connection_id });
+    console.log(`📈 Account holdings updated:`, { user_id, connection_id, account_id });
 
     // Note: user_id here is the SnapTrade user_id (snaptrade_user_id), not Supabase user_id
-    // We need to find the connection by snaptrade_user_id and connection_id
-    const { data: connection, error } = await supabase
-      .from("snaptrade_connections")
-      .select("user_id, account_id, snaptrade_user_id") // CRITICAL: Include user_id to get Supabase UUID
-      .eq("snaptrade_user_id", user_id) // CRITICAL: Use snaptrade_user_id, not user_id
-      .eq("connection_id", connection_id)
-      .eq("is_active", true)
-      .single();
+    // Try to find connection by connection_id first, then fallback to account_id if connection_id not stored yet
+    let connection = null;
+    let error = null;
 
-    if (error || !connection) {
+    // First attempt: Find by connection_id (most reliable)
+    if (connection_id) {
+      const { data, error: connError } = await supabase
+        .from("snaptrade_connections")
+        .select("user_id, account_id, snaptrade_user_id, connection_id")
+        .eq("snaptrade_user_id", user_id)
+        .eq("connection_id", connection_id)
+        .eq("is_active", true)
+        .maybeSingle();
+      
+      if (!connError && data) {
+        connection = data;
+        console.log("✅ Found connection by connection_id");
+      } else {
+        console.log("⚠️ Connection not found by connection_id, trying fallback...");
+      }
+    }
+
+    // Fallback: Find by account_id if connection_id lookup failed and account_id is available
+    if (!connection && account_id) {
+      const { data, error: accountError } = await supabase
+        .from("snaptrade_connections")
+        .select("user_id, account_id, snaptrade_user_id, connection_id")
+        .eq("snaptrade_user_id", user_id)
+        .eq("account_id", account_id)
+        .eq("is_active", true)
+        .maybeSingle();
+      
+      if (!accountError && data) {
+        connection = data;
+        console.log("✅ Found connection by account_id (fallback)");
+        
+        // Update connection_id if it was missing
+        if (!connection.connection_id && connection_id) {
+          console.log("🔄 Updating connection_id in database...");
+          await supabase
+            .from("snaptrade_connections")
+            .update({ connection_id: connection_id })
+            .eq("user_id", connection.user_id)
+            .eq("snaptrade_user_id", connection.snaptrade_user_id)
+            .eq("account_id", connection.account_id);
+          console.log("✅ Updated connection_id in database");
+        }
+      } else {
+        error = accountError;
+      }
+    }
+
+    if (!connection) {
       console.error("❌ Could not find connection for webhook:", error);
       console.error("Query details:", {
         snaptrade_user_id: user_id,
         connection_id: connection_id,
+        account_id: account_id,
         error_code: error?.code,
         error_message: error?.message,
       });
