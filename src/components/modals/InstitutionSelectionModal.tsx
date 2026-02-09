@@ -9,6 +9,7 @@ import {
   Image,
   Pressable,
   Alert,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
@@ -72,7 +73,7 @@ interface InstitutionSelectionModalProps {
   /** Called when an investment account is successfully connected; use to show post-connect UI (e.g. gathering-data modal). */
   onConnectionSuccess?: (
     institutionName: string,
-    institutionId: string
+    institutionId: string,
   ) => void;
 }
 
@@ -116,7 +117,7 @@ export default function InstitutionSelectionModal({
       if (authError || !user?.id) {
         logger.error(
           `❌ User not authenticated for ${institutionId} connection:`,
-          authError
+          authError,
         );
         throw new Error("Please log in to connect your investment account.");
       }
@@ -128,27 +129,27 @@ export default function InstitutionSelectionModal({
       logger.info(
         `🔄 Starting new Snaptrade user registration for ${institutionName}${
           brokerName ? ` (${brokerName})` : ""
-        }...`
+        }...`,
       );
 
       const registerResponse = await registerSnaptradeUser();
       logger.info(
         "✅ Snaptrade user registered successfully:",
-        registerResponse
+        registerResponse,
       );
 
       logger.info("registerResponse --->: ", registerResponse);
       logger.info("registerResponse.userId --->: ", registerResponse.userId);
       logger.info(
         "registerResponse.userSecret --->: ",
-        registerResponse.userSecret
+        registerResponse.userSecret,
       );
 
       // Now login to get the redirect URI with the specific broker
       const loginResponse = await handleSnapTradeLogin(
         registerResponse.userId,
         registerResponse.userSecret,
-        brokerName // Pass the broker name for specific institutions
+        brokerName, // Pass the broker name for specific institutions
       );
       logger.info("✅ Snaptrade user logged in successfully:", loginResponse);
 
@@ -156,7 +157,7 @@ export default function InstitutionSelectionModal({
       if (loginResponse.redirectURI) {
         logger.info(
           "🌐 Opening Snaptrade redirect URI:",
-          loginResponse.redirectURI
+          loginResponse.redirectURI,
         );
 
         const result = await WebBrowser.openBrowserAsync(
@@ -164,7 +165,7 @@ export default function InstitutionSelectionModal({
           {
             presentationStyle:
               WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
-          }
+          },
         );
 
         logger.info("🔗 WebBrowser result:", result);
@@ -181,14 +182,14 @@ export default function InstitutionSelectionModal({
           try {
             const accounts = await fetchSnaptradeAccounts(
               registerResponse.userId,
-              registerResponse.userSecret
+              registerResponse.userSecret,
             );
             logger.info("✅ Snaptrade accounts fetched:", accounts);
 
             // CRITICAL: Verify connection was actually successful
             if (!accounts || accounts.length === 0) {
               logger.warn(
-                "⚠️ No accounts found - user may have cancelled connection"
+                "⚠️ No accounts found - user may have cancelled connection",
               );
               setIsConnecting(false);
               setConnectingInstitution(null);
@@ -213,16 +214,16 @@ export default function InstitutionSelectionModal({
                     account_name:
                       accounts[0].name || `${institutionName} Account`,
                     account_type: "investment",
-                  }
+                  },
                 );
                 logger.info(
-                  "✅ SnapTrade credentials stored securely in database"
+                  "✅ SnapTrade credentials stored securely in database",
                 );
               }
             } catch (storageError) {
               logger.error(
                 "⚠️ Failed to store credentials in database (continuing anyway):",
-                storageError
+                storageError,
               );
               // Don't fail the whole connection if storage fails
             }
@@ -234,7 +235,7 @@ export default function InstitutionSelectionModal({
                 try {
                   logger.info(
                     "🔄 Syncing investments data to database for account:",
-                    firstAccount.id
+                    firstAccount.id,
                   );
                   // Get the actual authenticated user ID
                   const {
@@ -243,16 +244,16 @@ export default function InstitutionSelectionModal({
                   if (user) {
                     await syncSnaptradeInvestments(
                       user.id, // Actual authenticated user ID
-                      firstAccount.id
+                      firstAccount.id,
                     );
                   }
                   logger.info(
-                    "✅ Investments data synced to database successfully"
+                    "✅ Investments data synced to database successfully",
                   );
                 } catch (syncError) {
                   logger.error(
                     "⚠️ Failed to sync investments to database (continuing anyway):",
-                    syncError
+                    syncError,
                   );
                   // Don't fail the whole flow if sync fails
                 }
@@ -286,16 +287,16 @@ export default function InstitutionSelectionModal({
                     brokerage_name: institutionName,
                     account_name: `${institutionName} Account`,
                     account_type: "investment",
-                  }
+                  },
                 );
                 logger.info(
-                  "✅ SnapTrade credentials stored in database despite account fetch failure"
+                  "✅ SnapTrade credentials stored in database despite account fetch failure",
                 );
               }
             } catch (storageError) {
               logger.error(
                 "⚠️ Failed to store credentials in database:",
-                storageError
+                storageError,
               );
             }
 
@@ -320,14 +321,14 @@ export default function InstitutionSelectionModal({
   // Helper function to get institution name from ID
   const getInstitutionName = (institutionId: string): string => {
     const institution = INVESTMENT_INSTITUTIONS.find(
-      (inst) => inst.id === institutionId
+      (inst) => inst.id === institutionId,
     );
     return institution ? institution.name : institutionId;
   };
 
   // Helper function to get SnapTrade broker name from institution ID
   const getSnapTradeBrokerName = (
-    institutionId: string
+    institutionId: string,
   ): string | undefined => {
     const brokerMapping: Record<string, string> = {
       fidelity: "FIDELITY",
@@ -391,38 +392,38 @@ export default function InstitutionSelectionModal({
               "Account Already Connected",
               error.message ||
                 "This account is already connected to your account.",
-              [{ text: "OK" }]
+              [{ text: "OK" }],
             );
           } else if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
             Alert.alert(
               "Connection Expired",
               "The connection session expired. Please try again.",
-              [{ text: "OK" }]
+              [{ text: "OK" }],
             );
           } else if (error?.message) {
             Alert.alert(
               "Connection Failed",
               `Unable to connect: ${error.message}`,
-              [{ text: "Try Again" }]
+              [{ text: "Try Again" }],
             );
           } else {
             Alert.alert("Connection Cancelled", "You can try again anytime.", [
               { text: "OK" },
             ]);
           }
-        }
+        },
       );
     } catch (error) {
       logger.error(
         "❌ Failed to initiate Wells Fargo Plaid connection:",
-        error
+        error,
       );
       setIsConnecting(false);
       setConnectingInstitution(null);
       Alert.alert(
         "Connection Error",
         "Failed to start connection. Please try again.",
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
     }
   };
@@ -442,7 +443,7 @@ export default function InstitutionSelectionModal({
       if (authError || !user?.id) {
         logger.error(
           "❌ User not authenticated for Other Institutions connection:",
-          authError
+          authError,
         );
         throw new Error("Please log in to connect your investment account.");
       }
@@ -451,20 +452,20 @@ export default function InstitutionSelectionModal({
       const registerResponse = await registerSnaptradeUser();
       logger.info(
         "✅ Snaptrade user registered successfully:",
-        registerResponse
+        registerResponse,
       );
 
       // Don't pass a broker parameter for "Other Institutions" - let SnapTrade show all available brokers
       const loginResponse = await handleSnapTradeLogin(
         registerResponse.userId,
-        registerResponse.userSecret
+        registerResponse.userSecret,
       );
       logger.info("✅ Snaptrade user logged in successfully:", loginResponse);
 
       if (loginResponse.redirectURI) {
         logger.info(
           "🌐 Opening Snaptrade redirect URI:",
-          loginResponse.redirectURI
+          loginResponse.redirectURI,
         );
 
         const result = await WebBrowser.openBrowserAsync(
@@ -472,7 +473,7 @@ export default function InstitutionSelectionModal({
           {
             presentationStyle:
               WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
-          }
+          },
         );
 
         logger.info("🔗 WebBrowser result:", result);
@@ -487,14 +488,14 @@ export default function InstitutionSelectionModal({
           try {
             const accounts = await fetchSnaptradeAccounts(
               registerResponse.userId,
-              registerResponse.userSecret
+              registerResponse.userSecret,
             );
             logger.info("✅ Snaptrade accounts fetched:", accounts);
 
             // CRITICAL: Verify connection was actually successful
             if (!accounts || accounts.length === 0) {
               logger.warn(
-                "⚠️ No accounts found - user may have cancelled connection"
+                "⚠️ No accounts found - user may have cancelled connection",
               );
               setIsConnecting(false);
               setConnectingInstitution(null);
@@ -517,16 +518,16 @@ export default function InstitutionSelectionModal({
                       accounts[0].brokerage || "Other Institution",
                     account_name: accounts[0].name || "Investment Account",
                     account_type: "investment",
-                  }
+                  },
                 );
                 logger.info(
-                  "✅ SnapTrade credentials stored securely in database"
+                  "✅ SnapTrade credentials stored securely in database",
                 );
               }
             } catch (storageError) {
               logger.error(
                 "⚠️ Failed to store credentials in database:",
-                storageError
+                storageError,
               );
             }
 
@@ -542,12 +543,12 @@ export default function InstitutionSelectionModal({
                     await syncSnaptradeInvestments(user.id, firstAccount.id);
                   }
                   logger.info(
-                    "✅ Investments data synced to database successfully"
+                    "✅ Investments data synced to database successfully",
                   );
                 } catch (syncError) {
                   logger.error(
                     "⚠️ Failed to sync investments to database:",
-                    syncError
+                    syncError,
                   );
                 }
               }
@@ -607,29 +608,34 @@ export default function InstitutionSelectionModal({
         activeOpacity={0.8}
         disabled={isConnecting}
       >
-        <View style={styles.institutionContent}>
-          <View style={styles.logoContainer}>
-            {isLoadingInstitution ? (
-              <Ionicons name="hourglass" size={32} color="#000" />
-            ) : logoSource ? (
-              <Image
-                source={logoSource}
-                style={styles.logoImage}
-                resizeMode="contain"
-                accessibilityLabel={`${institution.name} logo`}
-              />
-            ) : (
-              <View
-                style={[
-                  styles.logoPlaceholder,
-                  { backgroundColor: institution.color },
-                ]}
-              >
-                <Text style={styles.logoText}>{institution.initials}</Text>
-              </View>
-            )}
+        {isLoadingInstitution ? (
+          <View style={styles.connectingContainer}>
+            <ActivityIndicator size="small" color="#000" />
+            <Text style={styles.connectingText}>Connecting</Text>
           </View>
-        </View>
+        ) : (
+          <View style={styles.institutionContent}>
+            <View style={styles.logoContainer}>
+              {logoSource ? (
+                <Image
+                  source={logoSource}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                  accessibilityLabel={`${institution.name} logo`}
+                />
+              ) : (
+                <View
+                  style={[
+                    styles.logoPlaceholder,
+                    { backgroundColor: institution.color },
+                  ]}
+                >
+                  <Text style={styles.logoText}>{institution.initials}</Text>
+                </View>
+              )}
+            </View>
+          </View>
+        )}
       </TouchableOpacity>
     );
   };
@@ -670,7 +676,7 @@ export default function InstitutionSelectionModal({
                   <View style={styles.content}>
                     <View style={styles.institutionsGrid}>
                       {INVESTMENT_INSTITUTIONS.map((institution) =>
-                        renderInstitutionCard(institution)
+                        renderInstitutionCard(institution),
                       )}
 
                       {/* Other Institutions Card */}
@@ -679,34 +685,36 @@ export default function InstitutionSelectionModal({
                           styles.institutionCard,
                           styles.otherInstitutionsCard,
                           isConnecting &&
-                            connectingInstitution === "other" &&
-                            styles.institutionCardLoading,
+                            connectingInstitution === "other" && [
+                              styles.institutionCardLoading,
+                              { padding: 0 },
+                            ],
                         ]}
                         onPress={handleOtherInstitutions}
                         activeOpacity={0.8}
                         disabled={isConnecting}
                       >
-                        <View style={styles.institutionContent}>
-                          <View style={styles.otherInstitutionsIcon}>
-                            {isConnecting &&
-                            connectingInstitution === "other" ? (
-                              <Ionicons
-                                name="hourglass"
-                                size={24}
-                                color="#4A90E2"
-                              />
-                            ) : (
+                        {isConnecting && connectingInstitution === "other" ? (
+                          <View style={styles.connectingContainer}>
+                            <ActivityIndicator size="small" color="#000" />
+                            <Text style={styles.connectingText}>
+                              Connecting
+                            </Text>
+                          </View>
+                        ) : (
+                          <View style={styles.institutionContent}>
+                            <View style={styles.otherInstitutionsIcon}>
                               <Ionicons
                                 name="business-outline"
                                 size={24}
                                 color="#4A90E2"
                               />
-                            )}
+                            </View>
+                            <Text style={styles.institutionName}>
+                              Other Institutions
+                            </Text>
                           </View>
-                          <Text style={styles.institutionName}>
-                            Other Institutions
-                          </Text>
-                        </View>
+                        )}
                       </TouchableOpacity>
                     </View>
                   </View>
@@ -799,8 +807,9 @@ const styles = StyleSheet.create({
   },
   institutionCardLoading: {
     opacity: 0.6,
-    backgroundColor: "#f0f0f0",
+    backgroundColor: "#ffffff",
     borderColor: "rgba(0, 166, 81, 0.3)",
+    padding: 0,
   },
   otherInstitutionsCard: {
     borderStyle: "dashed",
@@ -849,5 +858,22 @@ const styles = StyleSheet.create({
     fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: 0.2,
     lineHeight: 18,
+  },
+  connectingContainer: {
+    flex: 1,
+    width: "100%",
+    backgroundColor: "#ffffff",
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 20,
+    minHeight: 70,
+  },
+  connectingText: {
+    fontSize: 13,
+    fontStyle: "italic",
+    color: "#000",
+    marginTop: 8,
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
   },
 });
