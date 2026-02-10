@@ -13,15 +13,20 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { ENTITLEMENT_ID } from "@/src/constants/subscription";
 
-// REVENUECAT DISABLED FOR DEV MODE
-// const extra = Constants.expoConfig?.extra as Record<string, string | boolean | undefined>;
-// const isDev = __DEV__;
-// const testKey = extra?.revenuecatIosApiKeyTest as string | undefined;
-// const prodKey = extra?.revenuecatIosApiKeyProd as string | undefined;
-// const revenueCatApiKey =
-//   Platform.OS === "ios"
-//     ? testKey || prodKey
-//     : null;
+const log = logger.scope("RevenueCat");
+if (__DEV__) log.setLevel("debug");
+
+const REVENUECAT_DISABLED = true; // Set to false to enable RevenueCat SDK
+
+const extra = Constants.expoConfig?.extra as Record<
+  string,
+  string | boolean | undefined
+>;
+const isDev = __DEV__;
+const testKey = extra?.revenuecatIosApiKeyTest as string | undefined;
+const prodKey = extra?.revenuecatIosApiKeyProd as string | undefined;
+const revenueCatApiKey =
+  !REVENUECAT_DISABLED && Platform.OS === "ios" ? prodKey || testKey : null;
 
 export interface SubscriptionContextValue {
   isPremium: boolean;
@@ -42,173 +47,193 @@ export function SubscriptionProvider({
 }: {
   children: React.ReactNode;
 }) {
-  // REVENUECAT DISABLED FOR DEV MODE - Always return premium
-  const [isPremium, setIsPremium] = useState(true);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isPremium, setIsPremium] = useState(REVENUECAT_DISABLED);
+  const [isLoading, setIsLoading] = useState(!REVENUECAT_DISABLED);
   const [paywallVisible, setPaywallVisible] = useState(false);
 
   const updateFromCustomerInfo = useCallback((info: CustomerInfo | null) => {
     if (!info) {
-      console.log("[RevenueCat] 📊 CustomerInfo: null → isPremium = false");
+      log.info("CustomerInfo: null → isPremium = false");
       setIsPremium(false);
       return;
     }
     const active = info.entitlements.active[ENTITLEMENT_ID] != null;
-    console.log(
-      `[RevenueCat] 📊 CustomerInfo: entitlement "${ENTITLEMENT_ID}" = ${active ? "ACTIVE" : "INACTIVE"}`,
+    log.info(
+      `CustomerInfo: entitlement "${ENTITLEMENT_ID}" = ${active ? "ACTIVE" : "INACTIVE"}`,
     );
     setIsPremium(active);
   }, []);
 
   const refetch = useCallback(async () => {
-    // REVENUECAT DISABLED FOR DEV MODE
-    console.log("[RevenueCat] ⏭️ Refetch skipped (RevenueCat disabled)");
-    setIsLoading(false);
-    // try {
-    //   const configured = await Purchases.isConfigured();
-    //   if (!configured) {
-    //     console.warn("[RevenueCat] ⚠️ Refetch: SDK not configured");
-    //     return;
-    //   }
-    //   await Purchases.invalidateCustomerInfoCache();
-    //   const info = await Purchases.getCustomerInfo();
-    //   updateFromCustomerInfo(info);
-    // } catch (e) {
-    //   console.error("[RevenueCat] ❌ Refetch failed:", e);
-    //   logger.warn("Subscription refetch failed", e);
-    // } finally {
-    //   setIsLoading(false);
-    // }
+    if (REVENUECAT_DISABLED) {
+      log.info("Refetch skipped (RevenueCat disabled)");
+      setIsLoading(false);
+      return;
+    }
+    log.info("Refetch called");
+    setIsLoading(true);
+    try {
+      const configured = await Purchases.isConfigured();
+      if (!configured) {
+        log.warn("Refetch: SDK not configured");
+        setIsLoading(false);
+        return;
+      }
+      await Purchases.invalidateCustomerInfoCache();
+      const info = await Purchases.getCustomerInfo();
+      log.info("Refetch: got CustomerInfo");
+      updateFromCustomerInfo(info);
+    } catch (e) {
+      log.error("Refetch failed", e);
+      logger.warn("Subscription refetch failed", e);
+    } finally {
+      setIsLoading(false);
+    }
   }, [updateFromCustomerInfo]);
 
   const applyCustomerInfo = useCallback(
     (info: CustomerInfo) => {
-      console.log("[RevenueCat] ✅ Applying CustomerInfo immediately");
+      log.info("Applying CustomerInfo immediately");
       updateFromCustomerInfo(info);
     },
     [updateFromCustomerInfo],
   );
 
   useEffect(() => {
-    // REVENUECAT DISABLED FOR DEV MODE - Always premium
-    console.log(
-      "[RevenueCat] ⏭️ Setup skipped (RevenueCat disabled) - Premium enabled",
+    if (REVENUECAT_DISABLED) {
+      log.info("Setup skipped (RevenueCat disabled) - Premium enabled");
+      setIsPremium(true);
+      setIsLoading(false);
+      return;
+    }
+    if (!revenueCatApiKey || Platform.OS !== "ios") {
+      log.info("Setup skipped (no API key or not iOS)");
+      setIsLoading(false);
+      return;
+    }
+
+    log.info(
+      "Starting setup...",
+      prodKey ? "(App Store / production key)" : "(Test Store key)",
     );
-    setIsPremium(true);
-    setIsLoading(false);
+    Purchases.setLogHandler((logLevel: LOG_LEVEL, message: string) => {
+      const msg = `SDK: ${message}`;
+      switch (logLevel) {
+        case "ERROR":
+          log.error(msg);
+          break;
+        case "WARN":
+          log.warn(msg);
+          break;
+        case "INFO":
+          log.info(msg);
+          break;
+        case "DEBUG":
+        case "VERBOSE":
+        default:
+          log.debug(msg);
+          break;
+      }
+    });
 
-    // if (!revenueCatApiKey || Platform.OS !== "ios") {
-    //   console.log("[RevenueCat] ⏭️ Setup skipped (no key or not iOS)");
-    //   setIsLoading(false);
-    //   return;
-    // }
+    let cancelled = false;
+    const setup = async () => {
+      try {
+        const alreadyConfigured = await Purchases.isConfigured();
+        if (cancelled) return;
+        log.info("Purchases.isConfigured:", alreadyConfigured);
 
-    // console.log("[RevenueCat] 🚀 Starting setup...");
-    // Purchases.setLogHandler((logLevel: LOG_LEVEL, message: string) => {
-    //   const msg = `[RevenueCat] ${message}`;
-    //   switch (logLevel) {
-    //     case "ERROR":
-    //       console.error(msg);
-    //       break;
-    //     case "WARN":
-    //       console.warn(msg);
-    //       break;
-    //     case "INFO":
-    //       console.info(msg);
-    //       break;
-    //     case "DEBUG":
-    //     case "VERBOSE":
-    //     default:
-    //       console.debug(msg);
-    //       break;
-    //   }
-    // });
+        if (!alreadyConfigured) {
+          Purchases.configure({ apiKey: revenueCatApiKey });
+          log.info("Purchases.configured with API key");
+          Purchases.setLogLevel(
+            isDev ? Purchases.LOG_LEVEL.DEBUG : Purchases.LOG_LEVEL.WARN,
+          ).catch((e) => log.warn("Failed to set log level", e));
+        }
 
-    // let cancelled = false;
-    // const setup = async () => {
-    //   try {
-    //     const alreadyConfigured = await Purchases.isConfigured();
-    //     if (cancelled) return;
+        Purchases.addCustomerInfoUpdateListener((info) => {
+          log.info("CustomerInfoUpdateListener fired");
+          updateFromCustomerInfo(info);
+        });
 
-    //     if (!alreadyConfigured) {
-    //       Purchases.configure({ apiKey: revenueCatApiKey });
-    //       Purchases.setLogLevel(
-    //         isDev ? Purchases.LOG_LEVEL.INFO : Purchases.LOG_LEVEL.WARN,
-    //       ).catch((e) =>
-    //         console.warn("[RevenueCat] Failed to set log level:", e),
-    //       );
-    //     }
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
 
-    //     Purchases.addCustomerInfoUpdateListener((info) => {
-    //       updateFromCustomerInfo(info);
-    //     });
+        if (cancelled) return;
 
-    //     const {
-    //       data: { user },
-    //     } = await supabase.auth.getUser();
+        if (user?.id) {
+          const currentId = await Purchases.getAppUserID().catch(() => null);
+          log.info("App user ID", { current: currentId, supabase: user.id });
+          if (currentId !== user.id) {
+            await Purchases.logIn(user.id);
+            log.info("Purchases.logIn completed");
+          }
+        } else {
+          log.info("No Supabase user, using anonymous RevenueCat user");
+        }
 
-    //     if (cancelled) return;
+        const info = await Purchases.getCustomerInfo();
+        log.info("Initial getCustomerInfo completed");
+        if (!cancelled) {
+          updateFromCustomerInfo(info);
+        }
+      } catch (e) {
+        if (!cancelled) {
+          log.error("Setup failed", e);
+          logger.warn("Subscription init failed", e);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      }
+    };
 
-    //     if (user?.id) {
-    //       const currentId = await Purchases.getAppUserID().catch(() => null);
-    //       if (currentId !== user.id) {
-    //         await Purchases.logIn(user.id);
-    //       }
-    //     }
+    setup();
 
-    //     const info = await Purchases.getCustomerInfo();
-    //     if (!cancelled) {
-    //       updateFromCustomerInfo(info);
-    //     }
-    //   } catch (e) {
-    //     if (!cancelled) {
-    //       console.error("[RevenueCat] ❌ Setup failed:", e);
-    //       logger.warn("Subscription init failed", e);
-    //     }
-    //   } finally {
-    //     if (!cancelled) {
-    //       setIsLoading(false);
-    //     }
-    //   }
-    // };
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      try {
+        log.info("Auth state change", {
+          event,
+          hasSession: !!session?.user?.id,
+        });
+        if (event === "SIGNED_IN" && session?.user?.id) {
+          const currentId = await Purchases.getAppUserID().catch(() => null);
+          if (currentId !== session.user.id) {
+            await Purchases.logIn(session.user.id);
+            log.info("Purchases.logIn after sign-in");
+          }
+          const info = await Purchases.getCustomerInfo();
+          updateFromCustomerInfo(info);
+        } else if (event === "SIGNED_OUT") {
+          await Purchases.logOut();
+          log.info("Purchases.logOut after sign-out");
+          setIsPremium(false);
+        }
+      } catch (e) {
+        log.error("Auth state change failed", e);
+        logger.warn("Subscription auth state change failed", e);
+      }
+    });
 
-    // setup();
-
-    // const {
-    //   data: { subscription },
-    // } = supabase.auth.onAuthStateChange(async (event, session) => {
-    //   try {
-    //     if (event === "SIGNED_IN" && session?.user?.id) {
-    //       const currentId = await Purchases.getAppUserID().catch(() => null);
-    //       if (currentId !== session.user.id) {
-    //         await Purchases.logIn(session.user.id);
-    //       }
-    //       const info = await Purchases.getCustomerInfo();
-    //       updateFromCustomerInfo(info);
-    //     } else if (event === "SIGNED_OUT") {
-    //       await Purchases.logOut();
-    //       setIsPremium(false);
-    //     }
-    //   } catch (e) {
-    //     console.error("[RevenueCat] ❌ Auth state change failed:", e);
-    //     logger.warn("Subscription auth state change failed", e);
-    //   }
-    // });
-
-    // return () => {
-    //   cancelled = true;
-    //   subscription.unsubscribe();
-    //   Purchases.removeCustomerInfoUpdateListener(updateFromCustomerInfo);
-    // };
+    return () => {
+      cancelled = true;
+      subscription.unsubscribe();
+      Purchases.removeCustomerInfoUpdateListener(updateFromCustomerInfo);
+      log.info("Setup cleanup: listener removed");
+    };
   }, [updateFromCustomerInfo]);
 
   const showPaywall = useCallback(() => {
-    console.log("[RevenueCat] 🎫 Showing paywall");
+    log.info("Showing paywall");
     setPaywallVisible(true);
   }, []);
 
   const hidePaywall = useCallback(() => {
-    console.log("[RevenueCat] 🎫 Hiding paywall");
+    log.info("Hiding paywall");
     setPaywallVisible(false);
   }, []);
 
@@ -232,10 +257,9 @@ export function SubscriptionProvider({
 export function useSubscription(): SubscriptionContextValue {
   const ctx = useContext(SubscriptionContext);
   if (!ctx) {
-    console.warn("[RevenueCat] ⚠️ useSubscription called outside provider");
-    // REVENUECAT DISABLED FOR DEV MODE - Always return premium
+    log.warn("useSubscription called outside provider");
     return {
-      isPremium: true,
+      isPremium: REVENUECAT_DISABLED,
       isLoading: false,
       refetch: async () => {},
       applyCustomerInfo: () => {},
