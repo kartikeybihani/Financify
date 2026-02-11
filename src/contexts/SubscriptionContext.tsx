@@ -16,7 +16,7 @@ import { ENTITLEMENT_ID } from "@/src/constants/subscription";
 const log = logger.scope("RevenueCat");
 if (__DEV__) log.setLevel("debug");
 
-const REVENUECAT_DISABLED = true; // Set to false to enable RevenueCat SDK
+const REVENUECAT_DISABLED = false; // Set to false to enable RevenueCat SDK
 
 const extra = Constants.expoConfig?.extra as Record<
   string,

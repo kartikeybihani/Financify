@@ -897,7 +897,7 @@ export const refreshSnaptradeInvestments = async (userId: string, accountId: str
 export const getSnaptradeHoldingsFromDB = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (!user) return []; // Graceful: don't throw during logout race
 
     const { data, error } = await supabase
       .from("investment_holdings")
@@ -917,7 +917,7 @@ export const getSnaptradeHoldingsFromDB = async () => {
 export const getSnaptradeOptionsFromDB = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (!user) return []; // Graceful: don't throw during logout race
 
     const { data, error } = await supabase
       .from("investment_options")
@@ -937,7 +937,7 @@ export const getSnaptradeOptionsFromDB = async () => {
 export const getSnaptradeBalancesFromDB = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (!user) return []; // Graceful: don't throw during logout race
 
     const { data, error } = await supabase
       .from("investment_balances")
@@ -958,7 +958,7 @@ export const getSnaptradeBalancesFromDB = async () => {
 export const getAllInvestmentConnectionsFromDB = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (!user) return []; // Graceful: don't throw during logout race
 
     // Get SnapTrade connections
     const { data: snaptradeConnections, error: snaptradeError } = await supabase
@@ -1047,7 +1047,7 @@ export const getAllInvestmentConnectionsFromDB = async () => {
 export const getSnaptradeConnectionsFromDB = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (!user) return []; // Graceful: don't throw during logout race
 
     // Don't filter by is_active - we need to see disabled connections too
     const { data, error } = await supabase
@@ -1082,7 +1082,7 @@ export const getSnaptradeConnectionsFromDB = async () => {
 export const populateInvestmentAccountsInDB = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
+    if (!user) return { success: false, populated: 0 }; // Graceful: don't throw during logout race
 
     logger.debug("🔄 Populating investment accounts via API endpoint...");
 

@@ -3,7 +3,7 @@ import { client } from "../lib/api/plaidClient.js";
 import { supabase } from "../lib/api/supabase.js";
 import { verifyItemOwnership, verifyAuth } from "../lib/api/auth.js";
 import { refreshAndStoreRecurringForItem } from "../lib/plaid/recurringRefresh.js";
-import { fetchStockSnapshot } from "../lib/stocks.js";
+import { fetchQuoteOnly } from "../lib/stocks.js";
 import {
   checkRateLimit,
   formatRetryAfterSeconds,
@@ -376,6 +376,7 @@ export default async function handler(req, res) {
           );
 
           // Batch fetch prices from Finnhub (rate limit: 60 calls/min on free tier)
+          // Store { current, prevClose } - prevClose is used for correct day_change vs previous trading day
           const priceMap = new Map();
           const BATCH_DELAY = 1100; // 1.1s between calls to stay under rate limit
           const symbolErrors = []; // Track individual symbol failures
@@ -383,10 +384,17 @@ export default async function handler(req, res) {
           for (let i = 0; i < symbolsToFetchFromFinhub.length; i++) {
             const symbol = symbolsToFetchFromFinhub[i];
             try {
-              const snapshot = await fetchStockSnapshot(symbol);
-              if (snapshot?.current != null) {
-                priceMap.set(symbol, snapshot.current);
-                console.log(`✅ ${symbol}: $${snapshot.current.toFixed(2)}`);
+              const quote = await fetchQuoteOnly(symbol);
+              if (quote?.current != null) {
+                priceMap.set(symbol, {
+                  current: quote.current,
+                  prevClose: quote.prevClose ?? null,
+                });
+                const prevStr =
+                  quote.prevClose != null
+                    ? ` (prevClose: $${quote.prevClose.toFixed(2)})`
+                    : "";
+                console.log(`✅ ${symbol}: $${quote.current.toFixed(2)}${prevStr}`);
               } else {
                 console.warn(`⚠️ No price data for ${symbol}`);
                 symbolErrors.push(`${symbol}: No price data available`);
@@ -437,37 +445,43 @@ export default async function handler(req, res) {
 
           for (const holding of holdings) {
             try {
-              const newPrice = priceMap.get(holding.symbol);
-              if (newPrice == null) continue;
+              const priceData = priceMap.get(holding.symbol);
+              if (priceData == null) continue;
+              const actualPrice =
+                typeof priceData === "object" ? priceData.current : priceData;
+              const prevClose =
+                typeof priceData === "object" ? priceData.prevClose : null;
 
+              if (actualPrice == null) continue;
               const currentMarketValue =
-                holding.units && newPrice ? holding.units * newPrice : null;
+                holding.units && actualPrice ? holding.units * actualPrice : null;
               if (currentMarketValue == null) continue;
 
               const existingMarketValue = holding.market_value;
-              const isMarketValueUnchanged =
-                existingMarketValue != null &&
-                Number.isFinite(existingMarketValue) &&
-                Number.isFinite(currentMarketValue) &&
-                Math.abs(currentMarketValue - existingMarketValue) < EPSILON;
 
-              // Calculate day_change (preserve if unchanged)
-              const sameDay = isSameCalendarDayUTC(holding.last_updated);
+              // day_change: use Finnhub prevClose (previous trading day close) when available.
+              // This fixes wrong day_change when DB baseline was stale (e.g. Snaptrade skipped).
               let dayChange = holding.day_change;
               let dayChangePercent = holding.day_change_percent;
               let previousMarketValueForStorage = holding.previous_market_value;
 
-              if (!isMarketValueUnchanged) {
+              if (prevClose != null && Number.isFinite(prevClose) && prevClose > 0) {
+                // Finnhub provides prevClose - use it for correct day change
+                const prevCloseMarketValue = holding.units * prevClose;
+                dayChange = currentMarketValue - prevCloseMarketValue;
+                dayChangePercent =
+                  (dayChange / prevCloseMarketValue) * 100;
+                previousMarketValueForStorage = prevCloseMarketValue;
+              } else {
+                // Fallback: no prevClose (e.g. some ETFs) - use DB baseline
                 const dayBaseline =
                   holding.previous_market_value ?? holding.market_value ?? null;
-
                 if (dayBaseline != null && Number.isFinite(dayBaseline)) {
                   dayChange = currentMarketValue - dayBaseline;
                   dayChangePercent =
                     dayBaseline !== 0 ? (dayChange / dayBaseline) * 100 : 0;
                 }
-
-                // Update previous_market_value on new day
+                const sameDay = isSameCalendarDayUTC(holding.last_updated);
                 if (!sameDay) {
                   previousMarketValueForStorage =
                     holding.market_value ?? currentMarketValue;
@@ -478,7 +492,7 @@ export default async function handler(req, res) {
               const { error: updateError } = await supabase
                 .from("investment_holdings")
                 .update({
-                  price: newPrice,
+                  price: actualPrice,
                   market_value: currentMarketValue,
                   day_change: dayChange,
                   day_change_percent: dayChangePercent,
@@ -521,32 +535,34 @@ export default async function handler(req, res) {
 
           console.log(`✅ Updated ${updatedCount} holdings`);
 
-          // Recalculate balances for affected accounts
+          // Recalculate balances for affected accounts (Plaid: snaptrade_user_id is null - use .is() not .eq())
+          const snapIdFilter = (q, val) =>
+            val == null ? q.is("snaptrade_user_id", null) : q.eq("snaptrade_user_id", val);
+
           const recalculateBalances = async (
             userId,
             snaptradeUserId,
             accountId
           ) => {
-            // Fetch holdings with market_value, unrealized_pl, day_change, and fields to detect cash equivalents
-            // CRITICAL: Must include day_change to sum for balance calculation
-            const { data: holdings } = await supabase
+            let hQ = supabase
               .from("investment_holdings")
               .select(
                 "market_value, unrealized_pl, day_change, symbol, security_type, description"
               )
               .eq("user_id", userId)
-              .eq("snaptrade_user_id", snaptradeUserId)
               .eq("account_id", accountId)
               .eq("is_active", true);
+            hQ = snapIdFilter(hQ, snaptradeUserId);
+            const { data: holdings } = await hQ;
 
-            // Fetch options with market_value, unrealized_pl, and day_change
-            const { data: options } = await supabase
+            let optQ = supabase
               .from("investment_options")
               .select("market_value, unrealized_pl, day_change")
               .eq("user_id", userId)
-              .eq("snaptrade_user_id", snaptradeUserId)
               .eq("account_id", accountId)
               .eq("is_active", true);
+            optQ = snapIdFilter(optQ, snaptradeUserId);
+            const { data: options } = await optQ;
 
             // Same cash-equivalent detection as above (avoid double-counting cash when SPAXX etc. are in holdings)
             const cashEqSymbols = ["SPAXX", "SPRXX", "FZFXX", "FDRXX", "SNAXX"];
@@ -590,17 +606,16 @@ export default async function handler(req, res) {
               totalUnrealizedPL += o.unrealized_pl || 0;
             });
 
-            // Fetch existing balance with all needed fields
-            const { data: balance, error: balanceError } = await supabase
+            let balQ = supabase
               .from("investment_balances")
               .select(
                 "total_value, cash, previous_total_value, day_change, day_change_percent, last_updated"
               )
               .eq("user_id", userId)
-              .eq("snaptrade_user_id", snaptradeUserId)
               .eq("account_id", accountId)
-              .eq("is_current", true)
-              .maybeSingle();
+              .eq("is_current", true);
+            balQ = snapIdFilter(balQ, snaptradeUserId);
+            const { data: balance, error: balanceError } = await balQ.maybeSingle();
 
             // If no balance exists, skip recalculation (account may not have been synced yet)
             if (balanceError || !balance) {
@@ -677,8 +692,7 @@ export default async function handler(req, res) {
             const totalChangePercent =
               newTotalValue > 0 ? (totalUnrealizedPL / newTotalValue) * 100 : 0;
 
-            // Update balance with all calculated values
-            const { error: updateError } = await supabase
+            let updQ = supabase
               .from("investment_balances")
               .update({
                 total_value: newTotalValue,
@@ -690,9 +704,10 @@ export default async function handler(req, res) {
                 last_updated: now.toISOString(),
               })
               .eq("user_id", userId)
-              .eq("snaptrade_user_id", snaptradeUserId)
               .eq("account_id", accountId)
               .eq("is_current", true);
+            updQ = snapIdFilter(updQ, snaptradeUserId);
+            const { error: updateError } = await updQ;
 
             if (updateError) {
               console.error(
@@ -928,9 +943,13 @@ async function runBiggestMoverDaily(res, options = {}) {
     for (let i = 0; i < symbolsToFetch.length; i++) {
       const symbol = symbolsToFetch[i];
       try {
-        const snapshot = await fetchStockSnapshot(symbol, { quiet: true });
-        if (snapshot?.current != null) priceMap.set(symbol, snapshot.current);
-        else finnhubSkipped++;
+        const quote = await fetchQuoteOnly(symbol);
+        if (quote?.current != null) {
+          priceMap.set(symbol, {
+            current: quote.current,
+            prevClose: quote.prevClose ?? null,
+          });
+        } else finnhubSkipped++;
         if (i < symbolsToFetch.length - 1)
           await new Promise((r) => setTimeout(r, BATCH_DELAY));
       } catch {
@@ -959,29 +978,32 @@ async function runBiggestMoverDaily(res, options = {}) {
         todayUTC
       );
     };
-    const EPSILON = 0.01;
     const updatesByAccount = new Map();
     let updatedCount = 0;
 
     for (const holding of allHoldings) {
-      const newPrice = priceMap.get(holding.symbol);
-      if (newPrice == null) continue;
-      const currentMarketValue =
-        holding.units && newPrice ? holding.units * newPrice : null;
-      if (currentMarketValue == null) continue;
+      const priceData = priceMap.get(holding.symbol);
+      if (priceData == null) continue;
+      const actualPrice =
+        typeof priceData === "object" ? priceData.current : priceData;
+      const prevClose =
+        typeof priceData === "object" ? priceData.prevClose : null;
 
-      const existingMarketValue = holding.market_value;
-      const isUnchanged =
-        existingMarketValue != null &&
-        Number.isFinite(existingMarketValue) &&
-        Number.isFinite(currentMarketValue) &&
-        Math.abs(currentMarketValue - existingMarketValue) < EPSILON;
+      if (actualPrice == null) continue;
+      const currentMarketValue =
+        holding.units && actualPrice ? holding.units * actualPrice : null;
+      if (currentMarketValue == null) continue;
 
       let dayChange = holding.day_change;
       let dayChangePercent = holding.day_change_percent;
       let previousForStorage = holding.previous_market_value;
 
-      if (!isUnchanged) {
+      if (prevClose != null && Number.isFinite(prevClose) && prevClose > 0) {
+        const prevCloseMarketValue = holding.units * prevClose;
+        dayChange = currentMarketValue - prevCloseMarketValue;
+        dayChangePercent = (dayChange / prevCloseMarketValue) * 100;
+        previousForStorage = prevCloseMarketValue;
+      } else {
         const baseline =
           holding.previous_market_value ?? holding.market_value ?? null;
         if (baseline != null && Number.isFinite(baseline)) {
@@ -996,7 +1018,7 @@ async function runBiggestMoverDaily(res, options = {}) {
       const { error: updateError } = await supabase
         .from("investment_holdings")
         .update({
-          price: newPrice,
+          price: actualPrice,
           market_value: currentMarketValue,
           day_change: dayChange,
           day_change_percent: dayChangePercent,
@@ -1110,19 +1132,33 @@ async function runBiggestMoverDaily(res, options = {}) {
     for (const userId of userIds) {
       const userHoldings = allHoldings.filter((h) => h.user_id === userId);
       const withPriceMap = userHoldings
-        .map((h) => ({
-          ...h,
-          newPrice: priceMap.get(h.symbol),
-          newDayChangePercent: (() => {
-            const p = priceMap.get(h.symbol);
-            if (p == null) return h.day_change_percent;
-            const mv = h.units && p ? h.units * p : null;
-            if (mv == null) return h.day_change_percent;
-            const base = h.previous_market_value ?? h.market_value ?? null;
-            if (base == null || base === 0) return h.day_change_percent;
-            return ((mv - base) / base) * 100;
-          })(),
-        }))
+        .map((h) => {
+          const pd = priceMap.get(h.symbol);
+          const price =
+            typeof pd === "object" && pd != null ? pd.current : pd;
+          let dayChgPct = h.day_change_percent;
+          if (price != null && pd != null) {
+            const mv = h.units && price ? h.units * price : null;
+            if (mv != null) {
+              const prevC =
+                typeof pd === "object" && pd.prevClose != null
+                  ? pd.prevClose
+                  : null;
+              const base =
+                prevC != null && prevC > 0
+                  ? h.units * prevC
+                  : h.previous_market_value ?? h.market_value ?? null;
+              if (base != null && base !== 0) {
+                dayChgPct = ((mv - base) / base) * 100;
+              }
+            }
+          }
+          return {
+            ...h,
+            newPrice: price,
+            newDayChangePercent: dayChgPct,
+          };
+        })
         .filter((r) => r.newPrice != null && r.newDayChangePercent != null);
 
       if (withPriceMap.length === 0) continue;

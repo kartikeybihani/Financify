@@ -527,6 +527,11 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
         await import("@/src/shared/utils/homeScreenCache");
       clearHomeScreenCache(); // Clear all home screen caches (no userId = clear all)
 
+      // Clear onboarding cache
+      const { clearOnboardingCache } =
+        await import("@/src/shared/utils/onboardingCache");
+      clearOnboardingCache(); // Clear all onboarding caches
+
       // Clear userId cache to prevent cross-user ID leakage
       const { clearCurrentUserId } =
         await import("@/src/utils/insights/cacheUtils");

@@ -59,6 +59,9 @@ export async function createOnboardingProgress(
   userId: string
 ): Promise<OnboardingProgress | null> {
   try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || user.id !== userId) return null; // Auth guard: prevent RLS failure during logout race
+
     const { data, error } = await supabase
       .from("onboarding_progress")
       .insert({
@@ -202,6 +205,9 @@ export async function updateOnboardingProgress(
   userId: string
 ): Promise<OnboardingProgress | null> {
   try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || user.id !== userId) return null; // Auth guard: prevent during logout race
+
     // Check all four steps
     const [accountsConnected, budgetSetup, finnyAsked, goalCreated] = await Promise.all([
       checkAccountsConnected(userId),
@@ -355,6 +361,11 @@ export async function getOnboardingStatus(
   useCache: boolean = true
 ): Promise<OnboardingStatus> {
   try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user || user.id !== userId) {
+      return { progress: null, percentage: 0, isComplete: false, shouldShow: true };
+    }
+
     // Try to load from cache first for instant UI
     if (useCache) {
       const cachedStatus = loadOnboardingFromCache(userId);

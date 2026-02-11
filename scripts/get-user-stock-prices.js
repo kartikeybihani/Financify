@@ -40,7 +40,7 @@ async function getUserStockPrices(userId) {
     const { data: holdings, error: holdingsError } = await supabase
       .from("investment_holdings")
       .select(
-        "id, symbol, symbol_id, units, price, market_value, day_change, day_change_percent, account_id, security_type, description, snaptrade_user_id"
+        "id, symbol, symbol_id, units, price, market_value, previous_market_value, day_change, day_change_percent, account_id, security_type, description, snaptrade_user_id"
       )
       .eq("user_id", userId)
       .eq("is_active", true)
@@ -102,9 +102,9 @@ async function getUserStockPrices(userId) {
       } cash equivalents - not fetched)\n`
     );
 
-    // Step 3: Fetch prices from Finnhub only for non-cash-equivalent symbols
+    // Step 3: Fetch prices from Finnhub (current + prevClose for correct day_change)
     console.log("📈 Step 3: Fetching prices from Finnhub...\n");
-    const priceMap = new Map();
+    const priceMap = new Map(); // { current, prevClose }
     const symbolErrors = [];
     const BATCH_DELAY = 1100;
 
@@ -114,8 +114,15 @@ async function getUserStockPrices(userId) {
         process.stdout.write(`  Fetching ${symbol}... `);
         const snapshot = await fetchStockSnapshot(symbol);
         if (snapshot?.current != null) {
-          priceMap.set(symbol, snapshot.current);
-          console.log(`✅ $${snapshot.current.toFixed(2)}`);
+          priceMap.set(symbol, {
+            current: snapshot.current,
+            prevClose: snapshot.prevClose ?? null,
+          });
+          const prevStr =
+            snapshot.prevClose != null
+              ? ` (prevClose: $${snapshot.prevClose.toFixed(2)})`
+              : "";
+          console.log(`✅ $${snapshot.current.toFixed(2)}${prevStr}`);
         } else {
           console.log(`⚠️  No price data`);
           symbolErrors.push(`${symbol}: No price data available`);
@@ -161,8 +168,14 @@ async function getUserStockPrices(userId) {
     let totalStoredValue = 0;
 
     for (const [symbol, symbolHoldings] of holdingsBySymbol.entries()) {
-      const currentPrice = priceMap.get(symbol);
+      const priceData = priceMap.get(symbol);
+      const currentPrice =
+        typeof priceData === "object" ? priceData?.current : priceData;
+      const prevClose =
+        typeof priceData === "object" ? priceData?.prevClose : null;
       const storedPrice = symbolHoldings[0].price;
+      const storedDayChange = symbolHoldings[0].day_change;
+      const storedDayChangePercent = symbolHoldings[0].day_change_percent;
       const isCash = isCashEquivalent(symbolHoldings[0]);
 
       // Calculate totals for this symbol
@@ -199,6 +212,11 @@ async function getUserStockPrices(userId) {
         );
       } else if (currentPrice) {
         console.log(`   Current Price (Finnhub): $${currentPrice.toFixed(2)}`);
+        if (prevClose != null) {
+          console.log(
+            `   Prev Close (Finnhub): $${prevClose.toFixed(2)} ← used for day_change`
+          );
+        }
         const priceDiff = currentPrice - (storedPrice || 0);
         const priceDiffPercent =
           storedPrice && storedPrice > 0
@@ -219,6 +237,31 @@ async function getUserStockPrices(userId) {
             2
           )}`
         );
+        // Day change comparison: correct (from prevClose) vs stored (from DB)
+        if (prevClose != null && prevClose > 0) {
+          const correctPrevMv = totalUnits * prevClose;
+          const correctDayChange = currentMarketValue - correctPrevMv;
+          const correctDayChangePct =
+            ((currentPrice - prevClose) / prevClose) * 100;
+          console.log(
+            `   Day Change (correct from prevClose): ${
+              correctDayChange >= 0 ? "+" : ""
+            }$${correctDayChange.toFixed(2)} (${correctDayChangePct >= 0 ? "+" : ""}${correctDayChangePct.toFixed(2)}%)`
+          );
+          if (
+            storedDayChange != null &&
+            Math.abs(storedDayChange - correctDayChange) > 0.5
+          ) {
+            console.log(
+              `   Day Change (stored in DB - possibly wrong): ${
+                storedDayChange >= 0 ? "+" : ""
+              }$${storedDayChange.toFixed(2)} (${(storedDayChangePercent ?? 0) >= 0 ? "+" : ""}${(storedDayChangePercent ?? 0).toFixed(2)}%)`
+            );
+            console.log(
+              `   ⚠️  Mismatch - sync will fix this when run`
+            );
+          }
+        }
       } else {
         console.log(`   Current Price (Finnhub): ❌ Not available`);
         console.log(`   Stored Market Value: $${storedMarketValue.toFixed(2)}`);

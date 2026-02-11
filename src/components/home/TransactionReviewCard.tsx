@@ -452,7 +452,12 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
             onStartShouldSetResponder={() => true}
           >
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Review Transactions</Text>
+              <View>
+                <Text style={styles.modalTitle}>Review Transactions</Text>
+                <Text style={styles.modalSubtitle}>
+                  Confirm or change the category for each transaction
+                </Text>
+              </View>
               <TouchableOpacity
                 onPress={() => setShowAllModal(false)}
                 style={styles.modalCloseButton}
@@ -515,27 +520,6 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
                               <Text style={styles.modalTransactionDate}>
                                 {formatDate(transaction.date)}
                               </Text>
-                              <View
-                                style={[
-                                  styles.modalCategoryChip,
-                                  {
-                                    backgroundColor: `${categoryColor}20`,
-                                    borderColor: `${categoryColor}40`,
-                                  },
-                                ]}
-                              >
-                                <Text style={styles.modalCategoryChipIcon}>
-                                  {categoryIcon}
-                                </Text>
-                                <Text
-                                  style={[
-                                    styles.modalCategoryChipText,
-                                    { color: categoryColor },
-                                  ]}
-                                >
-                                  {formatCategoryName(displayCategory)}
-                                </Text>
-                              </View>
                             </View>
                           </View>
                         </View>
@@ -556,37 +540,64 @@ export function TransactionReviewCard({ userId }: TransactionReviewCardProps) {
                         </View>
                       </TouchableOpacity>
                       <View style={styles.modalActions}>
-                        <TouchableOpacity
-                          onPress={() => {
-                            setShowAllModal(false);
-                            handleTransactionPress(transaction);
-                          }}
-                          style={styles.modalActionBoxLeft}
-                          activeOpacity={0.7}
-                          disabled={isAnimating}
+                        <View
+                          style={[
+                            styles.modalCategoryChipLarge,
+                            {
+                              backgroundColor: `${categoryColor}20`,
+                              borderColor: `${categoryColor}40`,
+                            },
+                          ]}
                         >
+                          <Text style={styles.modalCategoryChipIconLarge}>
+                            {categoryIcon}
+                          </Text>
+                          <Text
+                            style={[
+                              styles.modalCategoryChipTextLarge,
+                              { color: categoryColor },
+                            ]}
+                          >
+                            {formatCategoryName(displayCategory)}
+                          </Text>
+                        </View>
+                        <View style={styles.modalActionButtons}>
+                          <TouchableOpacity
+                            onPress={() => {
+                              setShowAllModal(false);
+                              handleTransactionPress(transaction);
+                            }}
+                            style={styles.modalChangeCategoryButton}
+                            activeOpacity={0.7}
+                            disabled={isAnimating}
+                          >
                           <Ionicons
                             name="create-outline"
-                            size={18}
+                            size={14}
                             color="#4A90E2"
                           />
-                          <Text style={styles.modalActionText}>View</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                          onPress={() =>
-                            handleMarkAsReviewed(transaction.id, transaction)
-                          }
-                          style={styles.modalActionBoxRight}
-                          activeOpacity={0.7}
-                          disabled={isAnimating}
-                        >
-                          <Ionicons
-                            name="checkmark-circle"
-                            size={18}
-                            color="#4ECDC4"
-                          />
-                          <Text style={styles.modalActionText}>Reviewed</Text>
-                        </TouchableOpacity>
+                            <Text style={styles.modalChangeCategoryButtonText}>
+                              Change category
+                            </Text>
+                          </TouchableOpacity>
+                          <TouchableOpacity
+                            onPress={() =>
+                              handleMarkAsReviewed(transaction.id, transaction)
+                            }
+                            style={styles.modalConfirmButton}
+                            activeOpacity={0.7}
+                            disabled={isAnimating}
+                          >
+                            <Ionicons
+                              name="checkmark-circle"
+                              size={14}
+                              color="#4ECDC4"
+                            />
+                            <Text style={styles.modalConfirmButtonText}>
+                              Correct
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
                       </View>
                     </Animated.View>
                   );
@@ -799,6 +810,11 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#fff",
   },
+  modalSubtitle: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.6)",
+    marginTop: 4,
+  },
   modalCloseButton: {
     padding: 4,
   },
@@ -867,41 +883,62 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   modalActions: {
-    flexDirection: "row",
-    gap: 15,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  modalActionBoxLeft: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
+    flexDirection: "column",
     gap: 8,
-    paddingVertical: 4,
-    paddingHorizontal: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "rgba(232, 164, 164, 0.25)",
-    backgroundColor: "rgba(222, 185, 185, 0.08)",
   },
-  modalActionBoxRight: {
-    flex: 1,
+  modalCategoryChipLarge: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    paddingVertical: 4,
+    alignSelf: "flex-start",
     paddingHorizontal: 10,
-    borderRadius: 8,
+    paddingVertical: 6,
+    borderRadius: 999,
     borderWidth: 1,
-    borderColor: "rgba(78, 205, 196, 0.3)",
-    backgroundColor: "rgba(194, 221, 219, 0.08)",
+    gap: 5,
   },
-  modalActionText: {
+  modalCategoryChipIconLarge: {
+    fontSize: 13,
+  },
+  modalCategoryChipTextLarge: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#fff",
+  },
+  modalActionButtons: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  modalChangeCategoryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.35)",
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+  },
+  modalChangeCategoryButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4A90E2",
+  },
+  modalConfirmButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "rgba(78, 205, 196, 0.35)",
+    backgroundColor: "rgba(78, 205, 196, 0.1)",
+  },
+  modalConfirmButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4ECDC4",
   },
   modalReviewAllButton: {
     margin: 20,

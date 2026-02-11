@@ -1,15 +1,50 @@
 // components/home/LoadingSkeletons.tsx
 
-import React from "react";
-import { View, Dimensions } from "react-native";
+import React, { useEffect, useRef } from "react";
+import { View, Dimensions, Animated } from "react-native";
 import { LoadingSkeleton, ShimmerView } from "@/src/components/LoadingSkeleton";
 import { styles } from "@/src/styles/homeStyles";
 
 const screenWidth = Dimensions.get("window").width;
 
+// Wrapper that animates the whole box with a subtle pulse
+const AnimatedBox: React.FC<{
+  children: React.ReactNode;
+  style?: object | object[];
+}> = ({ children, style }) => {
+  const pulse = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const animation = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulse, {
+          toValue: 0.92,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulse, {
+          toValue: 1,
+          duration: 1200,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    animation.start();
+    return () => animation.stop();
+  }, [pulse]);
+
+  const animatedStyle = {
+    opacity: pulse,
+  };
+
+  return (
+    <Animated.View style={[style, animatedStyle]}>{children}</Animated.View>
+  );
+};
+
 // Skeleton for QuickStats carousel
 export const QuickStatsSkeleton: React.FC = React.memo(() => (
-  <View style={[styles.netWorthCard, { padding: 0 }]}>
+  <AnimatedBox style={[styles.netWorthCard, { padding: 0 }]}>
     <View style={[styles.carouselSlide, { width: screenWidth - 40 }]}>
       <ShimmerView
         width={100}
@@ -55,14 +90,14 @@ export const QuickStatsSkeleton: React.FC = React.memo(() => (
       <View style={[styles.carouselDot, { opacity: 0.3 }]} />
       <View style={[styles.carouselDot, { opacity: 0.3 }]} />
     </View>
-  </View>
+  </AnimatedBox>
 ));
 
 // Skeleton for Financial Cards
 export const FinancialCardsSkeleton: React.FC = React.memo(() => (
   <View style={styles.summaryRow}>
     {[1, 2, 3].map((index) => (
-      <View key={index} style={styles.financialCardSkeleton}>
+      <AnimatedBox key={index} style={styles.financialCardSkeleton}>
         <ShimmerView
           width={60}
           height={12}
@@ -76,7 +111,7 @@ export const FinancialCardsSkeleton: React.FC = React.memo(() => (
           style={{ marginBottom: 8 }}
         />
         <ShimmerView width={30} height={30} borderRadius={15} />
-      </View>
+      </AnimatedBox>
     ))}
   </View>
 ));
@@ -96,7 +131,7 @@ export const GoalsSectionSkeleton: React.FC = React.memo(() => (
       </View>
       <ShimmerView width={80} height={14} borderRadius={4} />
     </View>
-    <View style={styles.goalCard}>
+    <AnimatedBox style={styles.goalCard}>
       <View style={styles.goalHeader}>
         <ShimmerView
           width={120}
@@ -120,14 +155,14 @@ export const GoalsSectionSkeleton: React.FC = React.memo(() => (
           style={{ marginLeft: 2 }}
         />
       </View>
-    </View>
+    </AnimatedBox>
   </View>
 ));
 
 // Skeleton for Finny Message
 export const FinnyMessageSkeleton: React.FC = React.memo(() => (
   <View style={styles.finnyMessageContainer}>
-    <View style={styles.finnyMessage}>
+    <AnimatedBox style={styles.finnyMessage}>
       <View style={styles.finnyIconContainer}>
         <ShimmerView width={45} height={50} borderRadius={20} />
       </View>
@@ -140,7 +175,7 @@ export const FinnyMessageSkeleton: React.FC = React.memo(() => (
         />
         <ShimmerView width={200} height={14} borderRadius={4} />
       </View>
-    </View>
+    </AnimatedBox>
   </View>
 ));
 
