@@ -868,17 +868,6 @@ export default function InvestmentsScreen({
         return;
       }
 
-      // Get credentials with fallback to database
-      const creds = await getSnaptradeCredentialsWithFallback();
-
-      if (!creds) {
-        const errorMsg =
-          "No valid SnapTrade credentials found. Please reconnect your investment account.";
-        logger.warn(errorMsg);
-        setSyncError(errorMsg);
-        return;
-      }
-
       if (connections.length === 0) {
         const errorMsg =
           "No investment connections found. Please reconnect your investment account.";
@@ -893,26 +882,30 @@ export default function InvestmentsScreen({
           !conn.provider || conn.provider === "snaptrade",
       );
 
-      if (snaptradeConnections.length === 0) {
+      let recentConnections: ConnectionRow[] = [];
+      let syncErrors: string[] = [];
+
+      // SnapTrade sync: only needed when user has SnapTrade connections
+      if (snaptradeConnections.length > 0) {
+        const creds = await getSnaptradeCredentialsWithFallback();
+        if (!creds) {
+          const errorMsg =
+            "No valid SnapTrade credentials found. Please reconnect your investment account.";
+          logger.warn(errorMsg);
+          setSyncError(errorMsg);
+          return;
+        }
+
         logger.debug(
-          "ℹ️ No SnapTrade connections to sync (Plaid accounts sync via webhooks)",
+          `🔄 Starting investment refresh for ${snaptradeConnections.length} SnapTrade account(s)...`,
         );
-        // Still reload data in case Plaid data was updated
-        await loadFromDbWithoutAutoSync();
-        return;
-      }
 
-      logger.debug(
-        `🔄 Starting investment refresh for ${snaptradeConnections.length} SnapTrade account(s)...`,
-      );
+        // Check last_synced_at and split connections into recent (< 3 hours) and stale
+        const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
+        const now = new Date();
+        const staleConnections: ConnectionRow[] = [];
 
-      // Check last_synced_at and split connections into recent (< 3 hours) and stale
-      const THREE_HOURS_MS = 3 * 60 * 60 * 1000;
-      const now = new Date();
-      const recentConnections: ConnectionRow[] = [];
-      const staleConnections: ConnectionRow[] = [];
-
-      for (const conn of snaptradeConnections) {
+        for (const conn of snaptradeConnections) {
         if (!conn.last_synced_at) {
           // Never synced - treat as stale
           staleConnections.push(conn);
@@ -947,11 +940,10 @@ export default function InvestmentsScreen({
             );
           }
         }
-      }
+        }
 
-      // Sync all SnapTrade accounts sequentially (only stale ones)
-      const syncErrors: string[] = [];
-      for (let i = 0; i < staleConnections.length; i++) {
+        // Sync all SnapTrade accounts sequentially (only stale ones)
+        for (let i = 0; i < staleConnections.length; i++) {
         const conn = staleConnections[i];
         try {
           logger.info(
@@ -1008,36 +1000,39 @@ export default function InvestmentsScreen({
             throw err; // Re-throw to trigger the disabled connection handler below
           }
         }
-      }
+        }
 
-      // Log summary of sync strategy
-      if (recentConnections.length > 0) {
-        logger.info(
-          `⏭️ Skipped SnapTrade sync for ${recentConnections.length} recent connection(s) - will update prices only`,
+        // Log summary of sync strategy
+        if (recentConnections.length > 0) {
+          logger.info(
+            `⏭️ Skipped SnapTrade sync for ${recentConnections.length} recent connection(s) - will update prices only`,
+          );
+        }
+        if (staleConnections.length > 0) {
+          logger.info(
+            `✅ Completed SnapTrade sync for ${staleConnections.length} stale connection(s)`,
+          );
+        }
+
+        if (
+          syncErrors.length > 0 &&
+          syncErrors.length === staleConnections.length &&
+          staleConnections.length > 0
+        ) {
+          throw new Error(syncErrors.join("; "));
+        } else if (syncErrors.length > 0) {
+          logger.warn(
+            `⚠️ Some accounts failed to sync: ${syncErrors.join("; ")}`,
+          );
+        }
+      } else {
+        logger.debug(
+          "ℹ️ No SnapTrade connections - will update stock prices for Plaid/holdings only",
         );
       }
-      if (staleConnections.length > 0) {
-        logger.info(
-          `✅ Completed SnapTrade sync for ${staleConnections.length} stale connection(s)`,
-        );
-      }
 
-      // Clear cache to ensure fresh data (after all syncs)
+      // Clear cache and refresh prices (runs for all users: SnapTrade + Plaid)
       await clearInvestmentCache(user.id);
-
-      if (
-        syncErrors.length > 0 &&
-        syncErrors.length === staleConnections.length &&
-        staleConnections.length > 0
-      ) {
-        // All stale syncs failed
-        throw new Error(syncErrors.join("; "));
-      } else if (syncErrors.length > 0) {
-        // Some syncs failed but not all
-        logger.warn(
-          `⚠️ Some accounts failed to sync: ${syncErrors.join("; ")}`,
-        );
-      }
 
       // Step 4: Reload data from database to show updated values (without triggering auto-sync)
       logger.debug("🔄 Reloading data from database...");

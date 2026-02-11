@@ -1029,7 +1029,7 @@ async function runBiggestMoverDaily(res, options = {}) {
 
       if (!updateError) {
         updatedCount++;
-        if (holding.snaptrade_user_id && holding.account_id) {
+        if (holding.account_id) {
           const key = `${holding.user_id}:${holding.snaptrade_user_id}:${holding.account_id}`;
           if (!updatesByAccount.has(key))
             updatesByAccount.set(key, {
@@ -1043,24 +1043,28 @@ async function runBiggestMoverDaily(res, options = {}) {
 
     result.holdings_updated = updatedCount;
 
-    // Recalculate investment_balances for SnapTrade accounts that were updated
+    const snapIdFilter = (q, val) =>
+      val == null ? q.is("snaptrade_user_id", null) : q.eq("snaptrade_user_id", val);
+
+    // Recalculate investment_balances for all accounts (SnapTrade + Plaid) that were updated
     for (const acc of updatesByAccount.values()) {
       try {
-        // CRITICAL: Include day_change to sum from holdings - this is the source of truth
-        const { data: holdings } = await supabase
+        let hQ = supabase
           .from("investment_holdings")
           .select("market_value, symbol, security_type, description, day_change")
           .eq("user_id", acc.user_id)
-          .eq("snaptrade_user_id", acc.snaptrade_user_id)
           .eq("account_id", acc.account_id)
           .eq("is_active", true);
-        const { data: options } = await supabase
+        hQ = snapIdFilter(hQ, acc.snaptrade_user_id);
+        const { data: holdings } = await hQ;
+        let optQ = supabase
           .from("investment_options")
           .select("market_value, day_change")
           .eq("user_id", acc.user_id)
-          .eq("snaptrade_user_id", acc.snaptrade_user_id)
           .eq("account_id", acc.account_id)
           .eq("is_active", true);
+        optQ = snapIdFilter(optQ, acc.snaptrade_user_id);
+        const { data: options } = await optQ;
         const cashEq = ["SPAXX", "SPRXX", "FZFXX", "FDRXX", "SNAXX"];
         const isCashEq = (h) =>
           cashEq.includes((h.symbol || "").toUpperCase()) ||
@@ -1079,14 +1083,14 @@ async function runBiggestMoverDaily(res, options = {}) {
           totalHoldings += o.market_value || 0;
           totalDayChangeFromHoldings += o.day_change || 0;
         });
-        const { data: balance } = await supabase
+        let balQ = supabase
           .from("investment_balances")
           .select("total_value, cash, previous_total_value, last_updated")
           .eq("user_id", acc.user_id)
-          .eq("snaptrade_user_id", acc.snaptrade_user_id)
           .eq("account_id", acc.account_id)
-          .eq("is_current", true)
-          .maybeSingle();
+          .eq("is_current", true);
+        balQ = snapIdFilter(balQ, acc.snaptrade_user_id);
+        const { data: balance } = await balQ.maybeSingle();
         if (!balance) continue;
         const cash = Math.max(
           0,
@@ -1103,7 +1107,7 @@ async function runBiggestMoverDaily(res, options = {}) {
           sameDay && balance.previous_total_value != null
             ? balance.previous_total_value
             : balance.total_value ?? newTotal;
-        await supabase
+        let updQ = supabase
           .from("investment_balances")
           .update({
             total_value: newTotal,
@@ -1113,9 +1117,10 @@ async function runBiggestMoverDaily(res, options = {}) {
             last_updated: now.toISOString(),
           })
           .eq("user_id", acc.user_id)
-          .eq("snaptrade_user_id", acc.snaptrade_user_id)
           .eq("account_id", acc.account_id)
           .eq("is_current", true);
+        updQ = snapIdFilter(updQ, acc.snaptrade_user_id);
+        await updQ;
       } catch (e) {
         result.errors.push(`Balance recalc ${acc.account_id}: ${e?.message}`);
       }
