@@ -108,24 +108,27 @@ function ChatScreenContent() {
     return () => subscription?.remove();
   }, []);
 
-  // Handle keyboard state changes
+  // Handle keyboard state - use keyboardWill* on iOS so layout animates in sync with keyboard
   useEffect(() => {
-    const keyboardDidShowListener = Keyboard.addListener(
-      "keyboardDidShow",
-      () => {
-        setIsKeyboardOpen(true);
-      },
-    );
-    const keyboardDidHideListener = Keyboard.addListener(
-      "keyboardDidHide",
-      () => {
-        setIsKeyboardOpen(false);
-      },
-    );
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const handleShow = (e: any) => {
+      if (Platform.OS === "ios") Keyboard.scheduleLayoutAnimation(e);
+      setIsKeyboardOpen(true);
+    };
+
+    const handleHide = (e: any) => {
+      if (Platform.OS === "ios") Keyboard.scheduleLayoutAnimation(e);
+      setIsKeyboardOpen(false);
+    };
+
+    const showListener = Keyboard.addListener(showEvent, handleShow);
+    const hideListener = Keyboard.addListener(hideEvent, handleHide);
 
     return () => {
-      keyboardDidShowListener?.remove();
-      keyboardDidHideListener?.remove();
+      showListener?.remove();
+      hideListener?.remove();
     };
   }, []);
 

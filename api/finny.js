@@ -1459,7 +1459,7 @@ export default async function handler(req, res) {
           const loadedMemory = await loadUserMemoryWithTimeout(
             finalUserId,
             message,
-            5000,
+            2000,
           );
           // Always cache the result (even if empty) to avoid repeated API calls for same query
           // loadUserMemoryWithTimeout always returns { memories: [], totalCount: 0 } on error/timeout, so it's safe
@@ -2665,7 +2665,7 @@ async function handleAsk(
         // Use cached memory from context if available, otherwise load with 5s timeout (non-blocking)
         const userMemory =
           context.memory ||
-          (await loadUserMemoryWithTimeout(userId, message || null, 5000));
+          (await loadUserMemoryWithTimeout(userId, message || null, 2000));
         const userProfile = context.profile || { name: null, age: null };
 
         // Get investment holdings from context packs if available
@@ -6412,7 +6412,7 @@ async function handleOffTopic(
         // Load memory and profile in parallel with 5s timeout (non-blocking)
         // Using wrapper functions that automatically fallback to defaults on timeout
         const [loadedMemory, loadedProfile] = await Promise.all([
-          loadUserMemoryWithTimeout(userId, messageText, 5000).catch(
+          loadUserMemoryWithTimeout(userId, messageText, 2000).catch(
             (error) => {
               console.log(
                 "⚠️ [OFF_TOPIC] Error loading memory:",
@@ -6421,7 +6421,7 @@ async function handleOffTopic(
               return { memories: [], totalCount: 0 };
             },
           ),
-          fetchSupermemoryProfileWithTimeout(userId, 5000).catch((error) => {
+          fetchSupermemoryProfileWithTimeout(userId, 2000).catch((error) => {
             console.log(
               "⚠️ [OFF_TOPIC] Error loading profile:",
               error?.message,

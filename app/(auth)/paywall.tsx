@@ -15,6 +15,7 @@ import {
   TouchableWithoutFeedback,
   Modal,
 } from "react-native";
+import PagerView from "react-native-pager-view";
 import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
 import { Ionicons } from "@expo/vector-icons";
@@ -31,6 +32,31 @@ import logger from "@/src/utils/core/logger";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const FEATURE_CARD_WIDTH = SCREEN_WIDTH - 56;
+
+// Animated carousel dot - expands to pill when active
+function AnimatedCarouselDot({ isActive }: { isActive: boolean }) {
+  const widthAnim = useRef(new Animated.Value(isActive ? 20 : 6)).current;
+
+  useEffect(() => {
+    Animated.timing(widthAnim, {
+      toValue: isActive ? 20 : 6,
+      duration: 280,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [isActive, widthAnim]);
+
+  return (
+    <Animated.View
+      style={{
+        width: widthAnim,
+        height: 6,
+        borderRadius: 3,
+        backgroundColor: isActive ? "#4A90E2" : "rgba(255, 255, 255, 0.35)",
+      }}
+    />
+  );
+}
 
 // Enable LayoutAnimation on Android
 if (
@@ -69,72 +95,6 @@ const COLORS = {
   darkBackground: "#0D1117",
 };
 
-// Contextual Background Components
-const TimelineBackground = () => (
-  <View style={styles.contextualBackground}>
-    {[0, 1, 2, 3].map((i) => (
-      <View key={i} style={styles.timelineItem}>
-        <View
-          style={[
-            styles.timelineDot,
-            { opacity: 0.05 + i * 0.015, left: `${20 + i * 20}%` },
-          ]}
-        />
-        <View
-          style={[
-            styles.timelineLine,
-            {
-              opacity: 0.03,
-              left: `${20 + i * 20}%`,
-              width: i < 3 ? "20%" : 0,
-            },
-          ]}
-        />
-      </View>
-    ))}
-  </View>
-);
-
-const DashboardBackground = () => (
-  <View style={styles.contextualBackground}>
-    <View style={styles.dashboardGrid}>
-      {[0, 1, 2, 3, 4, 5].map((i) => (
-        <View
-          key={i}
-          style={[
-            styles.dashboardCard,
-            {
-              opacity: 0.04,
-              left: `${(i % 3) * 33}%`,
-              top: `${Math.floor(i / 3) * 50}%`,
-            },
-          ]}
-        />
-      ))}
-    </View>
-  </View>
-);
-
-const AIBackground = () => (
-  <View style={styles.contextualBackground}>
-    {[0, 1, 2, 3, 4].map((i) => (
-      <View
-        key={i}
-        style={[
-          styles.aiBubble,
-          {
-            opacity: 0.05,
-            left: `${15 + i * 18}%`,
-            top: `${20 + (i % 2) * 40}%`,
-            width: 28 + i * 4,
-            height: 28 + i * 4,
-          },
-        ]}
-      />
-    ))}
-  </View>
-);
-
 interface Feature {
   id: string;
   title: string;
@@ -145,6 +105,40 @@ interface Feature {
   cardGradient: [string, string];
   backgroundType: "timeline" | "dashboard" | "ai";
 }
+
+// Carousel features for paywall
+const CAROUSEL_FEATURES = [
+  {
+    id: "peace",
+    title: "Let Finny do the work and get peace of mind.",
+    subtitle: "Automated tracking so you can relax",
+    emoji: "😌",
+  },
+  {
+    id: "personalization",
+    title: "Advanced personalization for you.",
+    subtitle: "Insights tailored to your goals",
+    emoji: "✨",
+  },
+  {
+    id: "ai",
+    title: "Unlimited Finny AI help.",
+    subtitle: "Ask anything, get instant answers",
+    emoji: "🤖",
+  },
+  {
+    id: "goals",
+    title: "Unlimited financial goals.",
+    subtitle: "Track and achieve what matters to you",
+    emoji: "🎯",
+  },
+  {
+    id: "accounts",
+    title: "Add all accounts in one place.",
+    subtitle: "One dashboard for your entire financial picture",
+    emoji: "📊",
+  },
+];
 
 const FEATURES: Feature[] = [
   {
@@ -221,6 +215,8 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
     (p) => p.identifier === "$rc_monthly" || p.packageType === "MONTHLY",
   );
   const [scrollContentHeight, setScrollContentHeight] = useState(0);
+  const [activeCarouselIndex, setActiveCarouselIndex] = useState(0);
+  const carouselRef = useRef<PagerView>(null);
 
   const SHEET_HANDLE_HEIGHT = 10 + 2 + 3; // sheetHandleContainer padding + handle
   const maxSheetHeight =
@@ -369,7 +365,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
 
   const toggleTranslateX = toggleAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, Math.max(toggleWidth - 8, 0) / 2],
+    outputRange: [0, Math.max(toggleWidth - 6, 0) / 2],
   });
 
   const featuresToShow = expandedFeatureId
@@ -581,13 +577,42 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
             })}
           </View> */}
 
+                  {/* Feature Carousel */}
+                  <View style={styles.carouselSection}>
+                    <PagerView
+                      ref={carouselRef}
+                      style={styles.carouselPager}
+                      initialPage={0}
+                      onPageSelected={(e) =>
+                        setActiveCarouselIndex(e.nativeEvent.position)
+                      }
+                    >
+                      {CAROUSEL_FEATURES.map((item) => (
+                        <View
+                          key={item.id}
+                          style={styles.carouselSlide}
+                          collapsable={false}
+                        >
+                          <Text style={styles.carouselEmoji}>{item.emoji}</Text>
+                          <Text style={styles.carouselTitle}>{item.title}</Text>
+                          <Text style={styles.carouselSubtitle}>
+                            {item.subtitle}
+                          </Text>
+                        </View>
+                      ))}
+                    </PagerView>
+                    <View style={styles.carouselDots}>
+                      {CAROUSEL_FEATURES.map((_, idx) => (
+                        <AnimatedCarouselDot
+                          key={idx}
+                          isActive={activeCarouselIndex === idx}
+                        />
+                      ))}
+                    </View>
+                  </View>
+
                   {/* Pricing Section */}
                   <View style={styles.pricingSection}>
-                    <Text style={styles.pricingTitle}>Choose Your Plan</Text>
-                    <Text style={styles.pricingSubtitle}>
-                      Start your 1 month Free trial
-                    </Text>
-
                     <View style={styles.planToggle}>
                       <BlurView intensity={24} style={styles.planToggleBlur}>
                         <View
@@ -601,7 +626,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                               style={[
                                 styles.togglePill,
                                 {
-                                  width: (toggleWidth - 8) / 2,
+                                  width: (toggleWidth - 6) / 2,
                                   transform: [{ translateX: toggleTranslateX }],
                                 },
                               ]}
@@ -788,14 +813,9 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                             <Text style={styles.ctaText}>Processing...</Text>
                           </View>
                         ) : (
-                          <>
-                            <Text style={styles.ctaText}>
-                              Start 1-Month Free Trial
-                            </Text>
-                            <Text style={styles.ctaSubtext}>
-                              Cancel anytime • 1 month free
-                            </Text>
-                          </>
+                          <Text style={styles.ctaText}>
+                            Start 1-Month Free Trial
+                          </Text>
                         )}
                       </LinearGradient>
                     </TouchableOpacity>
@@ -819,6 +839,10 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                         </Text>
                       )}
                     </TouchableOpacity>
+                    <Text style={styles.cancelLine}>
+                      Cancel anytime, for any reason. This subscription
+                      automatically renews at the price selected above.
+                    </Text>
                   </View>
                 </ScrollView>
               </LinearGradient>
@@ -895,17 +919,17 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   headerBrand: {
-    fontSize: 24,
+    fontSize: 20,
     fontWeight: "700",
     color: "#fff",
     letterSpacing: 0.5,
-    lineHeight: 28,
+    lineHeight: 24,
   },
   proBadge: {
     backgroundColor: "#fff",
-    borderRadius: 20,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    borderRadius: 14,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     justifyContent: "center",
     alignItems: "center",
     shadowColor: "#000",
@@ -915,7 +939,7 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   proBadgeText: {
-    fontSize: 12,
+    fontSize: 10,
     fontWeight: "600",
     color: "#000",
   },
@@ -1112,28 +1136,57 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     letterSpacing: 0.1,
   },
+  carouselSection: {
+    marginBottom: 20,
+    overflow: "hidden",
+  },
+  carouselPager: {
+    width: SCREEN_WIDTH,
+    height: 150,
+    marginHorizontal: -24,
+  },
+  carouselSlide: {
+    flex: 1,
+    paddingHorizontal: 32,
+    paddingVertical: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  carouselEmoji: {
+    fontSize: 44,
+    marginBottom: 12,
+  },
+  carouselTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#fff",
+    textAlign: "center",
+    marginBottom: 8,
+    paddingHorizontal: 12,
+    lineHeight: 22,
+  },
+  carouselSubtitle: {
+    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.65)",
+    textAlign: "center",
+    paddingHorizontal: 16,
+    lineHeight: 18,
+  },
+  carouselDots: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+  },
   pricingSection: {
     marginTop: "auto",
     paddingBottom: 0,
   },
-  pricingTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#fff",
-    textAlign: "center",
-    marginBottom: 10,
-    paddingHorizontal: 24,
-  },
-  pricingSubtitle: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.65)",
-    textAlign: "center",
-    marginBottom: 16,
-    paddingHorizontal: 24,
-  },
   planToggle: {
     alignItems: "center",
-    marginBottom: 24,
+    marginTop: 4,
+    marginBottom: 18,
     paddingHorizontal: 24,
   },
   planToggleBlur: {
@@ -1143,20 +1196,20 @@ const styles = StyleSheet.create({
     borderColor: "rgba(255, 255, 255, 0.18)",
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     shadowColor: "#4A90E2",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.22,
+    shadowRadius: 12,
+    elevation: 5,
   },
   planToggleInner: {
     position: "relative",
     flexDirection: "row",
-    padding: 4,
-    minWidth: 240,
+    padding: 3,
+    minWidth: 200,
   },
   toggleOption: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 8,
     borderRadius: 999,
     alignItems: "center",
     justifyContent: "center",
@@ -1165,9 +1218,9 @@ const styles = StyleSheet.create({
   },
   togglePill: {
     position: "absolute",
-    top: 4,
-    left: 4,
-    bottom: 4,
+    top: 3,
+    left: 3,
+    bottom: 3,
     borderRadius: 999,
     overflow: "hidden",
     shadowColor: "#4A90E2",
@@ -1180,7 +1233,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   toggleText: {
-    fontSize: 13,
+    fontSize: 12,
     color: "rgba(255, 255, 255, 0.7)",
     fontWeight: "600",
     letterSpacing: 0.2,
@@ -1191,14 +1244,15 @@ const styles = StyleSheet.create({
   },
   pricingCards: {
     flexDirection: "column",
-    gap: 12,
-    marginBottom: 24,
+    gap: 10,
+    marginBottom: 20,
+    marginHorizontal: 8,
     alignItems: "stretch",
   },
   pricingCard: {
     width: "100%",
-    borderRadius: 20,
-    borderWidth: 1.5,
+    borderRadius: 16,
+    borderWidth: 1.2,
     borderColor: "rgba(255, 255, 255, 0.08)",
     backgroundColor: "rgba(255, 255, 255, 0.04)",
     overflow: "hidden",
@@ -1235,14 +1289,14 @@ const styles = StyleSheet.create({
   planBadgesRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: 8,
-    marginBottom: 12,
+    gap: 6,
+    marginBottom: 8,
   },
   pricingCardTitle: {
-    fontSize: 20,
+    fontSize: 17,
     fontWeight: "700",
     color: "#4A90E2",
-    marginBottom: 12,
+    marginBottom: 8,
   },
   pricingAmountRow: {
     flexDirection: "row",
@@ -1250,12 +1304,12 @@ const styles = StyleSheet.create({
     marginBottom: 6,
   },
   pricingAmount: {
-    fontSize: 32,
+    fontSize: 26,
     fontWeight: "700",
     color: "#fff",
   },
   pricingPeriod: {
-    fontSize: 16,
+    fontSize: 14,
     color: "rgba(255, 255, 255, 0.6)",
     marginLeft: 4,
   },
@@ -1266,13 +1320,13 @@ const styles = StyleSheet.create({
   },
   savingsChip: {
     position: "absolute",
-    right: 16,
+    right: 12,
     top: "50%",
-    transform: [{ translateY: -12 }],
+    transform: [{ translateY: -10 }],
     borderRadius: 999,
     overflow: "hidden",
-    marginTop: 6,
-    borderWidth: 1.5,
+    marginTop: 4,
+    borderWidth: 1.2,
     borderColor: "rgba(0, 217, 255, 0.5)",
     zIndex: 2,
     shadowColor: "#00D9FF",
@@ -1282,12 +1336,12 @@ const styles = StyleSheet.create({
     elevation: 8,
   },
   savingsChipBlur: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
     backgroundColor: "rgba(255, 255, 255, 0.2)",
   },
   savingsText: {
-    fontSize: 12,
+    fontSize: 11,
     color: "#fff",
     fontWeight: "700",
     letterSpacing: 0.7,
@@ -1296,6 +1350,7 @@ const styles = StyleSheet.create({
     height: 56,
     borderRadius: 28,
     overflow: "hidden",
+    marginTop: 8,
     marginBottom: 8,
     shadowColor: "#4A90E2",
     shadowOffset: { width: 0, height: 6 },
@@ -1312,12 +1367,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 17,
     fontWeight: "700",
-    marginBottom: 2,
-  },
-  ctaSubtext: {
-    color: "rgba(255, 255, 255, 0.75)",
-    fontSize: 11,
-    fontWeight: "500",
   },
   restoreButton: {
     alignSelf: "center",
@@ -1328,6 +1377,14 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "rgba(255, 255, 255, 0.6)",
     fontWeight: "500",
+  },
+  cancelLine: {
+    fontSize: 10,
+    color: "rgba(255, 255, 255, 0.5)",
+    textAlign: "center",
+    paddingHorizontal: 24,
+    marginTop: 2,
+    lineHeight: 14,
   },
   errorContainer: {
     marginBottom: 12,

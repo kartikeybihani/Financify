@@ -139,7 +139,7 @@ export default async function handler(req, res) {
       const shouldFetchMemories = memoriesResult === null;
 
       const [profile, memories] = await Promise.allSettled([
-        fetchSupermemoryProfileWithTimeout(serverUserId, 5000), // 5s timeout (non-blocking)
+        fetchSupermemoryProfileWithTimeout(serverUserId, 2000), // 2s timeout (non-blocking)
         shouldFetchMemories
           ? fetchSupermemoryMemoriesList(serverUserId, 100) // Use list endpoint with summaries
           : Promise.resolve(memoriesResult),

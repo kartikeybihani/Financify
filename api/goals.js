@@ -1980,7 +1980,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
             return { memories: [], totalCount: 0 };
           }
         })(),
-        5000, // 5 second timeout
+        2000, // 2 second timeout
         { memories: [], totalCount: 0 }, // Return empty on timeout
         null,
         "Supermemory Search"
