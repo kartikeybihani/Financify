@@ -465,7 +465,7 @@ export default function FinnySettingsScreen() {
     {
       inputRange: [0, 1],
       outputRange: [0, -screenWidth],
-    }
+    },
   );
 
   const legalSummaryTranslateX = legalSummarySlideAnimation.interpolate({
@@ -495,7 +495,7 @@ export default function FinnySettingsScreen() {
   });
 
   const getStyleDescription = (
-    style: "conversational" | "direct" | "witty" | null
+    style: "conversational" | "direct" | "witty" | null,
   ): string => {
     if (!style) return "Loading...";
     switch (style) {
@@ -511,7 +511,7 @@ export default function FinnySettingsScreen() {
   };
 
   const getCheckinDescription = (
-    frequency: "daily" | "3times" | "weekly" | "never" | null
+    frequency: "daily" | "3times" | "weekly" | "never" | null,
   ): string => {
     if (!frequency) return "Loading...";
     switch (frequency) {
@@ -541,14 +541,14 @@ export default function FinnySettingsScreen() {
                   translateX: showStyle
                     ? styleSettingsTranslateX
                     : showCheckin
-                    ? checkinSettingsTranslateX
-                    : showLegalSummary
-                    ? legalSummarySettingsTranslateX
-                    : showHowFinnyWorks
-                    ? howFinnyWorksSettingsTranslateX
-                    : showHistory
-                    ? historySettingsTranslateX
-                    : settingsTranslateX,
+                      ? checkinSettingsTranslateX
+                      : showLegalSummary
+                        ? legalSummarySettingsTranslateX
+                        : showHowFinnyWorks
+                          ? howFinnyWorksSettingsTranslateX
+                          : showHistory
+                            ? historySettingsTranslateX
+                            : settingsTranslateX,
                 },
               ],
             },
