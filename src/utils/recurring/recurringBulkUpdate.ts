@@ -90,12 +90,14 @@ async function findTransactionsByStreamId(
  * @param transaction - Transaction to match against (recurring_stream_id takes priority, then merchant_name or name)
  * @param isRecurring - New recurring status ('yes' or 'no')
  * @param clearRecurringStreamId - Whether to clear recurring_stream_id (default: true when removing)
+ * @param setRecurringStreamId - When adding (isRecurring='yes'), optionally set this stream_id on transactions
  */
 export async function bulkUpdateRecurringStatus(
   userId: string,
   transaction: SimilarTransactionMatch,
   isRecurring: "yes" | "no",
-  clearRecurringStreamId: boolean = isRecurring === "no"
+  clearRecurringStreamId: boolean = isRecurring === "no",
+  setRecurringStreamId?: string | null
 ): Promise<{ updated: number; transactionIds: string[] }> {
   try {
     let similarTransactionIds: string[] = [];
@@ -122,9 +124,9 @@ export async function bulkUpdateRecurringStatus(
       if_recurring: isRecurring,
     };
 
-    // Clear recurring_stream_id if removing recurring status
-    // (User-marked recurring transactions shouldn't have a stream_id)
-    if (clearRecurringStreamId) {
+    if (isRecurring === "yes" && setRecurringStreamId) {
+      updateData.recurring_stream_id = setRecurringStreamId;
+    } else if (clearRecurringStreamId) {
       updateData.recurring_stream_id = null;
     }
 
@@ -211,9 +213,105 @@ export async function dismissRecurringStream(
   }
 }
 
+/**
+ * Undo user-dismiss: set user_dismissed=false and re-apply recurring to transactions.
+ */
+export async function unDismissRecurringStream(
+  userId: string,
+  streamId: string,
+  merchantName?: string,
+  description?: string
+): Promise<{ success: boolean; updated?: number; error?: string }> {
+  try {
+    if (!userId || !streamId || streamId.startsWith("user-marked-")) {
+      return { success: false, error: "Invalid stream or user-marked streams cannot be re-added" };
+    }
+
+    const { error: updateError } = await supabase
+      .from("recurring_streams")
+      .update({ user_dismissed: false, updated_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("stream_id", streamId);
+
+    if (updateError) {
+      logger.error("❌ [RECURRING] Error undismissing stream:", updateError);
+      return { success: false, error: updateError.message };
+    }
+
+    const result = await bulkUpdateRecurringStatus(
+      userId,
+      {
+        recurring_stream_id: streamId,
+        merchant_name: merchantName,
+        name: description,
+      },
+      "yes",
+      false,
+      streamId
+    );
+
+    logger.info(`✅ [RECURRING] Re-added stream: ${streamId}`);
+    await clearRecurringCache(userId);
+    DeviceEventEmitter.emit("recurringBulkUpdate", { streamReadded: streamId });
+    return { success: true, updated: result.updated };
+  } catch (err) {
+    logger.error("❌ [RECURRING] Error in unDismissRecurringStream:", err);
+    return { success: false, error: String(err) };
+  }
+}
+
+/**
+ * Reactivate a stopped stream: set is_active=true and re-apply recurring to transactions.
+ */
+export async function reactivateRecurringStream(
+  userId: string,
+  streamId: string,
+  merchantName?: string,
+  description?: string
+): Promise<{ success: boolean; updated?: number; error?: string }> {
+  try {
+    if (!userId || !streamId || streamId.startsWith("user-marked-")) {
+      return { success: false, error: "Invalid stream or user-marked streams cannot be reactivated" };
+    }
+
+    const { error: updateError } = await supabase
+      .from("recurring_streams")
+      .update({ is_active: true, updated_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("stream_id", streamId);
+
+    if (updateError) {
+      logger.error("❌ [RECURRING] Error reactivating stream:", updateError);
+      return { success: false, error: updateError.message };
+    }
+
+    const result = await bulkUpdateRecurringStatus(
+      userId,
+      {
+        recurring_stream_id: streamId,
+        merchant_name: merchantName,
+        name: description,
+      },
+      "yes",
+      false,
+      streamId
+    );
+
+    logger.info(`✅ [RECURRING] Reactivated stream: ${streamId}`);
+    await clearRecurringCache(userId);
+    DeviceEventEmitter.emit("recurringBulkUpdate", { streamReactivated: streamId });
+    return { success: true, updated: result.updated };
+  } catch (err) {
+    logger.error("❌ [RECURRING] Error in reactivateRecurringStream:", err);
+    return { success: false, error: String(err) };
+  }
+}
+
 // Default export for Expo Router compatibility
 export default {
   findSimilarTransactions,
   bulkUpdateRecurringStatus,
   dismissRecurringStream,
+  unDismissRecurringStream,
+  reactivateRecurringStream,
 };

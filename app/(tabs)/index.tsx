@@ -61,6 +61,13 @@ import CashInputModal from "@/src/components/modals/CashInputModal";
 import { styles } from "@/src/styles/homeStyles";
 import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
+import {
+  getSnaptradeCredentialsWithFallback,
+  refreshSnaptradeInvestments,
+  syncSnaptradeInvestments,
+  recalculateInvestmentBalances,
+  populateInvestmentAccountsInDB,
+} from "@/src/utils/integrations/snaptrade";
 import AppStorage from "@/src/utils/storage/storage";
 import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 import {
@@ -288,6 +295,9 @@ export default function HomeScreen() {
     useState(false);
   const [connectionSuccessInstitution, setConnectionSuccessInstitution] =
     useState<{ name: string; id: string } | null>(null);
+  const [connectionSource, setConnectionSource] = useState<
+    "plaid" | "snaptrade" | null
+  >(null);
 
   const [userData, setUserData] = useState<any>(null);
   // OPTIMIZED: Initialize firstName from cache for instant UI
@@ -1206,6 +1216,14 @@ export default function HomeScreen() {
             onCashAdded={() => {
               setShowCashInputModal(true);
             }}
+            onPlaidConnectionSuccess={(institutionName, institutionId) => {
+              setConnectionSource("plaid");
+              setConnectionSuccessInstitution({
+                name: institutionName,
+                id: institutionId,
+              });
+              setShowConnectionSuccessModal(true);
+            }}
             categories={[
               {
                 title: "CHECKINGS & SAVINGS",
@@ -1233,25 +1251,23 @@ export default function HomeScreen() {
                 title: "INVESTMENTS",
                 icon: "trending-up" as keyof typeof Ionicons.glyphMap,
                 iconColor: "#4ECDC4",
-                items: isPremium
-                  ? categorizedInvestments.map((account, index) => (
-                      <AccountItem
-                        key={index}
-                        name={account.name}
-                        type={account.type}
-                        balance={formatCurrency(getAccountBalance(account), "USD", {
-                          decimals: 0,
-                          useKM: false,
-                        })}
-                        icon="trending-up"
-                        bankName={account.institution_name || "Investment Broker"}
-                        accountId={account.account_id}
-                        accountData={account}
-                        onPress={() => handleAccountPress(account)}
-                      />
-                    ))
-                  : [],
-                totalAmount: isPremium ? investmentsCategoryTotal : 0,
+                items: categorizedInvestments.map((account, index) => (
+                  <AccountItem
+                    key={index}
+                    name={account.name}
+                    type={account.type}
+                    balance={formatCurrency(getAccountBalance(account), "USD", {
+                      decimals: 0,
+                      useKM: false,
+                    })}
+                    icon="trending-up"
+                    bankName={account.institution_name || "Investment Broker"}
+                    accountId={account.account_id}
+                    accountData={account}
+                    onPress={() => handleAccountPress(account)}
+                  />
+                )),
+                totalAmount: investmentsCategoryTotal,
               },
               {
                 title: "CREDIT CARDS",
@@ -1498,6 +1514,7 @@ export default function HomeScreen() {
             }}
             onConnectionSuccess={(institutionName, institutionId) => {
               setShowInvestmentModal(false);
+              setConnectionSource("snaptrade");
               setConnectionSuccessInstitution({
                 name: institutionName,
                 id: institutionId,
@@ -1514,18 +1531,41 @@ export default function HomeScreen() {
             onComplete={() => {
               setShowConnectionSuccessModal(false);
               setConnectionSuccessInstitution(null);
+              setConnectionSource(null);
               DeviceEventEmitter.emit("financialDataRefreshed", {
                 accountConnected: true,
               });
             }}
+            connectionSource={connectionSource ?? undefined}
             performRefresh={async () => {
               const user = (await getAuthenticatedUser())?.user;
-              if (user?.id) await clearInvestmentCache(user.id);
-              await refreshFinancialData();
+              if (!user?.id) return { recurringCount: 0 };
+
+              if (connectionSource === "snaptrade") {
+                const credentials =
+                  await getSnaptradeCredentialsWithFallback();
+                if (credentials?.accountId) {
+                  await refreshSnaptradeInvestments(user.id, credentials.accountId);
+                  await new Promise((r) => setTimeout(r, 5000));
+                  await syncSnaptradeInvestments(user.id, credentials.accountId);
+                  await recalculateInvestmentBalances(user.id, credentials.accountId);
+                  await populateInvestmentAccountsInDB();
+                }
+              } else {
+                await clearInvestmentCache(user.id);
+                const result = await refreshFinancialData();
+                DeviceEventEmitter.emit("financialDataRefreshed", {
+                  accountConnected: true,
+                });
+                await new Promise((r) => setTimeout(r, 2200));
+                return { recurringCount: result?.recurringCount ?? 0 };
+              }
+
               DeviceEventEmitter.emit("financialDataRefreshed", {
                 accountConnected: true,
               });
               await new Promise((r) => setTimeout(r, 2200));
+              return { recurringCount: 0 };
             }}
           />
 

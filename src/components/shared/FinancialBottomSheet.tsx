@@ -43,6 +43,8 @@ interface FinancialBottomSheetProps {
   initialExpandedCategory?: string;
   onAccountAdded?: () => void;
   onCashAdded?: () => void;
+  /** Called when a Plaid bank account is connected; use to show ConnectionSuccessModal. */
+  onPlaidConnectionSuccess?: (institutionName: string, institutionId: string) => void;
 }
 
 export default function FinancialBottomSheet({
@@ -56,6 +58,7 @@ export default function FinancialBottomSheet({
   initialExpandedCategory,
   onAccountAdded,
   onCashAdded,
+  onPlaidConnectionSuccess,
 }: FinancialBottomSheetProps) {
   const { height, width } = useWindowDimensions();
 
@@ -193,7 +196,7 @@ export default function FinancialBottomSheet({
       );
 
       await addNewBankAccount(
-        (itemId) => {
+        (itemId, institution) => {
           logger.info("✅ Successfully added new bank account:", itemId);
 
           // Close the bottom sheet
@@ -207,12 +210,15 @@ export default function FinancialBottomSheet({
           // Call the optional callback
           onAccountAdded?.();
 
-          // Show success message
-          Alert.alert(
-            "Success! 🎉",
-            "Your new bank account has been connected successfully. Your financial data is now being updated.",
-            [{ text: "Great!", style: "default" }]
-          );
+          if (onPlaidConnectionSuccess && institution) {
+            onPlaidConnectionSuccess(institution.name, institution.id);
+          } else {
+            Alert.alert(
+              "Success! 🎉",
+              "Your new bank account has been connected successfully. Your financial data is now being updated.",
+              [{ text: "Great!", style: "default" }]
+            );
+          }
         },
         (error: any) => {
           logger.error("❌ Failed to add new bank account:", error);
@@ -263,7 +269,7 @@ export default function FinancialBottomSheet({
       );
 
       await addNewBankAccount(
-        (itemId) => {
+        (itemId, institution) => {
           logger.info("✅ Successfully added new investment account:", itemId);
 
           // Close the bottom sheet
@@ -277,12 +283,15 @@ export default function FinancialBottomSheet({
           // Call the optional callback
           onAccountAdded?.();
 
-          // Show success message
-          Alert.alert(
-            "Success! 🎉",
-            "Your investment account has been connected successfully. Your financial data is now being updated.",
-            [{ text: "Great!", style: "default" }]
-          );
+          if (onPlaidConnectionSuccess && institution) {
+            onPlaidConnectionSuccess(institution.name, institution.id);
+          } else {
+            Alert.alert(
+              "Success! 🎉",
+              "Your investment account has been connected successfully. Your financial data is now being updated.",
+              [{ text: "Great!", style: "default" }]
+            );
+          }
         },
         (error: any) => {
           logger.error("❌ Failed to add investment account:", error);

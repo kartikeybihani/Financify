@@ -158,6 +158,17 @@ CREATE TABLE public.conversation_logs (
   CONSTRAINT conversation_logs_pkey PRIMARY KEY (id),
   CONSTRAINT conversation_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.finny_recurring_analysis (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  item_id text,
+  analysis_text text NOT NULL,
+  analysis_json jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  trigger_source text NOT NULL DEFAULT 'manual'::text CHECK (trigger_source = ANY (ARRAY['new_account'::text, 'manual'::text])),
+  CONSTRAINT finny_recurring_analysis_pkey PRIMARY KEY (id),
+  CONSTRAINT finny_recurring_analysis_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.goals (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -318,6 +329,25 @@ CREATE TABLE public.onboarding_progress (
   CONSTRAINT onboarding_progress_pkey PRIMARY KEY (id),
   CONSTRAINT onboarding_progress_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.plaid_balance_logs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  item_id text NOT NULL,
+  account_id text NOT NULL,
+  account_type text NOT NULL,
+  account_name text,
+  account_mask text,
+  event_type text NOT NULL DEFAULT 'store_accounts_connect'::text CHECK (event_type = ANY (ARRAY['store_accounts_connect'::text, 'store_accounts_investment_update'::text])),
+  plaid_api text CHECK (plaid_api IS NULL OR (plaid_api = ANY (ARRAY['accountsBalanceGet'::text, 'accountsGet'::text]))),
+  plaid_current numeric,
+  plaid_available numeric,
+  stored_current numeric,
+  stored_available numeric,
+  total_value numeric,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT plaid_balance_logs_pkey PRIMARY KEY (id),
+  CONSTRAINT plaid_balance_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.plaid_link_events (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
@@ -363,8 +393,8 @@ CREATE TABLE public.profiles (
 CREATE TABLE public.recurring_streams (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,
-  item_id text NOT NULL,
-  account_id text NOT NULL,
+  item_id text,
+  account_id text,
   stream_id text NOT NULL UNIQUE,
   stream_type text NOT NULL CHECK (stream_type = ANY (ARRAY['subscription'::text, 'income'::text, 'bill'::text, 'other'::text])),
   flow_type text NOT NULL CHECK (flow_type = ANY (ARRAY['inflow'::text, 'outflow'::text])),
@@ -382,6 +412,8 @@ CREATE TABLE public.recurring_streams (
   created_at timestamp with time zone DEFAULT now(),
   updated_at timestamp with time zone DEFAULT now(),
   last_synced_at timestamp with time zone DEFAULT now(),
+  user_dismissed boolean NOT NULL DEFAULT false,
+  source text NOT NULL DEFAULT 'plaid'::text CHECK (source = ANY (ARRAY['plaid'::text, 'finny'::text])),
   CONSTRAINT recurring_streams_pkey PRIMARY KEY (id),
   CONSTRAINT recurring_streams_item_id_fkey FOREIGN KEY (item_id) REFERENCES public.user_items(item_id),
   CONSTRAINT recurring_streams_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),

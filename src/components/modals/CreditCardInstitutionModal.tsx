@@ -1,5 +1,12 @@
-import React from "react";
-import { Modal, View, Text, TouchableOpacity } from "react-native";
+import React, { useState } from "react";
+import {
+  Modal,
+  View,
+  Text,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
   ModalBlurOverlay,
@@ -12,6 +19,8 @@ import {
   CREDIT_CARD_INSTITUTIONS,
   type Institution,
 } from "@/src/components/shared/modal-constants";
+import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid/plaid";
+import logger from "@/src/utils/core/logger";
 
 interface CreditCardInstitutionModalProps {
   visible: boolean;
@@ -24,16 +33,79 @@ export default function CreditCardInstitutionModal({
   onClose,
   onInstitutionSelect,
 }: CreditCardInstitutionModalProps) {
-  const handleInstitutionPress = () => {
-    // All institutions use the same general Plaid flow
-    onInstitutionSelect("other");
-    onClose();
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [connectingInstitution, setConnectingInstitution] = useState<
+    string | null
+  >(null);
+
+  const handleGeneralPlaidConnect = async (institutionId: string) => {
+    logger.info("🔄 Starting general Plaid connection...");
+    setIsConnecting(true);
+    setConnectingInstitution(institutionId);
+
+    try {
+      const linkToken = await fetchLinkToken();
+      await handlePlaidConnect(
+        linkToken,
+        async (itemId: string) => {
+          logger.info("✅ Plaid connection successful:", { itemId });
+          setIsConnecting(false);
+          setConnectingInstitution(null);
+          onInstitutionSelect("other");
+          onClose();
+        },
+        (error?: any) => {
+          logger.error("❌ Plaid connection failed:", error);
+          setIsConnecting(false);
+          setConnectingInstitution(null);
+
+          if (
+            error?.code === "DUPLICATE_ITEM" ||
+            error?.message?.includes("already linked")
+          ) {
+            Alert.alert(
+              "Account Already Connected",
+              error.message ||
+                "This account is already connected to your account.",
+              [{ text: "OK" }],
+            );
+          } else if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
+            Alert.alert(
+              "Connection Expired",
+              "The connection session expired. Please try again.",
+              [{ text: "OK" }],
+            );
+          } else if (error?.message) {
+            Alert.alert(
+              "Connection Failed",
+              `Unable to connect: ${error.message}`,
+              [{ text: "Try Again" }],
+            );
+          } else {
+            Alert.alert("Connection Cancelled", "You can try again anytime.", [
+              { text: "OK" },
+            ]);
+          }
+        },
+      );
+    } catch (error) {
+      logger.error("❌ Failed to initiate Plaid connection:", error);
+      setIsConnecting(false);
+      setConnectingInstitution(null);
+      Alert.alert(
+        "Connection Error",
+        "Failed to start connection. Please try again.",
+        [{ text: "OK" }],
+      );
+    }
   };
 
-  const handleOtherInstitutions = () => {
-    // Handle "Other Institutions" selection - uses general Plaid flow
-    onInstitutionSelect("other");
-    onClose();
+  const handleInstitutionPress = async (institution: Institution) => {
+    await handleGeneralPlaidConnect(institution.id);
+  };
+
+  const handleOtherInstitutions = async () => {
+    await handleGeneralPlaidConnect("other");
   };
 
   const handleClose = () => {
@@ -45,15 +117,29 @@ export default function CreditCardInstitutionModal({
   };
 
   const renderInstitutionCard = (institution: Institution) => {
+    const isLoadingInstitution =
+      isConnecting && connectingInstitution === institution.id;
+
     return (
       <TouchableOpacity
         key={institution.id}
-        style={styles.institutionCard}
-        onPress={handleInstitutionPress}
+        style={[
+          styles.institutionCard,
+          isLoadingInstitution && styles.institutionCardLoading,
+        ]}
+        onPress={() => handleInstitutionPress(institution)}
         activeOpacity={0.8}
+        disabled={isConnecting}
       >
         <View style={styles.institutionContent}>
-          <ModalLogoContainer institution={institution} />
+          {isLoadingInstitution ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="small" color="#4A90E2" />
+              <Text style={styles.loadingText}>Connecting</Text>
+            </View>
+          ) : (
+            <ModalLogoContainer institution={institution} />
+          )}
         </View>
       </TouchableOpacity>
     );
@@ -81,26 +167,42 @@ export default function CreditCardInstitutionModal({
             <View style={styles.content}>
               <View style={styles.institutionsGrid}>
                 {CREDIT_CARD_INSTITUTIONS.map((institution) =>
-                  renderInstitutionCard(institution)
+                  renderInstitutionCard(institution),
                 )}
 
                 {/* Other Institutions Card */}
                 <TouchableOpacity
-                  style={[styles.institutionCard, styles.otherInstitutionsCard]}
+                  style={[
+                    styles.institutionCard,
+                    styles.otherInstitutionsCard,
+                    isConnecting &&
+                      connectingInstitution === "other" &&
+                      styles.institutionCardLoading,
+                  ]}
                   onPress={handleOtherInstitutions}
                   activeOpacity={0.8}
+                  disabled={isConnecting}
                 >
                   <View style={styles.institutionContent}>
-                    <View style={styles.otherInstitutionsIcon}>
-                      <Ionicons
-                        name="business-outline"
-                        size={24}
-                        color="#4A90E2"
-                      />
-                    </View>
-                    <Text style={styles.institutionName}>
-                      Other Institutions
-                    </Text>
+                    {isConnecting && connectingInstitution === "other" ? (
+                      <View style={styles.loadingContainer}>
+                        <ActivityIndicator size="small" color="#4A90E2" />
+                        <Text style={styles.loadingText}>Connecting</Text>
+                      </View>
+                    ) : (
+                      <>
+                        <View style={styles.otherInstitutionsIcon}>
+                          <Ionicons
+                            name="business-outline"
+                            size={24}
+                            color="#4A90E2"
+                          />
+                        </View>
+                        <Text style={styles.institutionName}>
+                          Other Institutions
+                        </Text>
+                      </>
+                    )}
                   </View>
                 </TouchableOpacity>
               </View>

@@ -1,5 +1,12 @@
 import React, { useState } from "react";
-import { Modal, View, Text, TouchableOpacity, Alert } from "react-native";
+import {
+  Modal,
+  View,
+  Text,
+  TouchableOpacity,
+  Alert,
+  ActivityIndicator,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import {
   ModalBlurOverlay,
@@ -31,10 +38,10 @@ export default function CashDepositInstitutionModal({
     string | null
   >(null);
 
-  const handleGeneralPlaidConnect = async () => {
+  const handleGeneralPlaidConnect = async (institutionId: string) => {
     logger.info("🔄 Starting general Plaid connection...");
     setIsConnecting(true);
-    setConnectingInstitution("general");
+    setConnectingInstitution(institutionId);
 
     try {
       const linkToken = await fetchLinkToken();
@@ -60,26 +67,26 @@ export default function CashDepositInstitutionModal({
               "Account Already Connected",
               error.message ||
                 "This account is already connected to your account.",
-              [{ text: "OK" }]
+              [{ text: "OK" }],
             );
           } else if (error?.error?.errorCode === "INVALID_LINK_TOKEN") {
             Alert.alert(
               "Connection Expired",
               "The connection session expired. Please try again.",
-              [{ text: "OK" }]
+              [{ text: "OK" }],
             );
           } else if (error?.message) {
             Alert.alert(
               "Connection Failed",
               `Unable to connect: ${error.message}`,
-              [{ text: "Try Again" }]
+              [{ text: "Try Again" }],
             );
           } else {
             Alert.alert("Connection Cancelled", "You can try again anytime.", [
               { text: "OK" },
             ]);
           }
-        }
+        },
       );
     } catch (error) {
       logger.error("❌ Failed to initiate Plaid connection:", error);
@@ -88,19 +95,19 @@ export default function CashDepositInstitutionModal({
       Alert.alert(
         "Connection Error",
         "Failed to start connection. Please try again.",
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
     }
   };
 
-  const handleInstitutionPress = async () => {
+  const handleInstitutionPress = async (institution: Institution) => {
     // All institutions use the same general Plaid flow
-    await handleGeneralPlaidConnect();
+    await handleGeneralPlaidConnect(institution.id);
   };
 
   const handleOtherInstitutions = async () => {
     // Handle "Other Institutions" selection - use general Plaid flow
-    await handleGeneralPlaidConnect();
+    await handleGeneralPlaidConnect("other");
   };
 
   const handleClose = () => {
@@ -112,7 +119,8 @@ export default function CashDepositInstitutionModal({
   };
 
   const renderInstitutionCard = (institution: Institution) => {
-    const isLoadingInstitution = isConnecting;
+    const isLoadingInstitution =
+      isConnecting && connectingInstitution === institution.id;
 
     return (
       <TouchableOpacity
@@ -121,15 +129,15 @@ export default function CashDepositInstitutionModal({
           styles.institutionCard,
           isLoadingInstitution && styles.institutionCardLoading,
         ]}
-        onPress={handleInstitutionPress}
+        onPress={() => handleInstitutionPress(institution)}
         activeOpacity={0.8}
         disabled={isConnecting}
       >
         <View style={styles.institutionContent}>
           {isLoadingInstitution ? (
             <View style={styles.loadingContainer}>
-              <Ionicons name="hourglass" size={32} color="#4A90E2" />
-              <Text style={styles.loadingText}>Connecting...</Text>
+              <ActivityIndicator size="small" color="#4A90E2" />
+              <Text style={styles.loadingText}>Connecting</Text>
             </View>
           ) : (
             <ModalLogoContainer institution={institution} />
@@ -161,7 +169,7 @@ export default function CashDepositInstitutionModal({
             <View style={styles.content}>
               <View style={styles.institutionsGrid}>
                 {CASH_DEPOSIT_INSTITUTIONS.map((institution) =>
-                  renderInstitutionCard(institution)
+                  renderInstitutionCard(institution),
                 )}
 
                 {/* Other Institutions Card */}
@@ -169,17 +177,19 @@ export default function CashDepositInstitutionModal({
                   style={[
                     styles.institutionCard,
                     styles.otherInstitutionsCard,
-                    isConnecting && styles.institutionCardLoading,
+                    isConnecting &&
+                      connectingInstitution === "other" &&
+                      styles.institutionCardLoading,
                   ]}
                   onPress={handleOtherInstitutions}
                   activeOpacity={0.8}
                   disabled={isConnecting}
                 >
                   <View style={styles.institutionContent}>
-                    {isConnecting ? (
+                    {isConnecting && connectingInstitution === "other" ? (
                       <View style={styles.loadingContainer}>
-                        <Ionicons name="hourglass" size={24} color="#4A90E2" />
-                        <Text style={styles.loadingText}>Loading...</Text>
+                        <ActivityIndicator size="small" color="#4A90E2" />
+                        <Text style={styles.loadingText}>Connecting</Text>
                       </View>
                     ) : (
                       <>

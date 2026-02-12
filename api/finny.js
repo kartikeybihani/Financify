@@ -1090,32 +1090,34 @@ function extractBasePacksSummary(packs) {
     liquidAssets: base.liquidAssets || null,
     investmentsTotal: base.investmentsTotal || null,
     totalLiabilities: base.totalLiabilities || null,
-    
+
     // Account counts and types
     accountsCount: Array.isArray(base.accounts) ? base.accounts.length : 0,
     accountTypes: Array.isArray(base.accounts)
       ? [...new Set(base.accounts.map((acc) => acc.type).filter(Boolean))]
       : [],
-    
+
     // Transaction data
     recentTransactionsCount: Array.isArray(base.recentTransactions)
       ? base.recentTransactions.length
       : 0,
-    
+
     // Spending data
     spendByCategoryCount: Array.isArray(base.spendByCategory)
       ? base.spendByCategory.length
       : 0,
-    spendByCategoryCurrentMonthCount: Array.isArray(base.spendByCategoryCurrentMonth)
+    spendByCategoryCurrentMonthCount: Array.isArray(
+      base.spendByCategoryCurrentMonth,
+    )
       ? base.spendByCategoryCurrentMonth.length
       : 0,
     spendByCategoryLastMonthCount: Array.isArray(base.spendByCategoryLastMonth)
       ? base.spendByCategoryLastMonth.length
       : 0,
-    
+
     // Budget data
     hasBudget: !!base.budget,
-    
+
     // Other packs available
     otherPacksAvailable: Object.keys(packs).filter((key) => key !== "base"),
   };
@@ -1148,7 +1150,10 @@ async function logConversation(conversationData) {
         metrics: conversationData.metrics || null,
         request_id: conversationData.request_id || null,
         base_packs: conversationData.base_packs || null,
-        classification_details: conversationData.classification_result || conversationData.classification_details || null,
+        classification_details:
+          conversationData.classification_result ||
+          conversationData.classification_details ||
+          null,
       };
 
       const insertResult = await withTimeout(
@@ -1172,7 +1177,14 @@ async function logConversation(conversationData) {
             msg.includes("base_packs") ||
             msg.includes("classification_details"));
         if (missingCols) {
-          const { metrics, request_id, chat_id, base_packs, classification_details, ...fallbackRow } = baseRow;
+          const {
+            metrics,
+            request_id,
+            chat_id,
+            base_packs,
+            classification_details,
+            ...fallbackRow
+          } = baseRow;
           const retry = await withTimeout(
             supabase.from("conversation_logs").insert([fallbackRow]),
             5000,
@@ -1444,7 +1456,11 @@ export default async function handler(req, res) {
           return cachedMemory;
         } else {
           // Load from Supermemory with 5s timeout (non-blocking) and cache the result
-          const loadedMemory = await loadUserMemoryWithTimeout(finalUserId, message, 5000);
+          const loadedMemory = await loadUserMemoryWithTimeout(
+            finalUserId,
+            message,
+            5000,
+          );
           // Always cache the result (even if empty) to avoid repeated API calls for same query
           // loadUserMemoryWithTimeout always returns { memories: [], totalCount: 0 } on error/timeout, so it's safe
           if (loadedMemory && typeof loadedMemory === "object") {
@@ -2648,7 +2664,8 @@ async function handleAsk(
         // Get user context for personalization
         // Use cached memory from context if available, otherwise load with 5s timeout (non-blocking)
         const userMemory =
-          context.memory || (await loadUserMemoryWithTimeout(userId, message || null, 5000));
+          context.memory ||
+          (await loadUserMemoryWithTimeout(userId, message || null, 5000));
         const userProfile = context.profile || { name: null, age: null };
 
         // Get investment holdings from context packs if available
@@ -5274,15 +5291,27 @@ async function areAllContextsCached(userId) {
     }
   }
 
+  const spendParams = { period: getDateRange(30) };
+  const cachedSpend = await getCachedUserData(
+    "spend_data",
+    userId,
+    spendParams,
+    true,
+  );
+  if (!cachedSpend) {
+    return false;
+  }
+
   return true;
 }
 
 async function handlePrebuildContext(userId, silent = false) {
   const startTime = Date.now();
+  const spendParams = { period: getDateRange(30) };
 
   try {
     // Check if context is already cached and fresh (within 50 minute TTL)
-    // This prevents unnecessary rebuilding when user visits Finny tab multiple times
+    // Skip entirely when all packs are cached - no API work needed
     const commonContexts = [
       "summary_min",
       "invest_holdings",
@@ -5302,19 +5331,30 @@ async function handlePrebuildContext(userId, silent = false) {
       }
     }
 
+    const cachedSpend = await getCachedUserData(
+      "spend_data",
+      userId,
+      spendParams,
+      silent,
+    );
+    cachedContexts.spend_total = !!cachedSpend;
+    if (!cachedSpend) {
+      allCached = false;
+    }
+
     // If all contexts are already cached and fresh, return early
     if (allCached) {
       const totalTime = Date.now() - startTime;
       if (!silent) {
         logInfo(
-          `⚡ [PREBUILD] All contexts already cached and fresh (checked in ${totalTime}ms)`,
+          `⚡ [PREBUILD] All contexts already cached and fresh (checked in ${totalTime}ms), skipping build`,
         );
       }
       return {
         success: true,
         message: "Context already cached and fresh",
         baseContextReady: true,
-        backgroundContexts: commonContexts,
+        backgroundContexts: [...commonContexts, "spend_total"],
         buildTime: totalTime,
         cached: true,
       };
@@ -5369,143 +5409,133 @@ async function handlePrebuildContext(userId, silent = false) {
       logInfo("✅ [PREBUILD] Base context already cached, skipping build");
     }
 
-    // Build other context packs in background (after base is ready)
+    // Build invest, goals, cashflow, spend in parallel (only if not cached)
+    const backgroundBuilds = [];
 
-    // Build investment context (only if not cached)
     if (!cachedContexts.invest_holdings) {
-      try {
-        const investContext = await buildContextPacks(
-          userId,
-          ["invest_holdings"],
-          {},
-        );
-        const investPack =
-          investContext?.packs?.[NEED_CONFIG.invest_holdings.packKey] || null;
-        if (investContext && investContext.packs && investPack) {
-          await setCachedUserData(
-            NEED_CONFIG.invest_holdings.cacheType,
-            userId,
-            investPack,
-            { ttl: 50 * 60 * 1000 },
-          );
-          logInfo("✅ [PREBUILD] Investment context cached");
-          logInfo("🔍 [PREBUILD] Investment context data:", {
-            hasHoldings: !!investPack.holdings,
-            holdingsCount: investPack.holdings?.length || 0,
-          });
-        } else {
-          logWarn("❌ [PREBUILD] Investment context failed to build");
-        }
-      } catch (error) {
-        logError("❌ [PREBUILD] Investment context failed:", error);
-      }
-    } else {
-      logInfo(
-        "✅ [PREBUILD] Investment context already cached, skipping build",
+      backgroundBuilds.push(
+        (async () => {
+          try {
+            const investContext = await buildContextPacks(
+              userId,
+              ["invest_holdings"],
+              {},
+            );
+            const investPack =
+              investContext?.packs?.[NEED_CONFIG.invest_holdings.packKey] ||
+              null;
+            if (investContext && investContext.packs && investPack) {
+              await setCachedUserData(
+                NEED_CONFIG.invest_holdings.cacheType,
+                userId,
+                investPack,
+                { ttl: 50 * 60 * 1000 },
+              );
+              logInfo("✅ [PREBUILD] Investment context cached");
+            } else {
+              logWarn("❌ [PREBUILD] Investment context failed to build");
+            }
+          } catch (error) {
+            logError("❌ [PREBUILD] Investment context failed:", error);
+          }
+        })(),
       );
     }
 
-    // Build goals context (only if not cached)
     if (!cachedContexts.goals_overview) {
-      try {
-        const goalsContext = await buildContextPacks(
-          userId,
-          ["goals_overview"],
-          {},
-        );
-        const goalsPack =
-          goalsContext?.packs?.[NEED_CONFIG.goals_overview.packKey] || null;
-        if (goalsContext && goalsContext.packs && goalsPack) {
-          await setCachedUserData(
-            NEED_CONFIG.goals_overview.cacheType,
-            userId,
-            goalsPack,
-            { ttl: 50 * 60 * 1000 },
-          );
-          logInfo("✅ [PREBUILD] Goals context cached");
-          logInfo("🔍 [PREBUILD] Goals context data:", {
-            hasGoals: !!goalsPack.goals,
-            goalsCount: goalsPack.goals?.length || 0,
-          });
-        } else {
-          logWarn("❌ [PREBUILD] Goals context failed to build");
-        }
-      } catch (error) {
-        logError("❌ [PREBUILD] Goals context failed:", error);
-      }
-    } else {
-      logInfo("✅ [PREBUILD] Goals context already cached, skipping build");
+      backgroundBuilds.push(
+        (async () => {
+          try {
+            const goalsContext = await buildContextPacks(
+              userId,
+              ["goals_overview"],
+              {},
+            );
+            const goalsPack =
+              goalsContext?.packs?.[NEED_CONFIG.goals_overview.packKey] || null;
+            if (goalsContext && goalsContext.packs && goalsPack) {
+              await setCachedUserData(
+                NEED_CONFIG.goals_overview.cacheType,
+                userId,
+                goalsPack,
+                { ttl: 50 * 60 * 1000 },
+              );
+              logInfo("✅ [PREBUILD] Goals context cached");
+            } else {
+              logWarn("❌ [PREBUILD] Goals context failed to build");
+            }
+          } catch (error) {
+            logError("❌ [PREBUILD] Goals context failed:", error);
+          }
+        })(),
+      );
     }
 
-    // Build cashflow context (only if not cached)
     if (!cachedContexts.cashflow_monthly) {
-      try {
-        const cashflowContext = await buildContextPacks(
-          userId,
-          ["cashflow_monthly"],
-          {},
-        );
-        const cashflowPack =
-          cashflowContext?.packs?.[NEED_CONFIG.cashflow_monthly.packKey] ||
-          null;
-        if (cashflowContext && cashflowContext.packs && cashflowPack) {
-          await setCachedUserData(
-            NEED_CONFIG.cashflow_monthly.cacheType,
-            userId,
-            cashflowPack,
-            { ttl: 50 * 60 * 1000 },
-          );
-          logInfo("✅ [PREBUILD] Cashflow context cached");
-          logInfo("🔍 [PREBUILD] Cashflow context data:", {
-            hasCashflow: !!cashflowPack.cashflow,
-            cashflowMonths: cashflowPack.cashflow?.length || 0,
-          });
-        } else {
-          logWarn("❌ [PREBUILD] Cashflow context failed to build");
-        }
-      } catch (error) {
-        logError("❌ [PREBUILD] Cashflow context failed:", error);
-      }
-    } else {
-      logInfo("✅ [PREBUILD] Cashflow context already cached, skipping build");
+      backgroundBuilds.push(
+        (async () => {
+          try {
+            const cashflowContext = await buildContextPacks(
+              userId,
+              ["cashflow_monthly"],
+              {},
+            );
+            const cashflowPack =
+              cashflowContext?.packs?.[NEED_CONFIG.cashflow_monthly.packKey] ||
+              null;
+            if (cashflowContext && cashflowContext.packs && cashflowPack) {
+              await setCachedUserData(
+                NEED_CONFIG.cashflow_monthly.cacheType,
+                userId,
+                cashflowPack,
+                { ttl: 50 * 60 * 1000 },
+              );
+              logInfo("✅ [PREBUILD] Cashflow context cached");
+            } else {
+              logWarn("❌ [PREBUILD] Cashflow context failed to build");
+            }
+          } catch (error) {
+            logError("❌ [PREBUILD] Cashflow context failed:", error);
+          }
+        })(),
+      );
     }
 
-    // Build spend context for last 30 days (always check cache first due to date range params)
-    try {
-      const cachedSpend = await getCachedUserData("spend_data", userId, {
-        period: getDateRange(30),
-      });
-      if (!cachedSpend) {
-        const spendContext = await buildContextPacks(userId, ["spend_total"], {
-          period: getDateRange(30),
-        });
-        const spendPack =
-          spendContext?.packs?.[NEED_CONFIG.spend_total.packKey] || null;
-        if (spendContext && spendContext.packs && spendPack) {
-          await setCachedUserData(
-            NEED_CONFIG.spend_total.cacheType,
-            userId,
-            spendPack,
-            {
-              ttl: 50 * 60 * 1000,
-            },
-          );
-          logInfo("✅ [PREBUILD] Spend context cached");
-          logInfo("🔍 [PREBUILD] Spend context data:", {
-            hasSpendSummary: !!spendPack.total,
-            totalSpend: spendPack.total || 0,
-          });
-        } else {
-          logWarn("❌ [PREBUILD] Spend context failed to build");
-        }
-      } else {
-        logInfo("✅ [PREBUILD] Spend context already cached, skipping build");
-      }
-    } catch (error) {
-      logError("❌ [PREBUILD] Spend context failed:", error);
+    if (!cachedContexts.spend_total) {
+      backgroundBuilds.push(
+        (async () => {
+          try {
+            const spendContext = await buildContextPacks(
+              userId,
+              ["spend_total"],
+              spendParams,
+            );
+            const spendPack =
+              spendContext?.packs?.[NEED_CONFIG.spend_total.packKey] || null;
+            if (spendContext && spendContext.packs && spendPack) {
+              await setCachedUserData(
+                NEED_CONFIG.spend_total.cacheType,
+                userId,
+                spendPack,
+                { ttl: 50 * 60 * 1000 },
+              );
+              logInfo("✅ [PREBUILD] Spend context cached");
+            } else {
+              logWarn("❌ [PREBUILD] Spend context failed to build");
+            }
+          } catch (error) {
+            logError("❌ [PREBUILD] Spend context failed:", error);
+          }
+        })(),
+      );
     }
 
-    // Note: Supermemory pre-warming removed for prebuild_context to avoid external calls.
+    if (backgroundBuilds.length > 0) {
+      logInfo(
+        `📦 [PREBUILD] Building ${backgroundBuilds.length} context pack(s) in parallel...`,
+      );
+      await Promise.allSettled(backgroundBuilds);
+    }
 
     const totalTime = Date.now() - startTime;
     logInfo(`🎯 [PREBUILD] Context pre-building completed in ${totalTime}ms`);
@@ -6382,10 +6412,15 @@ async function handleOffTopic(
         // Load memory and profile in parallel with 5s timeout (non-blocking)
         // Using wrapper functions that automatically fallback to defaults on timeout
         const [loadedMemory, loadedProfile] = await Promise.all([
-          loadUserMemoryWithTimeout(userId, messageText, 5000).catch((error) => {
-            console.log("⚠️ [OFF_TOPIC] Error loading memory:", error?.message);
-            return { memories: [], totalCount: 0 };
-          }),
+          loadUserMemoryWithTimeout(userId, messageText, 5000).catch(
+            (error) => {
+              console.log(
+                "⚠️ [OFF_TOPIC] Error loading memory:",
+                error?.message,
+              );
+              return { memories: [], totalCount: 0 };
+            },
+          ),
           fetchSupermemoryProfileWithTimeout(userId, 5000).catch((error) => {
             console.log(
               "⚠️ [OFF_TOPIC] Error loading profile:",

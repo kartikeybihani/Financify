@@ -5,7 +5,7 @@ import { DeviceEventEmitter } from "react-native";
 import AppStorage from "@/src/utils/storage/storage";
 import { Account } from "@/src/types/plaid";
 import { Goal } from "@/src/types/finny";
-import { getAllUserAccounts } from "@/src/utils/plaid/plaid";
+import { getAllUserAccounts, getRecurringStreamsActiveCount } from "@/src/utils/plaid/plaid";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
@@ -93,7 +93,7 @@ export interface UnifiedFinancialData {
   hasGoals: boolean;
   
   // Actions
-  refreshAll: () => Promise<void>;
+  refreshAll: () => Promise<{ recurringCount: number }>;
   clearCache: () => Promise<void>;
 }
 
@@ -239,7 +239,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
   }, [loadFromCacheSync]);
 
   // Parallel data fetching
-  const fetchAllData = useCallback(async (hasCache: boolean = false): Promise<void> => {
+  const fetchAllData = useCallback(async (hasCache: boolean = false): Promise<{ recurringCount: number }> => {
     try {
       if (isDemoMode) {
         setAccounts(
@@ -259,7 +259,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
         setInvestmentHoldings(demoInvestmentHoldings);
         setLoading(false);
         setIsInitialLoad(false);
-        return;
+        return { recurringCount: 0 };
       }
 
       if (!hasCache) {
@@ -270,7 +270,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       
       if (!authResult?.user?.id) {
         logger.error("❌ [UNIFIED] User not authenticated");
-        return;
+        return { recurringCount: 0 };
       }
       
       const user = authResult.user;
@@ -289,7 +289,7 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
       );
 
       // Fetch remaining data in parallel (skip investment data if no investment accounts)
-      const [goalsData, cashData, balancesData, holdingsData] = await Promise.all([
+      const [goalsData, cashData, balancesData, holdingsData, recurringCount] = await Promise.all([
         supabase
           .from('goals')
           .select('*')
@@ -328,7 +328,8 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
               logger.error("❌ [UNIFIED] Failed to fetch investment holdings:", err);
               return [];
             })
-          : Promise.resolve([])
+          : Promise.resolve([]),
+        getRecurringStreamsActiveCount().catch(() => 0),
       ]);
 
       // Update state
@@ -351,8 +352,11 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
         investmentBalances: balancesData || [],
         investmentHoldings: holdingsData || [],
       });
+
+      return { recurringCount: recurringCount ?? 0 };
     } catch (error) {
       logger.error("❌ [UNIFIED] Error fetching financial data:", error);
+      return { recurringCount: 0 };
     } finally {
       setLoading(false);
       setIsInitialLoad(false);
@@ -620,7 +624,10 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     isInitialLoad,
     hasAccounts: accounts.length > 0,
     hasGoals: goals.length > 0,
-    refreshAll: () => fetchAllData(false),
+    refreshAll: async () => {
+      const result = await fetchAllData(false);
+      return result ?? { recurringCount: 0 };
+    },
     clearCache,
   };
 }

@@ -110,7 +110,7 @@ export const fetchLinkToken = async (institution_id?: string) => {
 // === Connect Flow ===
 export const handlePlaidConnect = async (
   linkToken: string,
-  onSuccess: (itemId: string) => void,
+  onSuccess: (itemId: string, institution?: { name: string; id: string }) => void,
   onExit?: (error?: any) => void
 ) => {
   if (!linkToken) return;
@@ -243,7 +243,13 @@ export const handlePlaidConnect = async (
           logger.warn("⚠️ Finny recurring analysis failed (non-blocking):", err)
         );
 
-        onSuccess(item_id);
+        const institution = linkMetadata?.institution
+          ? {
+              name: linkMetadata.institution.name || "Bank",
+              id: linkMetadata.institution.institution_id || "unknown",
+            }
+          : undefined;
+        onSuccess(item_id, institution);
       } catch (error) {
         logger.error("❌ Token exchange failed:", error);
         // Call onExit with error to trigger error handling
@@ -279,7 +285,7 @@ export const handlePlaidConnect = async (
 
 // === Add New Bank Account (for existing users) ===
 export const addNewBankAccount = async (
-  onSuccess?: (itemId: string) => void,
+  onSuccess?: (itemId: string, institution?: { name: string; id: string }) => void,
   onExit?: (error?: any) => void
 ) => {
   try {
@@ -292,9 +298,9 @@ export const addNewBankAccount = async (
     // 2. Open Plaid Link for the user to select a new bank
     await handlePlaidConnect(
       linkToken,
-      (itemId) => {
+      (itemId, institution) => {
         logger.info("✅ Successfully added new bank account:", itemId);
-        onSuccess?.(itemId);
+        onSuccess?.(itemId, institution);
       },
       (error) => {
         logger.error("❌ Failed to add new bank account:", error);
@@ -859,6 +865,27 @@ export const syncAllUserTransactions = async () => {
   }
 };
 
+// === Get active recurring streams count (lightweight) ===
+export const getRecurringStreamsActiveCount = async (): Promise<number> => {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) return 0;
+    const { count, error } = await supabase
+      .from("recurring_streams")
+      .select("*", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("is_active", true)
+      .eq("user_dismissed", false);
+    if (error) {
+      logger.warn("Failed to count recurring streams:", error);
+      return 0;
+    }
+    return count ?? 0;
+  } catch {
+    return 0;
+  }
+};
+
 // === Get Recurring Transactions from Database (Subscriptions, Bills, etc.) ===
 export const getRecurringTransactionsFromDatabase = async (item_id?: string) => {
   try {
@@ -1077,8 +1104,10 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
              groupedStreams.bills.length + groupedStreams.other.length,
     };
 
-    // Fetch inactive streams (stopped/cancelled - Plaid no longer detects them)
-    let inactiveQuery = supabase
+    // Fetch inactive streams:
+    // 1) Stopped/cancelled - Plaid no longer detects them (is_active=false)
+    // 2) User dismissed - user explicitly removed from recurring (user_dismissed=true)
+    let stoppedQuery = supabase
       .from("recurring_streams")
       .select("*")
       .eq("user_id", user.id)
@@ -1086,11 +1115,33 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
       .eq("user_dismissed", false)
       .order("updated_at", { ascending: false });
     if (item_id) {
-      inactiveQuery = inactiveQuery.or(`item_id.eq.${item_id},item_id.is.null`);
+      stoppedQuery = stoppedQuery.or(`item_id.eq.${item_id},item_id.is.null`);
     }
-    const { data: inactiveStreams } = await inactiveQuery;
+    const { data: stoppedStreams } = await stoppedQuery;
 
-    const inactiveList = (inactiveStreams || []).map((s) => ({
+    let dismissedQuery = supabase
+      .from("recurring_streams")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("user_dismissed", true)
+      .order("updated_at", { ascending: false });
+    if (item_id) {
+      dismissedQuery = dismissedQuery.or(`item_id.eq.${item_id},item_id.is.null`);
+    }
+    const { data: dismissedStreams } = await dismissedQuery;
+
+    // Merge and dedupe by stream_id (user-dismissed may overlap with stopped)
+    const inactiveStreamsMap = new Map<string, any>();
+    [...(stoppedStreams || []), ...(dismissedStreams || [])].forEach((s) => {
+      if (!inactiveStreamsMap.has(s.stream_id)) {
+        inactiveStreamsMap.set(s.stream_id, s);
+      }
+    });
+    const inactiveStreams = Array.from(inactiveStreamsMap.values()).sort(
+      (a, b) => new Date(b.updated_at || 0).getTime() - new Date(a.updated_at || 0).getTime()
+    );
+
+    const inactiveList = inactiveStreams.map((s) => ({
       stream_id: s.stream_id,
       description: s.description,
       merchant_name: s.merchant_name,
@@ -1105,6 +1156,7 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
       transaction_ids: s.transaction_ids || [],
       iso_currency_code: s.iso_currency_code || "USD",
       updated_at: s.updated_at,
+      user_dismissed: !!s.user_dismissed,
     }));
 
     logger.info(`📊 Found ${summary.total} recurring items from database (${streams?.length || 0} streams + ${userMarkedTxs?.length || 0} user-marked), ${inactiveList.length} inactive`);

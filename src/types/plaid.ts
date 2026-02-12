@@ -69,6 +69,7 @@ export interface RecurringStream {
   account_id: string;
   transaction_ids: string[];
   iso_currency_code: string;
+  user_dismissed?: boolean; // When true, user explicitly removed from recurring (in Past section)
 }
 
 // Extended Transaction interface for recurring streams with account details

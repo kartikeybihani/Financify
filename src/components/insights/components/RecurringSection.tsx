@@ -21,10 +21,13 @@ import {
   RecurringTransaction,
 } from "@/src/types/plaid";
 import IconButton from "@/src/components/shared/IconButton";
+import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 import { supabase } from "@/src/lib/supabase/supabase";
 import {
   bulkUpdateRecurringStatus,
   dismissRecurringStream,
+  unDismissRecurringStream,
+  reactivateRecurringStream,
 } from "@/src/utils/recurring/recurringBulkUpdate";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import { API_BASE_URL } from "@/src/utils/core/apiUrl";
@@ -44,6 +47,21 @@ interface Props {
 
 type SpacerItem = { spacer: true; id: string };
 type ListItem = RecurringStream | SpacerItem;
+
+const ANALYSIS_MESSAGES = [
+  "Checking your subscriptions…",
+  "Taking a quick look at your spendings…",
+  "Scanning for recurring bills…",
+  "Finding patterns in your transactions…",
+  "Almost done analyzing…",
+];
+
+const LOADING_MESSAGES = [
+  "Loading your recurring transactions…",
+  "Fetching subscriptions and bills…",
+  "Checking for recurring patterns…",
+  "Almost ready…",
+];
 
 export default function RecurringSection({
   recurringData,
@@ -68,9 +86,38 @@ export default function RecurringSection({
     new Set(),
   );
   const [removingRecurring, setRemovingRecurring] = useState(false);
+  const [addingBackRecurring, setAddingBackRecurring] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [pastRecurringExpanded, setPastRecurringExpanded] = useState(false);
+  const [analysisMessageIndex, setAnalysisMessageIndex] = useState(0);
+  const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+
+  useEffect(() => {
+    if (!analyzing) {
+      setAnalysisMessageIndex(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setAnalysisMessageIndex((prev) =>
+        prev >= ANALYSIS_MESSAGES.length - 1 ? 0 : prev + 1
+      );
+    }, 2200);
+    return () => clearInterval(interval);
+  }, [analyzing]);
+
+  useEffect(() => {
+    if (!isLoading) {
+      setLoadingMessageIndex(0);
+      return;
+    }
+    const interval = setInterval(() => {
+      setLoadingMessageIndex((prev) =>
+        prev >= LOADING_MESSAGES.length - 1 ? 0 : prev + 1
+      );
+    }, 2200);
+    return () => clearInterval(interval);
+  }, [isLoading]);
 
   const isIOS = Platform.OS === "ios";
   const iosVersion = isIOS
@@ -410,6 +457,42 @@ export default function RecurringSection({
     );
   };
 
+  const handleAddBackToRecurring = async () => {
+    if (!selectedStream || !userId) {
+      Alert.alert("Error", "Unable to add back. Please try again.");
+      return;
+    }
+
+    const isPlaidStream =
+      !selectedStream.stream_id.startsWith("user-marked-");
+    if (!isPlaidStream) return;
+
+    const merchantName = selectedStream.merchant_name || selectedStream.description;
+    const isDismissed = !!selectedStream.user_dismissed;
+
+    try {
+      setAddingBackRecurring(true);
+
+      const fn = isDismissed ? unDismissRecurringStream : reactivateRecurringStream;
+      const result = await fn(userId, selectedStream.stream_id, merchantName || undefined, selectedStream.description || undefined);
+
+      if (!result.success) {
+        Alert.alert("Error", result.error || "Please try again.");
+        return;
+      }
+
+      Alert.alert("Success", "Added back to recurring.", [
+        { text: "OK", onPress: () => handleBackToGrid() },
+      ]);
+      await onRunAnalysis?.();
+    } catch (error) {
+      console.error("Error adding back to recurring:", error);
+      Alert.alert("Error", "Failed to add back. Please try again.");
+    } finally {
+      setAddingBackRecurring(false);
+    }
+  };
+
   const renderCard = ({ item }: { item: ListItem }) => {
     if ((item as SpacerItem).spacer) {
       return (
@@ -516,7 +599,11 @@ export default function RecurringSection({
           {(showNextDate || isInactive) && (
             <View style={styles.boxFooter}>
               <Text style={styles.nextDate}>
-                {isInactive ? "Stopped" : `Next: ${formatShort(nextDate)}`}
+                {isInactive
+                  ? stream.user_dismissed
+                    ? "Dismissed"
+                    : "Stopped"
+                  : `Next: ${formatShort(nextDate)}`}
               </Text>
             </View>
           )}
@@ -574,18 +661,33 @@ export default function RecurringSection({
           </View>
         )}
 
-        {/* Remove Recurring Button */}
+        {/* Remove or Add back button */}
         {!loadingTransactions && streamTransactions.length > 0 && (
-          <TouchableOpacity
-            style={styles.removeRecurringButton}
-            onPress={handleRemoveRecurring}
-            disabled={removingRecurring}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.removeRecurringButtonText}>
-              {removingRecurring ? "Removing..." : "Remove this from recurring"}
-            </Text>
-          </TouchableOpacity>
+          <>
+            {selectedStream.is_active && !selectedStream.user_dismissed ? (
+              <TouchableOpacity
+                style={styles.removeRecurringButton}
+                onPress={handleRemoveRecurring}
+                disabled={removingRecurring}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.removeRecurringButtonText}>
+                  {removingRecurring ? "Removing..." : "Remove this from recurring"}
+                </Text>
+              </TouchableOpacity>
+            ) : !selectedStream.stream_id.startsWith("user-marked-") ? (
+              <TouchableOpacity
+                style={styles.addBackRecurringButton}
+                onPress={handleAddBackToRecurring}
+                disabled={addingBackRecurring}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.addBackRecurringButtonText}>
+                  {addingBackRecurring ? "Adding back..." : "Add this into Recurring again"}
+                </Text>
+              </TouchableOpacity>
+            ) : null}
+          </>
         )}
 
         {/* Transaction History */}
@@ -680,57 +782,24 @@ export default function RecurringSection({
     return renderTransactionHistoryView();
   }
 
-  if (isLoading) {
-    // Skeleton that matches the real grid
-    const placeholders = Array.from({ length: 6 }).map((_, i) => ({
-      spacer: false,
-      stream_id: `ph-${i}`,
-      description: "",
-      category: "",
-      frequency: "",
-      average_amount: 0,
-      last_amount: 0,
-      last_date: "",
-      first_date: "",
-      is_active: true,
-      account_id: "",
-      transaction_ids: [],
-      iso_currency_code: "USD",
-      merchant_name: "",
-    })) as RecurringStream[];
-
-    return (
-      <View style={{ marginBottom: 50 }}>
-        <View style={styles.sectionHeader}>
-          <Text style={titleStyle}>Recurring Transactions</Text>
-        </View>
-        <View
-          style={{
-            paddingTop: 12,
-            paddingBottom: 4,
-          }}
-        >
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              justifyContent: "space-between",
-            }}
-          >
-            {placeholders.map((ph) => (
-              <View
-                key={ph.stream_id}
-                style={{ width: cardWidth, marginBottom: 20 }}
-              >
-                <View
-                  style={[styles.loadingBox, { width: cardWidth, height: 120 }]}
-                />
-              </View>
-            ))}
-          </View>
-        </View>
+  const renderLoadingView = (messages: string[], messageIndex: number) => (
+    <View style={[styles.analyzingContainer, { paddingHorizontal: 20, marginTop: 16, marginBottom: 50 }]}>
+      <View style={styles.sectionHeader}>
+        <Text style={titleStyle}>Recurring Transactions</Text>
       </View>
-    );
+      <FinnyLoadingIndicator
+        message={messages[messageIndex]}
+        duration={2200}
+      />
+    </View>
+  );
+
+  if (analyzing) {
+    return renderLoadingView(ANALYSIS_MESSAGES, analysisMessageIndex);
+  }
+
+  if (isLoading) {
+    return renderLoadingView(LOADING_MESSAGES, loadingMessageIndex);
   }
 
   const renderEmptyState = () => {
@@ -938,17 +1007,6 @@ const styles = StyleSheet.create({
     letterSpacing: 0.2,
     opacity: 0.7,
   },
-  loadingBox: {
-    backgroundColor: "rgba(20, 20, 25, 0.95)",
-    borderRadius: 20,
-    borderWidth: 0,
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
-    elevation: 3,
-  },
   chevronIcon: {
     marginLeft: 8,
   },
@@ -1011,6 +1069,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#4A90E2",
+    letterSpacing: 0.2,
+  },
+  addBackRecurringButton: {
+    backgroundColor: "rgba(76, 175, 80, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(76, 175, 80, 0.3)",
+    borderRadius: 8,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addBackRecurringButtonText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#4CAF50",
     letterSpacing: 0.2,
   },
   headerInfo: {
@@ -1181,6 +1256,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 4,
+  },
+  analyzingContainer: {
+    minHeight: 320,
+    justifyContent: "flex-start",
   },
   analyzeButton: {
     flexDirection: "row",
