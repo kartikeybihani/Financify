@@ -154,7 +154,10 @@ export default function RootLayout() {
   function PaywallGate() {
     const { paywallVisible, hidePaywall } = useSubscription();
     return (
-      <PaywallModal visible={paywallVisible} onClose={hidePaywall} />
+      <PaywallModal
+        visible={paywallVisible}
+        onClose={(reason) => hidePaywall(reason)}
+      />
     );
   }
 

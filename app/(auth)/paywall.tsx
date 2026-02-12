@@ -3,6 +3,7 @@
 import {
   View,
   Text,
+  Image,
   StyleSheet,
   TouchableOpacity,
   Platform,
@@ -107,7 +108,14 @@ interface Feature {
 }
 
 // Carousel features for paywall
-const CAROUSEL_FEATURES = [
+type CarouselFeature = {
+  id: string;
+  title: string;
+  subtitle: string;
+  emoji: string;
+  imageSource?: number;
+};
+const CAROUSEL_FEATURES: CarouselFeature[] = [
   {
     id: "peace",
     title: "Let Finny do the work and get peace of mind.",
@@ -125,6 +133,7 @@ const CAROUSEL_FEATURES = [
     title: "Unlimited Finny AI help.",
     subtitle: "Ask anything, get instant answers",
     emoji: "🤖",
+    imageSource: require("../../assets/images/mascotgpt.png"),
   },
   {
     id: "goals",
@@ -134,7 +143,7 @@ const CAROUSEL_FEATURES = [
   },
   {
     id: "accounts",
-    title: "Add all accounts in one place.",
+    title: "Track all accounts in one place.",
     subtitle: "One dashboard for your entire financial picture",
     emoji: "📊",
   },
@@ -188,7 +197,8 @@ const FEATURES: Feature[] = [
 
 export interface PaywallModalProps {
   visible: boolean;
-  onClose: () => void;
+  /** Called when paywall closes. Pass 'convert' when user subscribed/restored; 'dismiss' when user closed without converting. */
+  onClose: (reason?: "convert" | "dismiss") => void;
 }
 
 export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
@@ -334,7 +344,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
       const result = await Purchases.purchasePackage(pkg);
       applyCustomerInfo(result.customerInfo);
       await refetch();
-      onClose();
+      onClose("convert");
     } catch (e: any) {
       if (e?.userCancelled) {
         return;
@@ -354,7 +364,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
       const info = await Purchases.restorePurchases();
       applyCustomerInfo(info);
       await refetch();
-      onClose();
+      onClose("convert");
     } catch (e: any) {
       logger.warn("Restore failed", e);
       setError(e?.message || "Restore failed. Try again.");
@@ -372,7 +382,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
     ? FEATURES.filter((feature) => feature.id === expandedFeatureId)
     : FEATURES;
 
-  const handleClose = onClose;
+  const handleClose = () => onClose("dismiss");
 
   if (!visible) return null;
 
@@ -593,7 +603,17 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                           style={styles.carouselSlide}
                           collapsable={false}
                         >
-                          <Text style={styles.carouselEmoji}>{item.emoji}</Text>
+                          {item.imageSource ? (
+                            <Image
+                              source={item.imageSource}
+                              style={styles.carouselMascot}
+                              resizeMode="contain"
+                            />
+                          ) : (
+                            <Text style={styles.carouselEmoji}>
+                              {item.emoji}
+                            </Text>
+                          )}
                           <Text style={styles.carouselTitle}>{item.title}</Text>
                           <Text style={styles.carouselSubtitle}>
                             {item.subtitle}
@@ -706,12 +726,12 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                               </Text>
                               <Text style={styles.pricingPeriod}>/year</Text>
                             </View>
-                            {annualPackage?.product.price && (
+                            {/* {annualPackage?.product.price && (
                               <Text style={styles.pricingEquivalent}>
                                 ${(annualPackage.product.price / 12).toFixed(2)}
                                 /month
                               </Text>
-                            )}
+                            )} */}
                           </View>
                           <LinearGradient
                             colors={["#0099FF", "#0066FF"]}
@@ -813,9 +833,14 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                             <Text style={styles.ctaText}>Processing...</Text>
                           </View>
                         ) : (
-                          <Text style={styles.ctaText}>
-                            Start 1-Month Free Trial
-                          </Text>
+                          <>
+                            <Text style={styles.ctaText}>
+                              Start 1-Month Free Trial
+                            </Text>
+                            <Text style={styles.ctaSubtext}>
+                              Cancel anytime • 1 month free
+                            </Text>
+                          </>
                         )}
                       </LinearGradient>
                     </TouchableOpacity>
@@ -861,8 +886,8 @@ const styles = StyleSheet.create({
   },
   sheet: {
     width: SCREEN_WIDTH,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 44,
+    borderTopRightRadius: 44,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: -10 },
@@ -873,8 +898,8 @@ const styles = StyleSheet.create({
   sheetGradient: {
     flex: 1,
     minHeight: 0,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+    borderTopLeftRadius: 44,
+    borderTopRightRadius: 44,
     overflow: "hidden",
   },
   sheetHandleContainer: {
@@ -1155,6 +1180,19 @@ const styles = StyleSheet.create({
   carouselEmoji: {
     fontSize: 44,
     marginBottom: 12,
+  },
+  carouselMascot: {
+    width: 88,
+    height: 88,
+    marginBottom: -5,
+  },
+  ctaSubtext: {
+    fontSize: 11,
+    color: "#fff",
+    textAlign: "center",
+    paddingHorizontal: 16,
+    lineHeight: 18,
+    fontFamily: "Manrope",
   },
   carouselTitle: {
     fontSize: 16,

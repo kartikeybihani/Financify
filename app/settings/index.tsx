@@ -66,7 +66,7 @@ export default function SettingsScreen() {
           AppStorage.setItemSync("userData", JSON.stringify(user));
           logger.info(
             "[SettingsIndex] Current user email:",
-            user.user_metadata.full_name + " - " + user.email
+            user.user_metadata.full_name + " - " + user.email,
           );
         }
       } catch (error) {
@@ -121,7 +121,7 @@ export default function SettingsScreen() {
               if (total === 0) {
                 Alert.alert(
                   "No Account Found",
-                  "No connected bank accounts found to disconnect."
+                  "No connected bank accounts found to disconnect.",
                 );
                 return;
               }
@@ -143,24 +143,24 @@ export default function SettingsScreen() {
                     : "Partial Disconnect",
                   disconnected === 0
                     ? "Unable to disconnect any bank connections. Please try again."
-                    : `Disconnected ${disconnected}/${total} bank connection(s). Some connections could not be removed.`
+                    : `Disconnected ${disconnected}/${total} bank connection(s). Some connections could not be removed.`,
                 );
               } else {
                 Alert.alert(
                   "Success",
-                  `Disconnected ${disconnected} bank connection(s).`
+                  `Disconnected ${disconnected} bank connection(s).`,
                 );
               }
             } catch (error) {
               logger.error("Error disconnecting bank:", error);
               Alert.alert(
                 "Error",
-                "Failed to disconnect bank accounts. Please try again."
+                "Failed to disconnect bank accounts. Please try again.",
               );
             }
           },
         },
-      ]
+      ],
     );
   };
 
@@ -191,7 +191,7 @@ export default function SettingsScreen() {
             setIsLoggingOut(false);
             Alert.alert(
               "Logout Error",
-              "Something went wrong. Please try again."
+              "Something went wrong. Please try again.",
             );
           }
         },
@@ -218,7 +218,7 @@ export default function SettingsScreen() {
     if (Platform.OS !== "ios") {
       Alert.alert(
         "Not Available",
-        "Subscription management is only available on iOS."
+        "Subscription management is only available on iOS.",
       );
       return;
     }
@@ -228,7 +228,8 @@ export default function SettingsScreen() {
       logger.error("Error showing manage subscriptions:", error);
       Alert.alert(
         "Error",
-        error?.message || "Unable to open subscription management. Please try again."
+        error?.message ||
+          "Unable to open subscription management. Please try again.",
       );
     }
   };
@@ -244,7 +245,7 @@ export default function SettingsScreen() {
       const results = Array.isArray(result.results) ? result.results : [];
       const failed = results.filter((entry) => entry?.error).length;
       const requiresUpdateCount = results.filter(
-        (entry) => entry?.requires_update_mode
+        (entry) => entry?.requires_update_mode,
       ).length;
 
       logger.info("[SettingsIndex] Transaction sync results:", result);
@@ -252,7 +253,7 @@ export default function SettingsScreen() {
       if (total === 0) {
         Alert.alert(
           "No Account Found",
-          "Please connect a bank account first to sync transactions."
+          "Please connect a bank account first to sync transactions.",
         );
         return;
       }
@@ -277,19 +278,19 @@ export default function SettingsScreen() {
           synced === 0 ? "Sync Failed" : "Sync Partially Complete",
           synced === 0
             ? `Unable to sync any bank connections.${reauthMessage}`
-            : `Synced ${synced}/${total} bank connection(s).${reauthMessage}`
+            : `Synced ${synced}/${total} bank connection(s).${reauthMessage}`,
         );
       } else {
         Alert.alert(
           "Sync Complete",
-          `Synced ${synced}/${total} bank connection(s).`
+          `Synced ${synced}/${total} bank connection(s).`,
         );
       }
     } catch (error: any) {
       logger.error("[SettingsIndex] Error syncing transactions:", error);
       Alert.alert(
         "Sync Failed",
-        error?.message || "Failed to sync transactions. Please try again."
+        error?.message || "Failed to sync transactions. Please try again.",
       );
     } finally {
       setIsSyncingTransactions(false);
@@ -303,7 +304,7 @@ export default function SettingsScreen() {
     showBorder = true,
     rightElement?: JSX.Element,
     disabled = false,
-    disableWithoutStyling = false
+    disableWithoutStyling = false,
   ) => {
     const showDisabledStyle = disabled && !disableWithoutStyling;
     return (
@@ -346,7 +347,7 @@ export default function SettingsScreen() {
     onValueChange: (value: boolean) => void,
     showBorder = true,
     disabled = false,
-    disableWithoutStyling = false
+    disableWithoutStyling = false,
   ) => {
     const showDisabledStyle = disabled && !disableWithoutStyling;
     return (
@@ -427,7 +428,7 @@ export default function SettingsScreen() {
               true,
               undefined,
               isDemoMode,
-              isDemoMode
+              isDemoMode,
             )}
             {renderSettingsItem(
               <Ionicons name="refresh-outline" size={24} color="#4A90E2" />,
@@ -440,7 +441,7 @@ export default function SettingsScreen() {
                 <MaterialIcons name="chevron-right" size={24} color="#666" />
               ),
               isDemoMode,
-              isDemoMode
+              isDemoMode,
             )}
             {/* {renderSettingsItem(
               <Ionicons name="card-outline" size={24} color="#4A90E2" />,
@@ -473,7 +474,7 @@ export default function SettingsScreen() {
                         setNotificationsEnabled(false);
                         Alert.alert(
                           "Permission Required",
-                          "Please enable notification permissions in your device settings to receive push notifications."
+                          "Please enable notification permissions in your device settings to receive push notifications.",
                         );
                         return;
                       }
@@ -490,10 +491,10 @@ export default function SettingsScreen() {
                       enabled: true,
                     };
                     await notificationService.savePreferences(
-                      updatedPreferences
+                      updatedPreferences,
                     );
                     await notificationService.scheduleNotifications(
-                      updatedPreferences
+                      updatedPreferences,
                     );
                     await notificationService.syncPreferencesToDatabase();
                     setNotificationsEnabled(true);
@@ -503,7 +504,7 @@ export default function SettingsScreen() {
                     setNotificationsEnabled(false);
                     Alert.alert(
                       "Error",
-                      "Failed to enable notifications. Please try again."
+                      "Failed to enable notifications. Please try again.",
                     );
                   }
                 } else {
@@ -517,7 +518,7 @@ export default function SettingsScreen() {
                       enabled: false,
                     };
                     await notificationService.savePreferences(
-                      updatedPreferences
+                      updatedPreferences,
                     );
                     // Cancel scheduled notifications
                     await notificationService.cancelAllNotifications();
@@ -528,14 +529,14 @@ export default function SettingsScreen() {
                     logger.error("Error disabling notifications:", error);
                     Alert.alert(
                       "Error",
-                      "Failed to disable notifications. Please try again."
+                      "Failed to disable notifications. Please try again.",
                     );
                   }
                 }
               },
               true,
               isDemoMode,
-              isDemoMode
+              isDemoMode,
             )}
             {/* {renderSwitchItem(
               <Ionicons name="finger-print" size={24} color="#4A90E2" />,
@@ -544,7 +545,7 @@ export default function SettingsScreen() {
               setBiometricsEnabled,
               false
             )} */}
-          </>
+          </>,
         )}
 
         {renderSettingsGroup(
@@ -557,7 +558,7 @@ export default function SettingsScreen() {
               true,
               undefined,
               isDemoMode,
-              isDemoMode
+              isDemoMode,
             )}
             {renderSettingsItem(
               <Ionicons name="call-outline" size={24} color="#4A90E2" />,
@@ -566,7 +567,7 @@ export default function SettingsScreen() {
               true,
               undefined,
               isDemoMode,
-              isDemoMode
+              isDemoMode,
             )}
             {renderSettingsItem(
               <Ionicons name="share-outline" size={24} color="#4A90E2" />,
@@ -575,7 +576,7 @@ export default function SettingsScreen() {
               true,
               undefined,
               isDemoMode,
-              isDemoMode
+              isDemoMode,
             )}
             {renderSettingsItem(
               <Ionicons name="card-outline" size={24} color="#4A90E2" />,
@@ -588,9 +589,9 @@ export default function SettingsScreen() {
                 </View>
               ) : undefined,
               isDemoMode || Platform.OS !== "ios",
-              isDemoMode || Platform.OS !== "ios"
+              isDemoMode || Platform.OS !== "ios",
             )}
-          </>
+          </>,
         )}
 
         {renderSettingsGroup(
@@ -603,7 +604,7 @@ export default function SettingsScreen() {
               true,
               undefined,
               isDemoMode,
-              isDemoMode
+              isDemoMode,
             )}
             {renderSettingsItem(
               <MaterialIcons name="logout" size={24} color="#ff6b6b" />,
@@ -612,14 +613,14 @@ export default function SettingsScreen() {
               false,
               undefined,
               isDemoMode,
-              isDemoMode
+              isDemoMode,
             )}
-          </>
+          </>,
         )}
 
         <View style={styles.footer}>
           <Text style={styles.version}>Version 1.0.0</Text>
-          <Text style={styles.copyright}>© 2025 Finny</Text>
+          <Text style={styles.copyright}>© 2026 Finny</Text>
         </View>
       </ScrollView>
 

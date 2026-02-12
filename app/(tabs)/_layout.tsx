@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Platform } from "react-native";
 import { Tabs } from "expo-router";
 import { NativeTabs, Label, Icon } from "expo-router/unstable-native-tabs";
@@ -12,14 +12,37 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import { notificationService } from "@/src/utils/core/notificationService";
 import AppStorage from "@/src/utils/storage/storage";
 import NotificationPermissionModal from "@/src/components/modals/NotificationPermissionModal";
+import { useSubscription } from "@/src/contexts/SubscriptionContext";
 
 const NOTIFICATION_PROMPT_DISMISSED_AT_KEY = "notification_prompt_dismissed_at";
 const REPROMPT_AFTER_MS = 2 * 24 * 60 * 60 * 1000; // 2 days
 const PROMPT_DELAY_MS = 1500;
+const PAYWALL_AFTER_NOTIFICATION_DELAY_MS = 2500;
 
 export default function TabLayout() {
   const [showNotificationModal, setShowNotificationModal] = useState(false);
   const hasCheckedRef = useRef(false);
+  const hasScheduledPaywallRef = useRef(false);
+  const paywallTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const { showPaywall, isPremium } = useSubscription();
+  const isPremiumRef = React.useRef(isPremium);
+  isPremiumRef.current = isPremium;
+
+  const schedulePostNotificationPaywall = useCallback(() => {
+    if (hasScheduledPaywallRef.current) return;
+    hasScheduledPaywallRef.current = true;
+    paywallTimerRef.current = setTimeout(() => {
+      paywallTimerRef.current = null;
+      if (!isPremiumRef.current) showPaywall();
+    }, PAYWALL_AFTER_NOTIFICATION_DELAY_MS);
+  }, [showPaywall]);
+
+  useEffect(
+    () => () => {
+      if (paywallTimerRef.current) clearTimeout(paywallTimerRef.current);
+    },
+    []
+  );
 
   // Show notification permission modal when: onboarding completed, no active push token for this device, and (never dismissed or dismissed > 2 days ago)
   useEffect(() => {
@@ -49,24 +72,31 @@ export default function TabLayout() {
           .eq("is_active", true)
           .maybeSingle();
 
-        if (existingToken) return;
+        if (existingToken) {
+          schedulePostNotificationPaywall();
+          return;
+        }
 
         const dismissedAtRaw = AppStorage.getItemSync(
           NOTIFICATION_PROMPT_DISMISSED_AT_KEY
         );
         if (dismissedAtRaw) {
           const dismissedAt = new Date(dismissedAtRaw).getTime();
-          if (Date.now() - dismissedAt < REPROMPT_AFTER_MS) return;
+          if (Date.now() - dismissedAt < REPROMPT_AFTER_MS) {
+            schedulePostNotificationPaywall();
+            return;
+          }
         }
 
         setShowNotificationModal(true);
       } catch (e) {
         logger.error("Notification prompt check failed", e);
+        schedulePostNotificationPaywall();
       }
     }, PROMPT_DELAY_MS);
 
     return () => clearTimeout(timer);
-  }, []);
+  }, [schedulePostNotificationPaywall]);
 
   const handleNotificationAllow = async () => {
     try {
@@ -76,6 +106,7 @@ export default function TabLayout() {
       logger.error("Notification allow failed", e);
     }
     setShowNotificationModal(false);
+    schedulePostNotificationPaywall();
   };
 
   const handleNotificationDontAllow = () => {
@@ -84,6 +115,7 @@ export default function TabLayout() {
       new Date().toISOString()
     );
     setShowNotificationModal(false);
+    schedulePostNotificationPaywall();
   };
 
   // Check if we should use NativeTabs (iOS 26+ only)

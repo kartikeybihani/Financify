@@ -28,13 +28,16 @@ const prodKey = extra?.revenuecatIosApiKeyProd as string | undefined;
 const revenueCatApiKey =
   !REVENUECAT_DISABLED && Platform.OS === "ios" ? prodKey || testKey : null;
 
+export type PaywallCloseReason = "convert" | "dismiss";
+
 export interface SubscriptionContextValue {
   isPremium: boolean;
   isLoading: boolean;
   refetch: () => Promise<void>;
   applyCustomerInfo: (info: CustomerInfo) => void;
-  showPaywall: () => void;
-  hidePaywall: () => void;
+  /** Show paywall. onConvert runs only when user subscribes/starts trial; onDismiss runs on any close (legacy). For compulsory trial, pass onConvert only. */
+  showPaywall: (opts?: { onConvert?: () => void; onDismiss?: () => void }) => void;
+  hidePaywall: (reason?: PaywallCloseReason) => void;
   paywallVisible: boolean;
 }
 
@@ -50,6 +53,8 @@ export function SubscriptionProvider({
   const [isPremium, setIsPremium] = useState(REVENUECAT_DISABLED);
   const [isLoading, setIsLoading] = useState(!REVENUECAT_DISABLED);
   const [paywallVisible, setPaywallVisible] = useState(false);
+  const onPaywallConvertRef = React.useRef<(() => void) | null>(null);
+  const onPaywallDismissRef = React.useRef<(() => void) | null>(null);
 
   const updateFromCustomerInfo = useCallback((info: CustomerInfo | null) => {
     if (!info) {
@@ -227,14 +232,32 @@ export function SubscriptionProvider({
     };
   }, [updateFromCustomerInfo]);
 
-  const showPaywall = useCallback(() => {
-    log.info("Showing paywall");
-    setPaywallVisible(true);
-  }, []);
+  const showPaywall = useCallback(
+    (opts?: { onConvert?: () => void; onDismiss?: () => void }) => {
+      log.info("Showing paywall");
+      const onConvert =
+        typeof opts?.onConvert === "function" ? opts.onConvert : null;
+      const onDismiss =
+        typeof opts?.onDismiss === "function" ? opts.onDismiss : null;
+      onPaywallConvertRef.current = onConvert;
+      onPaywallDismissRef.current = onDismiss;
+      setPaywallVisible(true);
+    },
+    []
+  );
 
-  const hidePaywall = useCallback(() => {
-    log.info("Hiding paywall");
+  const hidePaywall = useCallback((reason?: PaywallCloseReason) => {
+    log.info("Hiding paywall", { reason });
     setPaywallVisible(false);
+    const convertCb = onPaywallConvertRef.current;
+    const dismissCb = onPaywallDismissRef.current;
+    onPaywallConvertRef.current = null;
+    onPaywallDismissRef.current = null;
+    if (reason === "convert" && typeof convertCb === "function") {
+      convertCb();
+    } else if (typeof dismissCb === "function") {
+      dismissCb();
+    }
   }, []);
 
   const value: SubscriptionContextValue = {
@@ -263,7 +286,8 @@ export function useSubscription(): SubscriptionContextValue {
       isLoading: false,
       refetch: async () => {},
       applyCustomerInfo: () => {},
-      showPaywall: () => {},
+      showPaywall: (_opts?: { onConvert?: () => void; onDismiss?: () => void }) =>
+        {},
       hidePaywall: () => {},
       paywallVisible: false,
     };

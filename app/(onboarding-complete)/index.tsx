@@ -22,6 +22,7 @@ import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
+import { useSubscription } from "@/src/contexts/SubscriptionContext";
 
 const { width, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -54,6 +55,7 @@ type EarlyInsights = {
 export default function FinalScreen() {
   const router = useRouter();
   const { refreshNavigationState } = useAuthNavigation();
+  const { showPaywall, isPremium } = useSubscription();
   const [earlyInsights, setEarlyInsights] = useState<EarlyInsights | null>(
     null,
   );
@@ -994,7 +996,12 @@ export default function FinalScreen() {
       }),
     ]).start();
 
-    await completeOnboarding();
+    // Compulsory trial: must start trial or subscribe to enter app
+    if (isPremium) {
+      await completeOnboarding();
+    } else {
+      showPaywall({ onConvert: () => completeOnboarding() });
+    }
   };
 
   const renderInsightCard = (insight: InsightCard, index: number) => {
