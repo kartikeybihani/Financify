@@ -857,6 +857,7 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
       .select("*")
       .eq("user_id", user.id)
       .eq("is_active", true)
+      .eq("user_dismissed", false)
       .order("updated_at", { ascending: false });
 
     if (item_id) {

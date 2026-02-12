@@ -257,7 +257,8 @@ serve(async (req: Request) => {
       .from("recurring_streams")
       .select("stream_id, stream_type, transaction_ids, account_id")
       .eq("user_id", user_id)
-      .eq("is_active", true);
+      .eq("is_active", true)
+      .eq("user_dismissed", false);
 
     if (streamsError) {
       console.error("⚠️ Error fetching recurring streams:", streamsError);

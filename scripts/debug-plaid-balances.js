@@ -93,9 +93,18 @@ async function main() {
     }
 
     try {
-      const accountsRes = await client.accountsGet({ access_token });
-      const accounts = accountsRes.data?.accounts || [];
-      console.log(`\n${label}`);
+      // Use accountsBalanceGet for real-time balances (accountsGet returns cached)
+      let accounts = [];
+      try {
+        const res = await client.accountsBalanceGet({ access_token });
+        accounts = res.data?.accounts || [];
+        console.log(`\n${label} (accountsBalanceGet - real-time)`);
+      } catch (balanceErr) {
+        console.warn(`  ⚠️ accountsBalanceGet failed: ${balanceErr.message}`);
+        const res = await client.accountsGet({ access_token });
+        accounts = res.data?.accounts || [];
+        console.log(`\n${label} (accountsGet fallback - cached)`);
+      }
       if (accounts.length === 0) {
         console.log("  (no accounts)\n");
         continue;

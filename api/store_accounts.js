@@ -220,23 +220,54 @@ export default async function handler(req, res) {
     let storedData = {};
 
     // 2. Fetch and store ACCOUNTS
+    // Use accountsBalanceGet for real-time balances (avoids stale cache from accountsGet).
+    // Fall back to accountsGet if Balance product fails (e.g. unsupported item).
+    let accounts = [];
     try {
-      console.log("📊 Fetching accounts...");
-      const accountsResponse = await client.accountsGet({ access_token });
-      const accounts = accountsResponse.data.accounts;
+      console.log("📊 Fetching accounts (real-time balances)...");
+      try {
+        const balanceResponse = await client.accountsBalanceGet({
+          access_token,
+        });
+        accounts = balanceResponse.data?.accounts || [];
+        console.log(
+          `✅ accountsBalanceGet: real-time balances for ${accounts.length} accounts`
+        );
+      } catch (balanceErr) {
+        const code = balanceErr?.response?.data?.error_code;
+        console.warn(
+          `⚠️ accountsBalanceGet failed (${code || balanceErr.message}), falling back to accountsGet:`,
+          balanceErr.message
+        );
+        const accountsResponse = await client.accountsGet({ access_token });
+        accounts = accountsResponse.data?.accounts || [];
+        console.log(
+          `✅ accountsGet fallback: cached balances for ${accounts.length} accounts`
+        );
+      }
 
       if (accounts.length > 0) {
-        const accountsToStore = accounts.map((account) => ({
-          account_id: account.account_id,
-          item_id: item_id,
-          name: account.name,
-          mask: account.mask,
-          type: account.type,
-          subtype: account.subtype,
-          official_name: account.official_name,
-          current_balance: account.balances.current,
-          available_balance: account.balances.available,
-        }));
+        const accountsToStore = accounts.map((account) => {
+          const current = account.balances?.current;
+          const available = account.balances?.available;
+          // Log for balance debugging (Plaid vs our stored values)
+          console.log(
+            `[BALANCE_DEBUG] Plaid raw: account_id=${account.account_id} type=${account.type} current=${current} available=${available}`
+          );
+          return {
+            account_id: account.account_id,
+            item_id: item_id,
+            name: account.name,
+            mask: account.mask,
+            type: account.type,
+            subtype: account.subtype,
+            official_name: account.official_name,
+            current_balance: current,
+            available_balance: available,
+            last_balance_sync_at: new Date().toISOString(),
+            balance_source: "plaid",
+          };
+        });
 
         const { error: accountsError } = await supabase
           .from("accounts")
@@ -688,6 +719,30 @@ export default async function handler(req, res) {
             console.log(
               `✅ Stored ${balanceRows.length} Plaid investment account balances`
             );
+            // Update accounts table so UI shows total_value (not cash-only) for Plaid investment accounts.
+            // Use available_balance=0 so getAccountBalanceForTotal (current+available) = total_value, not total_value+cash.
+            for (const row of balanceRows) {
+              const { error: updateErr } = await supabase
+                .from("accounts")
+                .update({
+                  current_balance: row.total_value,
+                  available_balance: 0,
+                  last_balance_sync_at: new Date().toISOString(),
+                  balance_source: "plaid",
+                })
+                .eq("account_id", row.plaid_account_id)
+                .eq("item_id", item_id);
+              if (updateErr) {
+                console.error(
+                  `⚠️ Failed to update accounts table for Plaid investment ${row.plaid_account_id}:`,
+                  updateErr.message
+                );
+              } else {
+                console.log(
+                  `[BALANCE_DEBUG] Updated accounts.current_balance=${row.total_value} (total_value) for Plaid investment ${row.plaid_account_id}`
+                );
+              }
+            }
           }
         }
       }

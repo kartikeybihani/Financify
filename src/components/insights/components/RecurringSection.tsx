@@ -22,7 +22,7 @@ import {
 } from "@/src/types/plaid";
 import IconButton from "@/src/components/shared/IconButton";
 import { supabase } from "@/src/lib/supabase/supabase";
-import { bulkUpdateRecurringStatus } from "@/src/utils/recurring/recurringBulkUpdate";
+import { bulkUpdateRecurringStatus, dismissRecurringStream } from "@/src/utils/recurring/recurringBulkUpdate";
 
 interface Props {
   recurringData: {
@@ -317,6 +317,11 @@ export default function RecurringSection({
               const isPlaidStream =
                 !selectedStream.stream_id.startsWith("user-marked-");
 
+              // For Plaid streams: mark stream as user_dismissed so it stays hidden and future syncs won't re-apply
+              if (isPlaidStream) {
+                await dismissRecurringStream(userId, selectedStream.stream_id);
+              }
+
               const result = await bulkUpdateRecurringStatus(
                 userId,
                 {
@@ -330,10 +335,15 @@ export default function RecurringSection({
                 true, // Clear recurring_stream_id
               );
 
-              if (result.updated > 0) {
+              const showSuccess = result.updated > 0 || isPlaidStream;
+              if (showSuccess) {
+                const message =
+                  result.updated > 0
+                    ? `Removed recurring status from ${result.updated} transaction${result.updated > 1 ? "s" : ""}.`
+                    : "Removed from recurring. Future transactions will not be marked as recurring.";
                 Alert.alert(
                   "Success",
-                  `Removed recurring status from ${result.updated} transaction${result.updated > 1 ? "s" : ""}.`,
+                  message,
                   [
                     {
                       text: "OK",
@@ -859,6 +869,7 @@ const styles = StyleSheet.create({
   fullWidthContainer: {
     flex: 1,
     backgroundColor: "transparent",
+    paddingHorizontal: 20,
   },
   historyHeader: {
     flexDirection: "row",

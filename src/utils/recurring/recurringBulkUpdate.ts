@@ -175,8 +175,45 @@ export async function bulkUpdateRecurringStatus(
   }
 }
 
+/**
+ * Mark a Plaid recurring stream as user-dismissed.
+ * Hides it from the Recurring section and prevents future syncs from re-applying recurring status.
+ * Only applies to Plaid streams (stream_id in recurring_streams), not user-marked pseudo-streams.
+ */
+export async function dismissRecurringStream(
+  userId: string,
+  streamId: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    if (!userId || !streamId || streamId.startsWith("user-marked-")) {
+      return { success: false, error: "Invalid stream or user-marked streams cannot be dismissed" };
+    }
+
+    const { error } = await supabase
+      .from("recurring_streams")
+      .update({ user_dismissed: true, updated_at: new Date().toISOString() })
+      .eq("user_id", userId)
+      .eq("stream_id", streamId);
+
+    if (error) {
+      logger.error("❌ [RECURRING] Error dismissing stream:", error);
+      return { success: false, error: error.message };
+    }
+
+    logger.info(`✅ [RECURRING] Dismissed stream: ${streamId}`);
+    await clearRecurringCache(userId);
+    DeviceEventEmitter.emit("recurringBulkUpdate", { streamDismissed: streamId });
+
+    return { success: true };
+  } catch (err) {
+    logger.error("❌ [RECURRING] Error in dismissRecurringStream:", err);
+    return { success: false, error: String(err) };
+  }
+}
+
 // Default export for Expo Router compatibility
 export default {
   findSimilarTransactions,
   bulkUpdateRecurringStatus,
+  dismissRecurringStream,
 };

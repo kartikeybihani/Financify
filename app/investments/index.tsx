@@ -284,8 +284,6 @@ export default function InvestmentsScreen({
         setIsLoading(false);
         return true;
       }
-      logger.debug("Investments: Loading data from Supabase (no auto-sync)...");
-
       const [h, o, b, c] = await Promise.all([
         getSnaptradeHoldingsFromDB(),
         getSnaptradeOptionsFromDB(),
@@ -300,29 +298,6 @@ export default function InvestmentsScreen({
         (c && c.length > 0);
 
       if (hasAnyData) {
-        logger.debug(
-          `Investments: Loaded data from Supabase - Holdings: ${
-            h?.length || 0
-          }, Options: ${o?.length || 0}, Balances: ${
-            b?.length || 0
-          }, Connections: ${c?.length || 0}`,
-        );
-
-        // Log balance details for debugging
-        if (b && b.length > 0) {
-          logger.debug(
-            `💰 Balance total_value: $${
-              b[0]?.total_value || 0
-            }, Holdings sum: $${(h || []).reduce(
-              (sum, h) => sum + (h.market_value || 0),
-              0,
-            )}, Options sum: $${(o || []).reduce(
-              (sum, o) => sum + (o.market_value || 0),
-              0,
-            )}`,
-          );
-        }
-
         setHoldings(h || []);
         setOptions(o || []);
         setBalances(b || []);
@@ -401,8 +376,6 @@ export default function InvestmentsScreen({
         setIsLoading(false);
         return true;
       }
-      logger.debug("Investments: Loading data from Supabase...");
-
       const [h, o, b, c] = await Promise.all([
         getSnaptradeHoldingsFromDB(), // Gets ALL holdings (both Plaid and SnapTrade)
         getSnaptradeOptionsFromDB(), // Gets ALL options (both Plaid and SnapTrade)
@@ -437,14 +410,6 @@ export default function InvestmentsScreen({
             !connection.is_active ||
             connection.connection_status === "disabled" ||
             connection.connection_status === "error";
-
-          logger.debug("🔍 Connection status check:", {
-            account_id: connection.account_id?.substring(0, 8) + "...",
-            is_active: connection.is_active,
-            connection_status: connection.connection_status,
-            connection_id: connection.connection_id ? "exists" : "missing",
-            isDisabled,
-          });
 
           // Auto-refresh stale investment data (>24 hours old) - silent background sync
           if (
@@ -507,7 +472,6 @@ export default function InvestmentsScreen({
             connection.is_active &&
             connection.connection_status === "active"
           ) {
-            logger.debug("🔍 Verifying connection status with SnapTrade API...");
             try {
               // CRITICAL: Get actual user_id from auth, not from connection (connection might not have it)
               const {
@@ -557,7 +521,6 @@ export default function InvestmentsScreen({
           }
         } else {
           // Reset if no connections
-          logger.debug("🔍 No connections found, resetting status");
           setConnectionStatus({
             isDisabled: false,
             connectionId: null,
@@ -569,7 +532,6 @@ export default function InvestmentsScreen({
         return true;
       }
 
-      logger.debug("Investments: No investment data found in database");
       setHoldings([]);
       setOptions([]);
       setBalances([]);
@@ -810,19 +772,10 @@ export default function InvestmentsScreen({
             // This ensures UI reflects database changes from webhooks or background syncs
             // Even if last_synced_at didn't change, webhooks might have updated holdings/balances
             if (!isDisabled) {
-              logger.debug(
-                "🔄 Screen focused - reloading data to ensure UI reflects database state...",
-              );
               await loadFromDbWithoutAutoSync();
-              logger.debug(
-                "✅ Data reloaded on focus - UI now in sync with database",
-              );
             }
           } else {
             // No connections - still try to reload in case data exists
-            logger.debug(
-              "🔄 Screen focused - reloading data (no connections found)...",
-            );
             await loadFromDbWithoutAutoSync();
           }
         } catch (error) {

@@ -693,8 +693,6 @@ export const storeSnaptradeCredentials = async (
 // === Check SnapTrade Connection Status ===
 export const checkSnaptradeConnectionStatus = async (userId: string, accountId: string) => {
   try {
-    logger.debug("🔍 Checking SnapTrade connection status...");
-    
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
 
@@ -710,8 +708,6 @@ export const checkSnaptradeConnectionStatus = async (userId: string, accountId: 
     
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Failed to check connection status");
-    
-    logger.debug("✅ Connection status checked:", data);
     return data;
   } catch (error) {
     logger.error("❌ Failed to check connection status:", error);
@@ -1031,12 +1027,6 @@ export const getAllInvestmentConnectionsFromDB = async () => {
       return bTime - aTime;
     });
 
-    logger.debug("📊 All investment connections loaded:", {
-      snaptrade: snaptradeConnections?.length || 0,
-      plaid: plaidConnections.length,
-      total: allConnections.length,
-    });
-
     return allConnections;
   } catch (error) {
     logger.error("❌ Failed to get all investment connections from DB:", error);
@@ -1057,20 +1047,6 @@ export const getSnaptradeConnectionsFromDB = async () => {
       .order("last_synced_at", { ascending: false });
 
     if (error) throw error;
-    
-    // Debug logging to see connection status
-    if (data && data.length > 0) {
-      logger.debug("📊 Connections loaded:", {
-        count: data.length,
-        statuses: data.map((c: any) => ({
-          account_id: c.account_id?.substring(0, 8) + "...",
-          is_active: c.is_active,
-          connection_status: c.connection_status,
-          connection_id: c.connection_id ? "exists" : "missing",
-        })),
-      });
-    }
-    
     return data;
   } catch (error) {
     logger.error("❌ Failed to get SnapTrade connections from DB:", error);

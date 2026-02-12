@@ -1548,7 +1548,8 @@ export default async function handler(req, res) {
         "stream_id, stream_type, transaction_ids, description, average_amount, last_date, last_amount"
       )
       .eq("user_id", userId)
-      .eq("is_active", true);
+      .eq("is_active", true)
+      .eq("user_dismissed", false);
 
     if (streamsError) {
       console.error("Error fetching recurring streams:", streamsError);

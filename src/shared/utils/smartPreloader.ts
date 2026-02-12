@@ -26,10 +26,7 @@ export class SmartPreloader {
    */
   static async executeTask(taskId: string): Promise<any> {
     const task = this.tasks.get(taskId);
-    if (!task) {
-      logger.warn(`⚠️ [PRELOADER] Task not found: ${taskId}`);
-      return null;
-    }
+    if (!task) return null;
 
     if (this.runningTasks.has(taskId)) {
       logger.debug(`⏳ [PRELOADER] Task already running: ${taskId}`);
