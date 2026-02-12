@@ -1078,23 +1078,35 @@ function initializeCacheCleanup() {
 // Memory extraction helper functions removed - migrating to Supermemory for memory extraction
 // Conversation logging functionality with retry logic
 // Helper function to extract base packs summary for logging
+// Handles both camelCase (processSummaryData) and snake_case (raw/cached variants)
 function extractBasePacksSummary(packs) {
-  if (!packs || !packs.base) {
-    return null;
+  if (!packs || typeof packs !== "object") return null;
+
+  // Support both packs.base and packs.summary_min (legacy/alternate pack keys)
+  const base = packs.base || packs.summary_min;
+  const otherPacksAvailable = Object.keys(packs).filter(
+    (key) => key !== "base" && key !== "summary_min",
+  );
+
+  // When we have packs but no base (e.g. stock-only flow), still log what we had
+  if (!base || typeof base !== "object") {
+    return otherPacksAvailable.length > 0
+      ? { base: null, otherPacksAvailable }
+      : null;
   }
 
-  const base = packs.base;
   const summary = {
-    // Financial summary
-    netWorth: base.netWorth || null,
-    liquidAssets: base.liquidAssets || null,
-    investmentsTotal: base.investmentsTotal || null,
-    totalLiabilities: base.totalLiabilities || null,
+    // Financial summary (camelCase + snake_case fallbacks)
+    netWorth: base.netWorth ?? base.net_worth ?? null,
+    liquidAssets: base.liquidAssets ?? base.liquid_assets ?? null,
+    investmentsTotal: base.investmentsTotal ?? base.investments_total ?? null,
+    totalLiabilities:
+      base.totalLiabilities ?? base.total_liabilities ?? null,
 
     // Account counts and types
     accountsCount: Array.isArray(base.accounts) ? base.accounts.length : 0,
     accountTypes: Array.isArray(base.accounts)
-      ? [...new Set(base.accounts.map((acc) => acc.type).filter(Boolean))]
+      ? [...new Set(base.accounts.map((acc) => acc?.type).filter(Boolean))]
       : [],
 
     // Transaction data
@@ -1119,7 +1131,7 @@ function extractBasePacksSummary(packs) {
     hasBudget: !!base.budget,
 
     // Other packs available
-    otherPacksAvailable: Object.keys(packs).filter((key) => key !== "base"),
+    otherPacksAvailable,
   };
 
   return summary;
@@ -1154,6 +1166,7 @@ async function logConversation(conversationData) {
           conversationData.classification_result ||
           conversationData.classification_details ||
           null,
+        prompt_used: conversationData.prompt_used || null,
       };
 
       const insertResult = await withTimeout(
@@ -1175,7 +1188,8 @@ async function logConversation(conversationData) {
             msg.includes("request_id") ||
             msg.includes("chat_id") ||
             msg.includes("base_packs") ||
-            msg.includes("classification_details"));
+            msg.includes("classification_details") ||
+            msg.includes("prompt_used"));
         if (missingCols) {
           const {
             metrics,
@@ -1183,6 +1197,7 @@ async function logConversation(conversationData) {
             chat_id,
             base_packs,
             classification_details,
+            prompt_used,
             ...fallbackRow
           } = baseRow;
           const retry = await withTimeout(
@@ -2935,13 +2950,14 @@ async function handleAsk(
             _comprehensiveAnalysis: isComprehensiveAnalysis, // Internal flag for debugging
           };
 
-          // Log with enhanced data
+          // Log in background (non-blocking)
           setImmediate(() =>
             logConversation({
               user_message: redactPII(message),
               finny_response: redactPII(conversationalResponse),
               timestamp: new Date().toISOString(),
               user_id: context?.user_id || "unknown",
+              chat_id: context?.chat_id || null,
               intent: "ask_personalized",
               entities: [stockData.ticker, stockData.profile?.name].filter(
                 Boolean,
@@ -2987,7 +3003,9 @@ async function handleAsk(
                 tokens: null,
                 result: "success",
               },
-            }),
+            }).catch((err) =>
+              console.error("❌ [CONVERSATION_LOG] Background log failed:", err?.message),
+            ),
           );
 
           // Store conversation memory AFTER response is sent (non-blocking)
@@ -3038,13 +3056,14 @@ async function handleAsk(
             type: "assistant",
           };
 
-          // Log fallback usage
+          // Log in background (non-blocking)
           setImmediate(() =>
             logConversation({
               user_message: redactPII(message),
               finny_response: redactPII(fallbackResponse),
               timestamp: new Date().toISOString(),
               user_id: context?.user_id || "unknown",
+              chat_id: context?.chat_id || null,
               intent: "ask_personalized",
               entities: [],
               confidence: 0.7,
@@ -3074,7 +3093,9 @@ async function handleAsk(
                 investment_holdings: investmentHoldings ? "loaded" : "none",
               },
               fallback_used: true,
-            }),
+            }).catch((err) =>
+              console.error("❌ [CONVERSATION_LOG] Background log failed:", err?.message),
+            ),
           );
 
           // Store conversation memory AFTER response is sent (non-blocking)
@@ -3491,6 +3512,14 @@ async function handleAsk(
       type: "assistant",
     };
 
+    // Build prompt_used: FULL prompt sent to LLM (system with financial context, recent turns, user message)
+    // system = buildContextAwarePrompt output (6-layer architecture: identity, situation, strategy, etc.)
+    const promptUsed = JSON.stringify([
+      { role: "system", content: system },
+      ...recentTurns,
+      { role: "user", content: userMessage },
+    ]);
+
     // Log the conversation
     // Bug fix: Log cleanedMessage (actual response sent to user) instead of cleanText (raw LLM output)
     const conversationData = {
@@ -3498,6 +3527,7 @@ async function handleAsk(
       finny_response: redactPII(cleanedMessage),
       timestamp: new Date().toISOString(),
       user_id: context?.user_id || "unknown",
+      chat_id: context?.chat_id || null,
       intent: classificationResult?.intent || "ask_personalized",
       entities: [],
       confidence: classificationResult?.confidence || 1.0,
@@ -3513,6 +3543,7 @@ async function handleAsk(
       classification_details: classificationResult, // Alias for clarity
       validation_issues: validationIssues.length > 0 ? validationIssues : null,
       base_packs: extractBasePacksSummary(packs),
+      prompt_used: promptUsed,
       metrics: {
         intent: "ask_personalized",
         latency_ms: {
@@ -3529,8 +3560,12 @@ async function handleAsk(
       },
     };
 
-    // Log conversation asynchronously to avoid adding latency
-    setImmediate(() => logConversation(conversationData));
+    // Log conversation in background - MUST NOT block or affect latency
+    setImmediate(() => {
+      logConversation(conversationData).catch((err) =>
+        console.error("❌ [CONVERSATION_LOG] Background log failed:", err?.message),
+      );
+    });
 
     // Store conversation memory AFTER response is sent (non-blocking)
     // Use cleanedMessage (actual response text) instead of cleanText (raw LLM output)
@@ -3815,7 +3850,7 @@ function selectDataPacksFromClassification(classificationResult, message) {
     cashflow_monthly: "cashflow_monthly",
   };
 
-  // Add required packs
+  // Add required packs (ensure summary_min for context + base_packs logging)
   if (Array.isArray(dr.required_packs)) {
     dr.required_packs.forEach((pack) => {
       const need = packMapping[pack] || pack;
@@ -3823,6 +3858,9 @@ function selectDataPacksFromClassification(classificationResult, message) {
         needs.push(need);
       }
     });
+  }
+  if (!needs.includes("summary_min")) {
+    needs.unshift("summary_min"); // Always include base for context + conversation_logs.base_packs
   }
 
   // Add optional packs (only if not already included)
@@ -6221,6 +6259,7 @@ async function handleClassify(message, context) {
       finny_response: `Classification: ${out.intent} (confidence: ${out.confidence})`,
       timestamp: new Date().toISOString(),
       user_id: context?.user_id || "unknown",
+      chat_id: context?.chat_id || null,
       intent: "classify",
       entities: out.entities,
       confidence: out.confidence,
@@ -6241,8 +6280,12 @@ async function handleClassify(message, context) {
     // Cache the result for future use
     setCachedClassification(text, out);
 
-    // Log conversation asynchronously to reduce latency
-    setImmediate(() => logConversation(conversationData));
+    // Log in background (non-blocking)
+    setImmediate(() =>
+      logConversation(conversationData).catch((err) =>
+        console.error("❌ [CONVERSATION_LOG] Background log failed:", err?.message),
+      ),
+    );
 
     // Final safety check before returning
     if (out.hasOwnProperty("heuristic") && out.heuristic) {
@@ -6488,6 +6531,12 @@ async function handleOffTopic(
 
     const userMessage = userContextParts.join("\n\n");
 
+    // Build prompt_used for logging (full messages sent to LLM)
+    const promptUsed = JSON.stringify([
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userMessage },
+    ]);
+
     async function callMainLLM(model, options = {}) {
       const resp = await fetch(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -6583,13 +6632,14 @@ async function handleOffTopic(
       }
     }
 
-    // Log the interaction
+    // Log in background (non-blocking)
     setImmediate(() =>
       logConversation({
         user_message: redactPII(messageText),
         finny_response: redactPII(content),
         timestamp: new Date().toISOString(),
         user_id: userId || "unknown",
+        chat_id: context?.chat_id || null,
         intent: "off_topic",
         entities: [],
         confidence: 1.0,
@@ -6602,7 +6652,10 @@ async function handleOffTopic(
           confidence: 1.0,
           emotional_state: isVenting ? "venting" : "neutral",
         },
-      }),
+        prompt_used: promptUsed,
+      }).catch((err) =>
+        console.error("❌ [CONVERSATION_LOG] Background log failed:", err?.message),
+      ),
     );
 
     return {
