@@ -230,10 +230,11 @@ export const handlePlaidConnect = async (
         }
 
         // 🤖 Fire-and-forget: run Finny recurring analysis (new account connect)
-        authenticatedFetch(`${BASE_URL}/api/analyze-recurring`, {
+        authenticatedFetch(`${BASE_URL}/api/exchange_public_token`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            mode: "analyze_recurring",
             user_id: user.id,
             item_id,
             trigger_source: "new_account",

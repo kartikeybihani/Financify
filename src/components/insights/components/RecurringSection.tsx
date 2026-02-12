@@ -22,7 +22,10 @@ import {
 } from "@/src/types/plaid";
 import IconButton from "@/src/components/shared/IconButton";
 import { supabase } from "@/src/lib/supabase/supabase";
-import { bulkUpdateRecurringStatus, dismissRecurringStream } from "@/src/utils/recurring/recurringBulkUpdate";
+import {
+  bulkUpdateRecurringStatus,
+  dismissRecurringStream,
+} from "@/src/utils/recurring/recurringBulkUpdate";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 
@@ -32,6 +35,7 @@ interface Props {
     income: RecurringStream[];
     bills: RecurringStream[];
     other: RecurringStream[];
+    inactive?: RecurringStream[];
   } | null;
   isLoading: boolean;
   titleStyle: any;
@@ -66,6 +70,7 @@ export default function RecurringSection({
   const [removingRecurring, setRemovingRecurring] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
+  const [pastRecurringExpanded, setPastRecurringExpanded] = useState(false);
 
   const isIOS = Platform.OS === "ios";
   const iosVersion = isIOS
@@ -297,11 +302,18 @@ export default function RecurringSection({
     if (!userId || !onRunAnalysis || analyzing) return;
     try {
       setAnalyzing(true);
-      const res = await authenticatedFetch(`${API_BASE_URL}/api/analyze-recurring`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ user_id: userId, trigger_source: "manual" }),
-      });
+      const res = await authenticatedFetch(
+        `${API_BASE_URL}/api/exchange_public_token`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            mode: "analyze_recurring",
+            user_id: userId,
+            trigger_source: "manual",
+          }),
+        },
+      );
       const data = await res.json();
       if (!res.ok) {
         Alert.alert("Analysis failed", data.error || "Please try again.");
@@ -368,19 +380,15 @@ export default function RecurringSection({
                   result.updated > 0
                     ? `Removed recurring status from ${result.updated} transaction${result.updated > 1 ? "s" : ""}.`
                     : "Removed from recurring. Future transactions will not be marked as recurring.";
-                Alert.alert(
-                  "Success",
-                  message,
-                  [
-                    {
-                      text: "OK",
-                      onPress: () => {
-                        // Go back to grid after successful removal
-                        handleBackToGrid();
-                      },
+                Alert.alert("Success", message, [
+                  {
+                    text: "OK",
+                    onPress: () => {
+                      // Go back to grid after successful removal
+                      handleBackToGrid();
                     },
-                  ],
-                );
+                  },
+                ]);
               } else {
                 Alert.alert(
                   "Error",
@@ -692,7 +700,7 @@ export default function RecurringSection({
     })) as RecurringStream[];
 
     return (
-      <View>
+      <View style={{ marginBottom: 50 }}>
         <View style={styles.sectionHeader}>
           <Text style={titleStyle}>Recurring Transactions</Text>
         </View>
@@ -743,7 +751,7 @@ export default function RecurringSection({
   };
 
   return (
-    <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
+    <View style={{ paddingHorizontal: 20, marginTop: 16, marginBottom: 50 }}>
       <View style={styles.sectionHeader}>
         <Text style={titleStyle}>Recurring Transactions</Text>
         {onRunAnalysis && userId && (
@@ -757,7 +765,7 @@ export default function RecurringSection({
             ) : (
               <>
                 <Ionicons name="sparkles" size={14} color="#4A90E2" />
-                <Text style={styles.analyzeButtonText}>Quick analysis</Text>
+                <Text style={styles.analyzeButtonText}>Quick search</Text>
               </>
             )}
           </TouchableOpacity>
@@ -795,32 +803,47 @@ export default function RecurringSection({
             </View>
             {inactiveStreams.length > 0 && (
               <View style={styles.pastSection}>
-                <Text style={styles.pastSectionTitle}>Past recurring</Text>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    flexWrap: "wrap",
-                    justifyContent: "space-between",
-                  }}
+                <TouchableOpacity
+                  style={styles.pastSectionHeader}
+                  onPress={() => setPastRecurringExpanded((prev) => !prev)}
+                  activeOpacity={0.7}
                 >
-                  {inactiveStreams.map((stream) => (
-                    <View
-                      key={stream.stream_id}
-                      style={{ width: cardWidth, marginBottom: 18 }}
-                    >
-                      {renderCard({ item: stream })}
-                    </View>
-                  ))}
-                  {inactiveStreams.length % 2 !== 0 && (
-                    <View
-                      style={[
-                        styles.transactionBox,
-                        { width: cardWidth, opacity: 0 },
-                      ]}
-                      pointerEvents="none"
-                    />
-                  )}
-                </View>
+                  <Text style={styles.pastSectionTitle}>
+                    Past recurring ({inactiveStreams.length})
+                  </Text>
+                  <Ionicons
+                    name={pastRecurringExpanded ? "chevron-up" : "chevron-down"}
+                    size={18}
+                    color="#888"
+                  />
+                </TouchableOpacity>
+                {pastRecurringExpanded && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      flexWrap: "wrap",
+                      justifyContent: "space-between",
+                    }}
+                  >
+                    {inactiveStreams.map((stream) => (
+                      <View
+                        key={stream.stream_id}
+                        style={{ width: cardWidth, marginBottom: 18 }}
+                      >
+                        {renderCard({ item: stream })}
+                      </View>
+                    ))}
+                    {inactiveStreams.length % 2 !== 0 && (
+                      <View
+                        style={[
+                          styles.transactionBox,
+                          { width: cardWidth, opacity: 0 },
+                        ]}
+                        pointerEvents="none"
+                      />
+                    )}
+                  </View>
+                )}
               </View>
             )}
           </>
@@ -955,6 +978,7 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "transparent",
     paddingHorizontal: 20,
+    marginBottom: 50,
   },
   historyHeader: {
     flexDirection: "row",
@@ -1178,11 +1202,16 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: "rgba(255, 255, 255, 0.08)",
   },
+  pastSectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
   pastSectionTitle: {
     fontSize: 14,
     fontWeight: "600",
     color: "#888",
-    marginBottom: 12,
     textTransform: "uppercase",
     letterSpacing: 0.5,
   },

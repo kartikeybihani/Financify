@@ -1,4 +1,5 @@
 // /api/exchange_public_token.js
+// Handles: (1) Plaid token exchange, (2) mode=analyze_recurring for Finny recurring analysis
 import { client } from "../lib/api/plaidClient.js";
 import {
   supabase,
@@ -10,6 +11,7 @@ import {
   checkRateLimit,
   formatRetryAfterSeconds,
 } from "../lib/api/rateLimiter.js";
+import { runRecurringAnalysis } from "../lib/recurringAnalysis.js";
 
 /**
  * Check if accounts match based on name and mask
@@ -133,11 +135,63 @@ async function checkForDuplicateItem(user_id, metadata) {
   return { isDuplicate: false };
 }
 
+/** Handle Finny recurring analysis (mode=analyze_recurring) */
+async function handleAnalyzeRecurring(req, res) {
+  const { user_id, item_id, trigger_source } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ error: "Missing user_id" });
+  }
+
+  const { authorized, error: authError } = await verifyUserAuthorization(
+    req,
+    user_id
+  );
+  if (!authorized) {
+    return res
+      .status(authError?.includes("Unauthorized") ? 401 : 403)
+      .json({ error: authError || "Access denied" });
+  }
+
+  try {
+    const result = await runRecurringAnalysis(
+      supabase,
+      user_id,
+      item_id || null,
+      trigger_source || "manual"
+    );
+
+    if (result.reason === "no_transactions") {
+      return res.status(200).json({
+        success: true,
+        reason: "no_transactions",
+        message: "No transactions to analyze",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      analysis_id: result.analysisId,
+      upserted: result.upserted,
+      summary: result.analysisJson?.summary,
+    });
+  } catch (err) {
+    console.error("analyze-recurring error:", err);
+    return res.status(500).json({
+      error: err.message || "Analysis failed",
+    });
+  }
+}
+
 export default async function handler(req, res) {
   if (req.method !== "POST")
     return res.status(405).json({ error: "Method not allowed" });
 
-  const { public_token, user_id, metadata } = req.body;
+  const { mode, public_token, user_id, metadata } = req.body;
+
+  if (mode === "analyze_recurring") {
+    return handleAnalyzeRecurring(req, res);
+  }
+
   if (!public_token || !user_id) {
     return res.status(400).json({ error: "Missing public_token or user_id" });
   }
