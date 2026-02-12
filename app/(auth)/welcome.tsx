@@ -23,6 +23,7 @@ const { width } = Dimensions.get("window");
 
 export default function WelcomeScreen() {
   const router = useRouter();
+  //comment
 
   const imageSlideAnim = useRef(new Animated.Value(40)).current;
   const titleSlideAnim = useRef(new Animated.Value(30)).current;
