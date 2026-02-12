@@ -486,6 +486,7 @@ async function syncItemTransactions(item_id, user_id) {
     }
 
     let cursor = item.transactions_cursor || null;
+    const hadNoCursorBeforeSync = !item.transactions_cursor;
     let added = [],
       modified = [],
       removed = [];
@@ -1058,6 +1059,29 @@ async function syncItemTransactions(item_id, user_id) {
 
       if (deleteErr) {
         throw new Error(`Transaction delete failed: ${deleteErr.message}`);
+      }
+    }
+
+    // On initial sync (new account): auto-mark historical transactions as reviewed
+    if (hadNoCursorBeforeSync && added.length > 0) {
+      try {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = `${yesterday.getFullYear()}-${String(yesterday.getMonth() + 1).padStart(2, "0")}-${String(yesterday.getDate()).padStart(2, "0")}`;
+
+        const { error: markError } = await supabase
+          .from("transactions")
+          .update({ is_reviewed: true })
+          .eq("user_id", user_id)
+          .lt("date", yesterdayStr);
+
+        if (markError) {
+          console.error("[scheduled-sync] Failed to auto-mark historical transactions:", markError);
+        } else {
+          console.log("[scheduled-sync] Auto-marked historical transactions (date < yesterday) as reviewed");
+        }
+      } catch (markErr) {
+        console.error("[scheduled-sync] Error auto-marking historical transactions (non-blocking):", markErr);
       }
     }
 

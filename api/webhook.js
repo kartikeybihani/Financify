@@ -235,28 +235,24 @@ export default async function handler(req, res) {
 
       if (shouldSync) {
         try {
-          // Look up user_id from item_id
-          const { data: userItem, error } = await supabase
-            .from("user_items")
-            .select("user_id")
-            .eq("item_id", item_id)
-            .single();
+          // Trigger scheduled-sync API (same as pg_cron; syncs all Plaid items)
+          const baseUrl =
+            process.env.VERCEL_URL
+              ? `https://${process.env.VERCEL_URL}`
+              : process.env.APP_BASE_URL ||
+                process.env.NEXT_PUBLIC_SUPABASE_URL?.replace("/rest/v1", "") ||
+                "http://localhost:3000";
+          const cronSecret =
+            process.env.SCHEDULED_SYNC_CRON_SECRET ||
+            process.env.BIGGEST_MOVER_CRON_SECRET;
 
-          if (error || !userItem) {
-            console.error("Could not find user for item_id:", item_id, error);
-            return res.status(200).json({ ok: true, error: "user_not_found" });
-          }
-
-          // Call Supabase sync-transactions function
-          fetch(`${supabaseUrl}/functions/v1/sync-transactions`, {
-            method: "POST",
+          fetch(`${baseUrl}/api/scheduled-sync?mode=plaid_transactions`, {
+            method: "GET",
             headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${supabaseServiceKey}`,
+              "x-cron-secret": cronSecret || "",
             },
-            body: JSON.stringify({ item_id, user_id: userItem.user_id }),
           }).catch((e) =>
-            console.error("sync-transactions function call failed", e)
+            console.error("webhook scheduled-sync trigger failed", e)
           );
         } catch (e) {
           console.error("webhook sync error", e);

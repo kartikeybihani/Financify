@@ -26,6 +26,7 @@ import {
   buildBudgetGenerationPrompt,
   buildCategoryMappingPrompt,
 } from "../lib/prompt_engine.js";
+import { runRecurringAnalysis } from "../lib/recurringAnalysis.js";
 import crypto from "crypto";
 
 // Budget creation helper functions
@@ -1411,6 +1412,7 @@ export default async function handler(req, res) {
     }
 
     let cursor = itemData.transactions_cursor || null;
+    const hadNoCursorBeforeSync = !itemData.transactions_cursor;
     let added = [],
       modified = [],
       removed = [];
@@ -2221,6 +2223,40 @@ export default async function handler(req, res) {
       }
     }
 
+    // 6.5) On initial sync (new account): auto-mark historical transactions as reviewed
+    // Prevents overwhelming users with hundreds of old transactions to review.
+    // Only transactions from yesterday onward remain unreviewed.
+    if (hadNoCursorBeforeSync && added.length > 0) {
+      try {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const yesterdayStr = formatLocalDate(yesterday);
+
+        const { error: markError } = await supabase
+          .from("transactions")
+          .update({ is_reviewed: true })
+          .eq("user_id", userId)
+          .lt("date", yesterdayStr);
+
+        if (markError) {
+          console.error(
+            "[TRANSACTIONS_SYNC] Failed to auto-mark historical transactions:",
+            markError
+          );
+        } else {
+          console.log(
+            "[TRANSACTIONS_SYNC] Auto-marked historical transactions (date < yesterday) as reviewed",
+            { userId: userId.substring(0, 8), cutoffDate: yesterdayStr }
+          );
+        }
+      } catch (markErr) {
+        console.error(
+          "[TRANSACTIONS_SYNC] Error auto-marking historical transactions (non-blocking):",
+          markErr
+        );
+      }
+    }
+
     // 6) Delete removed transactions
     if (removed.length) {
       await supabase
@@ -2242,6 +2278,34 @@ export default async function handler(req, res) {
       .eq("item_id", item_id);
 
     console.log("[TRANSACTIONS_SYNC] cursor updated");
+
+    // 7.4) Run Finny recurring analysis AFTER transactions are synced (new account connect)
+    // Must run after transaction upsert so analysis has data to work with
+    if (added.length > 0) {
+      try {
+        console.log("[TRANSACTIONS_SYNC] recurring analysis: start", {
+          userId,
+          item_id,
+          added: added.length,
+        });
+        const result = await runRecurringAnalysis(
+          supabase,
+          userId,
+          item_id,
+          "new_account"
+        );
+        if (result.reason === "no_transactions") {
+          console.log("[TRANSACTIONS_SYNC] recurring analysis: no transactions (skipped)");
+        } else {
+          console.log("[TRANSACTIONS_SYNC] recurring analysis: done", {
+            analysisId: result.analysisId,
+            upserted: result.upserted,
+          });
+        }
+      } catch (recurringErr) {
+        console.error("[TRANSACTIONS_SYNC] recurring analysis error (non-blocking):", recurringErr);
+      }
+    }
 
     // 7.5) Generate onboarding early_insights (best-effort, does not block sync)
     // Runs after transactions have been written, so it can read from DB.

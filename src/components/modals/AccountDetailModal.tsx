@@ -598,7 +598,9 @@ export default function AccountDetailModal({
         onClose={() => setShowActionAlert(false)}
         onDelete={
           account?.type === "investment"
-            ? handleRemoveInvestmentAccount
+            ? account?.item_id?.startsWith?.("snaptrade-")
+              ? handleRemoveInvestmentAccount
+              : handleDeleteAccount
             : handleDeleteAccount
         }
         accountName={

@@ -89,6 +89,8 @@ if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
 }
 
+const RECURRING_BANNER_DISMISSED_KEY = "recurring_cta_banner_dismissed";
+
 // OPTIMIZED: Run cache checks once outside component to avoid re-running on every render
 // Check for unified cache synchronously before first render
 const checkUnifiedCacheSync = (): boolean => {
@@ -297,6 +299,12 @@ export default function HomeScreen() {
     useState<{ name: string; id: string } | null>(null);
   const [connectionSource, setConnectionSource] = useState<
     "plaid" | "snaptrade" | null
+  >(null);
+
+  const [showRecurringBanner, setShowRecurringBanner] = useState(false);
+  const [recurringBannerCount, setRecurringBannerCount] = useState(0);
+  const [recurringBannerUserId, setRecurringBannerUserId] = useState<
+    string | null
   >(null);
 
   const [userData, setUserData] = useState<any>(null);
@@ -1015,6 +1023,91 @@ export default function HomeScreen() {
             />
           }
         >
+          {/* Recurring CTA Banner (after account connection) */}
+          {showRecurringBanner && recurringBannerCount > 0 && !isDemoMode && (
+            <View
+              style={{
+                marginHorizontal: 20,
+                marginBottom: 16,
+                backgroundColor: "rgba(74, 144, 226, 0.15)",
+                borderRadius: 16,
+                borderWidth: 1,
+                borderColor: "rgba(74, 144, 226, 0.3)",
+                paddingVertical: 16,
+                paddingHorizontal: 16,
+                paddingRight: 48,
+                position: "relative",
+              }}
+            >
+              <TouchableOpacity
+                style={{
+                  position: "absolute",
+                  top: 12,
+                  right: 12,
+                  padding: 4,
+                  zIndex: 1,
+                }}
+                onPress={() => {
+                  setShowRecurringBanner(false);
+                  if (recurringBannerUserId) {
+                    AppStorage.setItemSync(
+                      `${RECURRING_BANNER_DISMISSED_KEY}_${recurringBannerUserId}`,
+                      "1"
+                    );
+                    setRecurringBannerUserId(null);
+                  }
+                }}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+              >
+                <Ionicons
+                  name="close"
+                  size={20}
+                  color="rgba(255,255,255,0.7)"
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                onPress={() => {
+                  router.push("/(tabs)/insights");
+                  setTimeout(() => {
+                    DeviceEventEmitter.emit("navigateToInsightsSection", {
+                      section: "recurring",
+                    });
+                  }, 200);
+                }}
+                style={{ flexDirection: "row", alignItems: "center" }}
+              >
+                <Text
+                  style={{
+                    fontSize: 15,
+                    color: "#fff",
+                    fontWeight: "500",
+                    flex: 1,
+                  }}
+                >
+                  Finny found {recurringBannerCount} recurring transaction
+                  {recurringBannerCount !== 1 ? "s" : ""}
+                </Text>
+                <View
+                  style={{
+                    width: 32,
+                    height: 32,
+                    borderRadius: 16,
+                    backgroundColor: "rgba(74, 144, 226, 0.4)",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Ionicons
+                    name="arrow-forward"
+                    size={18}
+                    color="#4A90E2"
+                  />
+                </View>
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* Finny Message */}
           <FinnyMessage
             goals={goals}
@@ -1427,49 +1520,17 @@ export default function HomeScreen() {
           <CashDepositInstitutionModal
             visible={showCashModal}
             onClose={() => setShowCashModal(false)}
-            onInstitutionSelect={async (institutionId) => {
+            onInstitutionSelect={(institutionId) => {
               logger.info("Cash deposit institution selected:", institutionId);
-              try {
-                if (institutionId === "other") {
-                  // Handle other institutions for cash deposits
-                  await addNewBankAccount(
-                    async (itemId) => {
-                      logger.info(
-                        "Successfully added new cash account:",
-                        itemId
-                      );
-                      await fetchFreshData();
-                      // Emit event to refresh FinancialBottomSheet and InvestmentsScreen
-                      DeviceEventEmitter.emit("financialDataRefreshed", {
-                        accountConnected: true,
-                      });
-                    },
-                    (error) => {
-                      logger.error("Failed to add new cash account:", error);
-                    }
-                  );
-                } else {
-                  // Use standard bank account addition flow
-                  await addNewBankAccount(
-                    async (itemId) => {
-                      logger.info(
-                        "Successfully added new cash account:",
-                        itemId
-                      );
-                      await fetchFreshData();
-                      // Emit event to refresh FinancialBottomSheet and InvestmentsScreen
-                      DeviceEventEmitter.emit("financialDataRefreshed", {
-                        accountConnected: true,
-                      });
-                    },
-                    (error) => {
-                      logger.error("Failed to add new cash account:", error);
-                    }
-                  );
-                }
-              } catch (error) {
-                logger.error("Error adding cash account:", error);
-              }
+            }}
+            onConnectionSuccess={(institutionName, institutionId) => {
+              setShowCashModal(false);
+              setConnectionSource("plaid");
+              setConnectionSuccessInstitution({
+                name: institutionName,
+                id: institutionId,
+              });
+              setTimeout(() => setShowConnectionSuccessModal(true), 300);
             }}
           />
 
@@ -1477,31 +1538,17 @@ export default function HomeScreen() {
           <CreditCardInstitutionModal
             visible={showCreditModal}
             onClose={() => setShowCreditModal(false)}
-            onInstitutionSelect={async (institutionId) => {
+            onInstitutionSelect={(institutionId) => {
               logger.info("Credit card institution selected:", institutionId);
-              try {
-                await addNewBankAccount(
-                  async (itemId) => {
-                    logger.info(
-                      "Successfully added new credit card account:",
-                      itemId
-                    );
-                    await fetchFreshData();
-                    // Emit event to refresh FinancialBottomSheet and InvestmentsScreen
-                    DeviceEventEmitter.emit("financialDataRefreshed", {
-                      accountConnected: true,
-                    });
-                  },
-                  (error) => {
-                    logger.error(
-                      "Failed to add new credit card account:",
-                      error
-                    );
-                  }
-                );
-              } catch (error) {
-                logger.error("Error adding credit card account:", error);
-              }
+            }}
+            onConnectionSuccess={(institutionName, institutionId) => {
+              setShowCreditModal(false);
+              setConnectionSource("plaid");
+              setConnectionSuccessInstitution({
+                name: institutionName,
+                id: institutionId,
+              });
+              setTimeout(() => setShowConnectionSuccessModal(true), 300);
             }}
           />
 
@@ -1536,7 +1583,6 @@ export default function HomeScreen() {
                 accountConnected: true,
               });
             }}
-            connectionSource={connectionSource ?? undefined}
             performRefresh={async () => {
               const user = (await getAuthenticatedUser())?.user;
               if (!user?.id) return { recurringCount: 0 };
@@ -1558,7 +1604,18 @@ export default function HomeScreen() {
                   accountConnected: true,
                 });
                 await new Promise((r) => setTimeout(r, 2200));
-                return { recurringCount: result?.recurringCount ?? 0 };
+                const count = result?.recurringCount ?? 0;
+                if (
+                  count > 0 &&
+                  AppStorage.getItemSync(
+                    `${RECURRING_BANNER_DISMISSED_KEY}_${user.id}`
+                  ) !== "1"
+                ) {
+                  setShowRecurringBanner(true);
+                  setRecurringBannerCount(count);
+                  setRecurringBannerUserId(user.id);
+                }
+                return { recurringCount: count };
               }
 
               DeviceEventEmitter.emit("financialDataRefreshed", {

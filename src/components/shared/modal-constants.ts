@@ -190,6 +190,17 @@ export const getPlaidInstitutionId = (institutionId: string): string | null => {
   return PLAID_INSTITUTION_ID_MAP[institutionId] || null;
 };
 
+// Reverse map: Plaid ins_* ID -> internal ID (for logo lookup in INSTITUTION_LOGO_MAP)
+const PLAID_TO_INTERNAL_ID_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(PLAID_INSTITUTION_ID_MAP).map(([internal, plaid]) => [plaid, internal])
+);
+
+/** Resolve to internal ID for logo lookup. Handles both Plaid (ins_*) and internal IDs. */
+export const getLogoInstitutionId = (institutionId: string): string => {
+  if (!institutionId) return institutionId;
+  return PLAID_TO_INTERNAL_ID_MAP[institutionId] ?? institutionId;
+};
+
 // Helper function to validate institution ID format
 export const isValidInstitutionId = (institutionId: string): boolean => {
   return institutionId.startsWith('ins_') && institutionId.length > 4;

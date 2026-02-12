@@ -67,14 +67,24 @@ export const ModalLogoContainer: React.FC<ModalLogoContainerProps> = ({
 interface ModalHeaderProps {
   title: string;
   onClose: () => void;
+  closeDisabled?: boolean;
 }
 
-export const ModalHeader: React.FC<ModalHeaderProps> = ({ title, onClose }) => (
+export const ModalHeader: React.FC<ModalHeaderProps> = ({
+  title,
+  onClose,
+  closeDisabled = false,
+}) => (
   <View style={styles.header}>
     <View style={styles.titleContainer}>
       <Text style={TEXT_STYLES.title}>{title}</Text>
     </View>
-    <IconButton onPress={onClose} icon="close" size={18} />
+    <IconButton
+      onPress={onClose}
+      icon="close"
+      size={18}
+      disabled={closeDisabled}
+    />
   </View>
 );
 

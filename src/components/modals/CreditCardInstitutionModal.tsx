@@ -26,12 +26,15 @@ interface CreditCardInstitutionModalProps {
   visible: boolean;
   onClose: () => void;
   onInstitutionSelect: (institutionId: string) => void;
+  /** Called when a Plaid account is successfully connected; use to show ConnectionSuccessModal. */
+  onConnectionSuccess?: (institutionName: string, institutionId: string) => void;
 }
 
 export default function CreditCardInstitutionModal({
   visible,
   onClose,
   onInstitutionSelect,
+  onConnectionSuccess,
 }: CreditCardInstitutionModalProps) {
   const [isConnecting, setIsConnecting] = useState(false);
   const [connectingInstitution, setConnectingInstitution] = useState<
@@ -47,12 +50,21 @@ export default function CreditCardInstitutionModal({
       const linkToken = await fetchLinkToken();
       await handlePlaidConnect(
         linkToken,
-        async (itemId: string) => {
+        async (
+          itemId: string,
+          institution?: { name: string; id: string }
+        ) => {
           logger.info("✅ Plaid connection successful:", { itemId });
           setIsConnecting(false);
           setConnectingInstitution(null);
           onInstitutionSelect("other");
           onClose();
+          if (onConnectionSuccess) {
+            onConnectionSuccess(
+              institution?.name ?? "Bank",
+              institution?.id ?? "other"
+            );
+          }
         },
         (error?: any) => {
           logger.error("❌ Plaid connection failed:", error);
@@ -109,11 +121,8 @@ export default function CreditCardInstitutionModal({
   };
 
   const handleClose = () => {
+    if (isConnecting) return;
     onClose();
-    // Reopen the financial sheet after a short delay
-    setTimeout(() => {
-      // No need for reopenFinancialSheet in credit cards
-    }, 300);
   };
 
   const renderInstitutionCard = (institution: Institution) => {
@@ -156,13 +165,16 @@ export default function CreditCardInstitutionModal({
       statusBarTranslucent
       presentationStyle="overFullScreen"
     >
-      <ModalBlurOverlay onPressOutside={handleClose}>
+      <ModalBlurOverlay
+        onPressOutside={isConnecting ? undefined : handleClose}
+      >
         <View style={styles.modalContainer}>
           <View style={styles.sheet}>
             <ModalHandle />
             <ModalHeader
               title="Select your institution"
               onClose={handleClose}
+              closeDisabled={isConnecting}
             />
             <View style={styles.content}>
               <View style={styles.institutionsGrid}>

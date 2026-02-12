@@ -12,16 +12,17 @@ import {
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
-import { DeviceEventEmitter } from "react-native";
-import { INSTITUTION_LOGO_MAP } from "../shared/modal-constants";
+import {
+  INSTITUTION_LOGO_MAP,
+  getLogoInstitutionId,
+} from "../shared/modal-constants";
 import { Ionicons } from "@expo/vector-icons";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const DOT_COUNT = 10;
 const DOT_SIZE = 5;
 const LOGO_SIZE = 72;
-const INSTITUTION_LOGO_SIZE = Math.round(LOGO_SIZE * 1.3);
+const INSTITUTION_LOGO_SIZE = LOGO_SIZE; // Same size as Finny icon
 const WAVE_DURATION = 1400;
 
 const LOADING_SUBTITLES = [
@@ -37,8 +38,6 @@ interface ConnectionSuccessModalProps {
   institutionId?: string;
   onComplete: () => void;
   performRefresh: () => Promise<void | { recurringCount?: number }>;
-  /** When "plaid", show recurring CTA. When "snaptrade", no recurring CTA. */
-  connectionSource?: "plaid" | "snaptrade";
 }
 
 export default function ConnectionSuccessModal({
@@ -47,10 +46,8 @@ export default function ConnectionSuccessModal({
   institutionId,
   onComplete,
   performRefresh,
-  connectionSource,
 }: ConnectionSuccessModalProps) {
   const insets = useSafeAreaInsets();
-  const router = useRouter();
   const slideAnim = useRef(new Animated.Value(280)).current;
   const checkmarkScale = useRef(new Animated.Value(0)).current;
   const checkmarkOpacity = useRef(new Animated.Value(0)).current;
@@ -58,7 +55,6 @@ export default function ConnectionSuccessModal({
   const [isComplete, setIsComplete] = useState(false);
   const [isAnimatingOut, setIsAnimatingOut] = useState(false);
   const [subtitleIndex, setSubtitleIndex] = useState(0);
-  const [recurringCount, setRecurringCount] = useState<number | null>(null);
 
   // Cycle subtitle while loading
   useEffect(() => {
@@ -86,7 +82,7 @@ export default function ConnectionSuccessModal({
           duration: 1,
           useNativeDriver: true,
         }),
-      ])
+      ]),
     );
     loop.start();
     return () => loop.stop();
@@ -98,7 +94,6 @@ export default function ConnectionSuccessModal({
     if (visible) {
       setIsAnimatingOut(false);
       setIsComplete(false);
-      setRecurringCount(null);
       slideAnim.setValue(280);
       checkmarkScale.setValue(0);
       checkmarkOpacity.setValue(0);
@@ -116,9 +111,6 @@ export default function ConnectionSuccessModal({
         performRefresh()
           .then((result) => {
             if (cancelled) return;
-            if (result && typeof result === "object" && "recurringCount" in result) {
-              setRecurringCount(result.recurringCount ?? 0);
-            }
             setIsComplete(true);
             Animated.parallel([
               Animated.spring(checkmarkScale, {
@@ -165,8 +157,11 @@ export default function ConnectionSuccessModal({
     }
   }, [visible]);
 
-  const institutionLogo = institutionId
-    ? (INSTITUTION_LOGO_MAP as Record<string, number>)[institutionId]
+  const logoLookupId = institutionId
+    ? getLogoInstitutionId(institutionId)
+    : null;
+  const institutionLogo = logoLookupId
+    ? (INSTITUTION_LOGO_MAP as Record<string, number>)[logoLookupId]
     : null;
 
   const handleContinue = () => {
@@ -178,24 +173,6 @@ export default function ConnectionSuccessModal({
     }).start(() => {
       onComplete();
       setIsAnimatingOut(false);
-    });
-  };
-
-  const handleCheckRecurring = () => {
-    setIsAnimatingOut(true);
-    Animated.timing(slideAnim, {
-      toValue: 280,
-      duration: 220,
-      useNativeDriver: true,
-    }).start(() => {
-      onComplete();
-      setIsAnimatingOut(false);
-      router.push("/(tabs)/insights");
-      setTimeout(() => {
-        DeviceEventEmitter.emit("navigateToInsightsSection", {
-          section: "recurring",
-        });
-      }, 200);
     });
   };
 
@@ -274,16 +251,15 @@ export default function ConnectionSuccessModal({
                     </View>
                   </View>
 
-                  <View style={[styles.logoWrap, styles.institutionLogoWrap]}>
+                  <View style={[styles.logoWrap, styles.institutionLogoBox]}>
                     {institutionLogo ? (
-                      <Image
-                        source={institutionLogo}
-                        style={[
-                          styles.institutionLogo,
-                          styles.institutionLogoRounded,
-                        ]}
-                        resizeMode="contain"
-                      />
+                      <View style={styles.institutionLogoInner}>
+                        <Image
+                          source={institutionLogo}
+                          style={styles.institutionLogo}
+                          resizeMode="contain"
+                        />
+                      </View>
                     ) : (
                       <View style={styles.institutionLogoPlaceholder}>
                         <Text
@@ -321,37 +297,6 @@ export default function ConnectionSuccessModal({
                 <Text style={styles.connectedText}>
                   {institutionName} connected
                 </Text>
-                {connectionSource === "plaid" && (
-                  <View style={styles.recurringCta}>
-                    {recurringCount !== null && recurringCount > 0 ? (
-                      <>
-                        <Text style={styles.recurringCtaText}>
-                          Finny found {recurringCount} recurring transaction
-                          {recurringCount !== 1 ? "s" : ""}. Check them out!
-                        </Text>
-                        <TouchableOpacity
-                          style={styles.checkRecurringButton}
-                          onPress={handleCheckRecurring}
-                          activeOpacity={0.8}
-                        >
-                          <Text style={styles.checkRecurringButtonText}>
-                            View recurring
-                          </Text>
-                          <Ionicons
-                            name="arrow-forward"
-                            size={16}
-                            color="#4A90E2"
-                          />
-                        </TouchableOpacity>
-                      </>
-                    ) : (
-                      <Text style={styles.recurringAnalyzingText}>
-                        Finny is analyzing your transactions. Check back in
-                        Insights when ready.
-                      </Text>
-                    )}
-                  </View>
-                )}
                 <View style={styles.footer}>
                   <TouchableOpacity
                     style={styles.continueButton}
@@ -425,23 +370,29 @@ const styles = StyleSheet.create({
   logoRounded: {
     borderRadius: LOGO_SIZE / 2,
   },
-  institutionLogoWrap: {
-    width: INSTITUTION_LOGO_SIZE,
-    height: INSTITUTION_LOGO_SIZE,
-    borderRadius: INSTITUTION_LOGO_SIZE / 2,
+  institutionLogoBox: {
+    width: LOGO_SIZE,
+    height: LOGO_SIZE,
+    borderRadius: 50,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  institutionLogoInner: {
+    width: "100%",
+    height: "100%",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 8,
   },
   institutionLogo: {
-    width: INSTITUTION_LOGO_SIZE,
-    height: INSTITUTION_LOGO_SIZE,
-  },
-  institutionLogoRounded: {
-    borderRadius: INSTITUTION_LOGO_SIZE / 2,
+    width: LOGO_SIZE - 16,
+    height: LOGO_SIZE - 16,
   },
   institutionLogoPlaceholder: {
-    width: INSTITUTION_LOGO_SIZE,
-    height: INSTITUTION_LOGO_SIZE,
-    borderRadius: INSTITUTION_LOGO_SIZE / 2,
-    backgroundColor: "rgba(74, 144, 226, 0.4)",
+    width: "100%",
+    height: "100%",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -451,7 +402,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   logoPlaceholderText: {
-    color: "#fff",
+    color: "#4A90E2",
     fontSize: 14,
     fontWeight: "600",
   },
@@ -482,36 +433,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginBottom: 16,
     fontFamily: "Manrope",
-  },
-  recurringCta: {
-    width: "100%",
-    marginBottom: 16,
-    paddingHorizontal: 4,
-  },
-  recurringCtaText: {
-    fontSize: 14,
-    color: "#8E8E93",
-    textAlign: "center",
-    marginBottom: 10,
-  },
-  checkRecurringButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 6,
-    paddingVertical: 10,
-    paddingHorizontal: 16,
-  },
-  checkRecurringButtonText: {
-    fontSize: 15,
-    fontWeight: "600",
-    color: "#4A90E2",
-  },
-  recurringAnalyzingText: {
-    fontSize: 13,
-    color: "#8E8E93",
-    textAlign: "center",
-    lineHeight: 18,
   },
   footer: {
     width: SCREEN_WIDTH,

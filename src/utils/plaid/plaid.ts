@@ -96,12 +96,24 @@ export const fetchLinkToken = async (institution_id?: string) => {
     logger.info("🏦 Fetching link token for specific institution:", institution_id);
   }
 
-  const res = await authenticatedFetch(`${BASE_URL}/api/plaid_management`, {
+  const url = `${BASE_URL}/api/plaid_management`;
+  logger.info("🔄 Fetching link token from:", url);
+  const res = await authenticatedFetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
   });
-  const data = await res.json();
+  const text = await res.text();
+  let data: { link_token?: string; error?: string };
+  try {
+    data = JSON.parse(text);
+  } catch {
+    logger.error("❌ API returned non-JSON response:", res.status, text.slice(0, 200));
+    throw new Error(
+      `API returned ${res.status} (expected JSON). Check deployment logs.`
+    );
+  }
+  logger.info("📦 Link token response:", { ok: res.ok, hasToken: !!data?.link_token });
   if (!res.ok) throw new Error(data.error || "Failed to get link token");
   return data.link_token;
 };
@@ -219,7 +231,7 @@ export const handlePlaidConnect = async (
           // Don't fail the whole connection if account storage fails
         }
         
-        // 💸 Trigger initial transaction sync
+        // 💸 Trigger initial transaction sync (includes Finny recurring analysis after tx write)
         try {
           logger.info("🔄 Syncing initial transactions...");
           await syncTransactions(item_id);
@@ -228,20 +240,6 @@ export const handlePlaidConnect = async (
           logger.error("⚠️ Failed to sync initial transactions (continuing anyway):", syncError);
           // Don't fail the whole connection if initial sync fails
         }
-
-        // 🤖 Fire-and-forget: run Finny recurring analysis (new account connect)
-        authenticatedFetch(`${BASE_URL}/api/exchange_public_token`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            mode: "analyze_recurring",
-            user_id: user.id,
-            item_id,
-            trigger_source: "new_account",
-          }),
-        }).catch((err) =>
-          logger.warn("⚠️ Finny recurring analysis failed (non-blocking):", err)
-        );
 
         const institution = linkMetadata?.institution
           ? {

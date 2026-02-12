@@ -3,6 +3,7 @@ import { Ionicons } from "@expo/vector-icons";
 // Basic interfaces
 export interface Account {
   account_id: string;
+  item_id?: string; // Plaid items: UUID; Snaptrade: "snaptrade-..."
   name: string;
   subtype: string;
   type: string;

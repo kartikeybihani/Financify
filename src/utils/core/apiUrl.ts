@@ -13,15 +13,19 @@
  * - Production deployments → EXPO_PUBLIC_APP_BASE_URL
  * - Preview deployments → EXPO_PUBLIC_APP_BASE_URL_DEV (if set)
  */
+function trimTrailingSlash(url: string): string {
+  return url.replace(/\/+$/, "");
+}
+
 export function getApiBaseUrl(): string {
   // 1. Check for dev/preview URL first (for preview deployments)
   const devUrl = process.env.EXPO_PUBLIC_APP_BASE_URL_DEV;
   if (devUrl) {
     // @ts-ignore - __DEV__ is a global in React Native
     if (typeof __DEV__ !== 'undefined' && __DEV__) {
-      console.log(`🔧 Using preview/dev API URL: ${devUrl}`);
+      console.log(`🔧 Using preview/dev API URL: ${trimTrailingSlash(devUrl)}`);
     }
-    return devUrl;
+    return trimTrailingSlash(devUrl);
   }
 
   // 2. Check for production URL (for production deployments)
@@ -29,9 +33,9 @@ export function getApiBaseUrl(): string {
   if (prodUrl) {
     // @ts-ignore - __DEV__ is a global in React Native
     if (typeof __DEV__ !== 'undefined' && __DEV__) {
-      console.log(`🔧 Using production API URL: ${prodUrl}`);
+      console.log(`🔧 Using production API URL: ${trimTrailingSlash(prodUrl)}`);
     }
-    return prodUrl;
+    return trimTrailingSlash(prodUrl);
   }
 
   // 3. Fallback to hardcoded production URL (shouldn't happen if env vars are set)
