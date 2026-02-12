@@ -228,7 +228,20 @@ export const handlePlaidConnect = async (
           logger.error("⚠️ Failed to sync initial transactions (continuing anyway):", syncError);
           // Don't fail the whole connection if initial sync fails
         }
-        
+
+        // 🤖 Fire-and-forget: run Finny recurring analysis (new account connect)
+        authenticatedFetch(`${BASE_URL}/api/analyze-recurring`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            user_id: user.id,
+            item_id,
+            trigger_source: "new_account",
+          }),
+        }).catch((err) =>
+          logger.warn("⚠️ Finny recurring analysis failed (non-blocking):", err)
+        );
+
         onSuccess(item_id);
       } catch (error) {
         logger.error("❌ Token exchange failed:", error);
@@ -861,9 +874,10 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
       .order("updated_at", { ascending: false });
 
     if (item_id) {
-      query = query.eq("item_id", item_id);
+      // Include Finny streams (item_id null) alongside item-scoped Plaid streams
+      query = query.or(`item_id.eq.${item_id},item_id.is.null`);
     }
-    
+
     const { data: streams, error } = await query;
     
     if (error) throw error;
@@ -1058,20 +1072,51 @@ export const getRecurringTransactionsFromDatabase = async (item_id?: string) => 
       income: groupedStreams.income.length,
       bills: groupedStreams.bills.length,
       other: groupedStreams.other.length,
-      total: groupedStreams.subscriptions.length + groupedStreams.income.length + 
-             groupedStreams.bills.length + groupedStreams.other.length
+      total: groupedStreams.subscriptions.length + groupedStreams.income.length +
+             groupedStreams.bills.length + groupedStreams.other.length,
     };
-    
-    logger.info(`📊 Found ${summary.total} recurring items from database (${streams?.length || 0} streams + ${userMarkedTxs?.length || 0} user-marked):`, summary);
-    return { ...groupedStreams, summary };
+
+    // Fetch inactive streams (stopped/cancelled - Plaid no longer detects them)
+    let inactiveQuery = supabase
+      .from("recurring_streams")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("is_active", false)
+      .eq("user_dismissed", false)
+      .order("updated_at", { ascending: false });
+    if (item_id) {
+      inactiveQuery = inactiveQuery.or(`item_id.eq.${item_id},item_id.is.null`);
+    }
+    const { data: inactiveStreams } = await inactiveQuery;
+
+    const inactiveList = (inactiveStreams || []).map((s) => ({
+      stream_id: s.stream_id,
+      description: s.description,
+      merchant_name: s.merchant_name,
+      category: s.category,
+      frequency: s.frequency,
+      average_amount: s.average_amount,
+      last_amount: s.last_amount,
+      last_date: s.last_date,
+      first_date: s.first_date,
+      is_active: false,
+      account_id: s.account_id,
+      transaction_ids: s.transaction_ids || [],
+      iso_currency_code: s.iso_currency_code || "USD",
+      updated_at: s.updated_at,
+    }));
+
+    logger.info(`📊 Found ${summary.total} recurring items from database (${streams?.length || 0} streams + ${userMarkedTxs?.length || 0} user-marked), ${inactiveList.length} inactive`);
+    return { ...groupedStreams, summary, inactive: inactiveList };
   } catch (err) {
     logger.error("Error fetching recurring transactions from database:", err);
-    return { 
-      subscriptions: [], 
-      income: [], 
-      bills: [], 
+    return {
+      subscriptions: [],
+      income: [],
+      bills: [],
       other: [],
-      summary: { subscriptions: 0, income: 0, bills: 0, other: 0, total: 0 }
+      summary: { subscriptions: 0, income: 0, bills: 0, other: 0, total: 0 },
+      inactive: [],
     };
   }
 };
@@ -1218,12 +1263,13 @@ export const getAllRecurringTransactions = async () => {
     return data;
   } catch (err) {
     logger.error("Error fetching all recurring transactions from database:", err);
-    return { 
-      subscriptions: [], 
-      income: [], 
-      bills: [], 
+    return {
+      subscriptions: [],
+      income: [],
+      bills: [],
       other: [],
-      summary: { subscriptions: 0, income: 0, bills: 0, other: 0, total: 0 }
+      summary: { subscriptions: 0, income: 0, bills: 0, other: 0, total: 0 },
+      inactive: [],
     };
   }
 };

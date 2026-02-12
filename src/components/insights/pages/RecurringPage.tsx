@@ -15,6 +15,7 @@ interface RecurringPageProps {
   onDismissReAuth: (item_id: string) => void;
   onRefresh: () => void;
   refreshing: boolean;
+  onRunAnalysis?: () => Promise<void>;
 }
 
 const RecurringPage = React.memo<RecurringPageProps>(
@@ -28,6 +29,7 @@ const RecurringPage = React.memo<RecurringPageProps>(
     onDismissReAuth,
     onRefresh,
     refreshing,
+    onRunAnalysis,
   }) => {
     return (
       <ScrollView
@@ -51,6 +53,7 @@ const RecurringPage = React.memo<RecurringPageProps>(
           recurringData={recurringData}
           isLoading={isLoading}
           titleStyle={titleStyle}
+          onRunAnalysis={onRunAnalysis}
         />
       </ScrollView>
     );

@@ -23,6 +23,8 @@ import {
 import IconButton from "@/src/components/shared/IconButton";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { bulkUpdateRecurringStatus, dismissRecurringStream } from "@/src/utils/recurring/recurringBulkUpdate";
+import { authenticatedFetch } from "@/src/utils/auth/authToken";
+import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 
 interface Props {
   recurringData: {
@@ -33,6 +35,7 @@ interface Props {
   } | null;
   isLoading: boolean;
   titleStyle: any;
+  onRunAnalysis?: () => Promise<void>;
 }
 
 type SpacerItem = { spacer: true; id: string };
@@ -42,6 +45,7 @@ export default function RecurringSection({
   recurringData,
   isLoading,
   titleStyle,
+  onRunAnalysis,
 }: Props) {
   const [selectedStream, setSelectedStream] = useState<RecurringStream | null>(
     null,
@@ -61,6 +65,7 @@ export default function RecurringSection({
   );
   const [removingRecurring, setRemovingRecurring] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
+  const [analyzing, setAnalyzing] = useState(false);
 
   const isIOS = Platform.OS === "ios";
   const iosVersion = isIOS
@@ -149,12 +154,13 @@ export default function RecurringSection({
         ].filter((item) => item.is_active)
       : [];
 
-    // Ensure even count so the last row never has a single item
     if (active.length % 2 !== 0) {
       return [...active, { spacer: true, id: "spacer" }];
     }
     return active;
   }, [recurringData]);
+
+  const inactiveStreams = (recurringData?.inactive || []) as RecurringStream[];
 
   const getStreamTypeIcon = (stream: RecurringStream) => {
     const merchant = (
@@ -283,9 +289,30 @@ export default function RecurringSection({
   };
 
   const handleBackToGrid = () => {
-    // Instant switch - no animations
     setShowTransactionHistory(false);
     setSelectedStream(null);
+  };
+
+  const handleRunAnalysis = async () => {
+    if (!userId || !onRunAnalysis || analyzing) return;
+    try {
+      setAnalyzing(true);
+      const res = await authenticatedFetch(`${API_BASE_URL}/api/analyze-recurring`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: userId, trigger_source: "manual" }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        Alert.alert("Analysis failed", data.error || "Please try again.");
+        return;
+      }
+      await onRunAnalysis();
+    } catch (err: any) {
+      Alert.alert("Analysis failed", err?.message || "Please try again.");
+    } finally {
+      setAnalyzing(false);
+    }
   };
 
   const handleRemoveRecurring = async () => {
@@ -397,8 +424,12 @@ export default function RecurringSection({
       stream,
     ) as keyof typeof Ionicons.glyphMap;
     const nextDate = getNextTransactionDate(stream);
+    const isInactive = stream.is_active === false;
     const showNextDate =
-      stream.frequency && stream.frequency !== "user-marked" && nextDate;
+      !isInactive &&
+      stream.frequency &&
+      stream.frequency !== "user-marked" &&
+      nextDate;
 
     const CardShell = shouldUseLiquidGlass ? GlassView : View;
 
@@ -474,9 +505,11 @@ export default function RecurringSection({
             )}
           </View>
 
-          {showNextDate && (
+          {(showNextDate || isInactive) && (
             <View style={styles.boxFooter}>
-              <Text style={styles.nextDate}>Next: {formatShort(nextDate)}</Text>
+              <Text style={styles.nextDate}>
+                {isInactive ? "Stopped" : `Next: ${formatShort(nextDate)}`}
+              </Text>
             </View>
           )}
         </CardShell>
@@ -660,7 +693,9 @@ export default function RecurringSection({
 
     return (
       <View>
-        <Text style={titleStyle}>Recurring Transactions</Text>
+        <View style={styles.sectionHeader}>
+          <Text style={titleStyle}>Recurring Transactions</Text>
+        </View>
         <View
           style={{
             paddingTop: 12,
@@ -709,7 +744,25 @@ export default function RecurringSection({
 
   return (
     <View style={{ paddingHorizontal: 20, marginTop: 16 }}>
-      <Text style={titleStyle}>Recurring Transactions</Text>
+      <View style={styles.sectionHeader}>
+        <Text style={titleStyle}>Recurring Transactions</Text>
+        {onRunAnalysis && userId && (
+          <TouchableOpacity
+            onPress={handleRunAnalysis}
+            disabled={analyzing}
+            style={styles.analyzeButton}
+          >
+            {analyzing ? (
+              <ActivityIndicator size="small" color="#4A90E2" />
+            ) : (
+              <>
+                <Ionicons name="sparkles" size={14} color="#4A90E2" />
+                <Text style={styles.analyzeButtonText}>Quick analysis</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+      </View>
       <View
         style={{
           paddingTop: 12,
@@ -719,26 +772,58 @@ export default function RecurringSection({
         {data.length === 0 ? (
           renderEmptyState()
         ) : (
-          <View
-            style={{
-              flexDirection: "row",
-              flexWrap: "wrap",
-              justifyContent: "space-between",
-            }}
-          >
-            {data.map((it) => (
-              <View
-                key={
-                  "spacer" in it
-                    ? (it as SpacerItem).id
-                    : (it as RecurringStream).stream_id
-                }
-                style={{ width: cardWidth, marginBottom: 18 }}
-              >
-                {renderCard({ item: it })}
+          <>
+            <View
+              style={{
+                flexDirection: "row",
+                flexWrap: "wrap",
+                justifyContent: "space-between",
+              }}
+            >
+              {data.map((it) => (
+                <View
+                  key={
+                    "spacer" in it
+                      ? (it as SpacerItem).id
+                      : (it as RecurringStream).stream_id
+                  }
+                  style={{ width: cardWidth, marginBottom: 18 }}
+                >
+                  {renderCard({ item: it })}
+                </View>
+              ))}
+            </View>
+            {inactiveStreams.length > 0 && (
+              <View style={styles.pastSection}>
+                <Text style={styles.pastSectionTitle}>Past recurring</Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    flexWrap: "wrap",
+                    justifyContent: "space-between",
+                  }}
+                >
+                  {inactiveStreams.map((stream) => (
+                    <View
+                      key={stream.stream_id}
+                      style={{ width: cardWidth, marginBottom: 18 }}
+                    >
+                      {renderCard({ item: stream })}
+                    </View>
+                  ))}
+                  {inactiveStreams.length % 2 !== 0 && (
+                    <View
+                      style={[
+                        styles.transactionBox,
+                        { width: cardWidth, opacity: 0 },
+                      ]}
+                      pointerEvents="none"
+                    />
+                  )}
+                </View>
               </View>
-            ))}
-          </View>
+            )}
+          </>
         )}
       </View>
     </View>
@@ -1066,5 +1151,39 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.7)",
     textAlign: "center",
     lineHeight: 22,
+  },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  analyzeButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+  },
+  analyzeButtonText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#4A90E2",
+  },
+  pastSection: {
+    marginTop: 24,
+    paddingTop: 20,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.08)",
+  },
+  pastSectionTitle: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#888",
+    marginBottom: 12,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
   },
 });

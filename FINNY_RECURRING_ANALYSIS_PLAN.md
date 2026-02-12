@@ -28,9 +28,11 @@ User clicks "Do a quick analysis" → run recurring analysis (LLM)
 One row per analysis run. Keep latest per user (or latest per item_id). UI fetches most recent.
 
 ### 3. LLM Prompt (`buildRecurringAnalysisPrompt`)
-- **Input**: Last 4 months of transactions (user_id, optionally item_id scope)
-- **Task**: Find recurring patterns (bi-weekly, monthly, yearly)
+- **Input**: Last 4 months of transactions + Plaid's recurring_streams (so LLM doesn't duplicate)
+- **Task**: Find recurring patterns Plaid may have MISSED (bi-weekly, monthly, yearly)
 - **Use**: Merchant names (Spotify, Netflix, Venmo, OpenAI, Oura, etc.)
+- **Output**: `newly_found_subscriptions`, `credit_card_payments_to_ignore`, `peer_payments`, `newly_found_income`
+- **Post-processing**: Match each item to transactions by merchant name; attach `transaction_ids` for UI to show history
 - **Distinguish**:
   - **Real subscriptions**: Spotify, Netflix, OpenAI ChatGPT, Oura Ring
   - **Noise to ignore**: Credit card payments (Chase, Amex, Wells Fargo CCPYMT/ACH)

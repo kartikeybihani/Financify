@@ -2261,6 +2261,7 @@ export default function InsightsScreen() {
       onDismissReAuth: dismissReAuthBannerWrapper,
       onRefresh,
       refreshing,
+      onRunAnalysis: loadRecurringTransactions,
     }),
     [
       recurringData,
@@ -2271,6 +2272,7 @@ export default function InsightsScreen() {
       dismissReAuthBannerWrapper,
       onRefresh,
       refreshing,
+      loadRecurringTransactions,
     ]
   );
 

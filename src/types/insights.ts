@@ -29,6 +29,7 @@ export interface RecurringData {
     other: number;
     total: number;
   };
+  inactive?: RecurringStream[];
 }
 
 export interface RefreshStatus {
