@@ -1266,7 +1266,21 @@ export default async function handler(req, res) {
     total_ms: 0,
   };
 
-  const { action, message, context, classification, ...otherParams } = req.body;
+  // Parse body if raw (some platforms pass string/buffer)
+  let body = req.body;
+  if (typeof body === "string") {
+    try {
+      body = JSON.parse(body);
+    } catch (e) {
+      logError("❌ [FINNY] Failed to parse body:", e?.message);
+      return res.status(400).json({ error: "Invalid JSON body" });
+    }
+  }
+  if (!body || typeof body !== "object") {
+    return res.status(400).json({ error: "Missing or invalid request body" });
+  }
+
+  const { action, message, context, classification, chat_id: bodyChatId, ...otherParams } = body;
 
   // For prebuild_context, we'll check if all contexts are cached after we have userId
   // and suppress logs if they are. For now, we'll log normally and check later.
@@ -1291,7 +1305,7 @@ export default async function handler(req, res) {
   }
 
   // Check if client wants streaming response
-  const wantsStreaming = req.body.stream === true;
+  const wantsStreaming = body.stream === true;
 
   if (!shouldSuppressLogs) {
     logInfo("📝 [FINNY] Action:", action);
@@ -1350,7 +1364,10 @@ export default async function handler(req, res) {
   // Build safe context that overrides any client-provided user_id
   // But fall back to client-provided user_id if no JWT token is present (for testing)
   const finalUserId = serverUserId || context?.user_id;
-  const chatId = req.body.chat_id || context?.chat_id; // Get chat_id from request
+  const chatId = bodyChatId ?? body.chat_id ?? context?.chat_id ?? null;
+  if (!chatId && !shouldSuppressLogs) {
+    logWarn("⚠️ [FINNY] chat_id missing from request body - conversation_logs.chat_id will be null");
+  }
 
   // Re-check with finalUserId (more secure) - always use server-verified userId when available
   if (action === "prebuild_context" && finalUserId) {

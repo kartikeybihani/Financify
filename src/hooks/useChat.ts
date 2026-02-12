@@ -62,7 +62,8 @@ export const useChat = (userName?: string | null) => {
   const [progressStatus, setProgressStatus] = useState<string>("");
   const [currentSessionId, setCurrentSessionId] = useState<string | null>(null);
   const [isNewSession, setIsNewSession] = useState(true);
-  const [chatId, setChatId] = useState<string>(() => `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`);
+  // chatId = session UUID when we have one; empty before first message so we create session on first send
+  const [chatId, setChatId] = useState<string>('');
   const appStateRef = useRef(AppState.currentState);
   const shouldPersistRef = useRef(false);
 
@@ -158,22 +159,20 @@ export const useChat = (userName?: string | null) => {
         AppStorage.removeItemSync("chatId");
         AppStorage.removeItemSync("currentChatUserId");
         setChatMessages(finnyConstants.getInitialChatMessages(userName));
+        setChatId('');
+        setCurrentSessionId(null);
         setShowNudges(true);
-        // Generate new chatId for new user
-        const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-        setChatId(newChatId);
         AppStorage.setItemSync("currentChatUserId", currentUserId);
         return;
       }
 
-      // Load stored chatId or generate new one
+      // Load stored chatId (UUID from session or legacy chat_xxx)
       const storedChatId = AppStorage.getItemSync("chatId");
       if (storedChatId) {
         setChatId(storedChatId);
-      } else {
-        const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-        setChatId(newChatId);
-        AppStorage.setItemSync("chatId", newChatId);
+        // If UUID, we have a session - set currentSessionId for updates
+        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(storedChatId);
+        if (isUuid) setCurrentSessionId(storedChatId);
       }
       
       // Store current user ID for future verification
@@ -237,8 +236,12 @@ export const useChat = (userName?: string | null) => {
       }
 
       AppStorage.setItemSync("chatMessages", JSON.stringify(chatMessages));
-      AppStorage.setItemSync("chatId", chatId);
+      if (chatId) AppStorage.setItemSync("chatId", chatId);
       AppStorage.setItemSync("currentChatUserId", currentUserId);
+      // Keep DB session in sync when we have one
+      if (currentSessionId) {
+        saveCurrentSession().catch((err) => logger.error("Background session sync failed:", err));
+      }
     } catch (error) {
       logger.error("Error saving chat messages:", error);
     }
@@ -248,35 +251,23 @@ export const useChat = (userName?: string | null) => {
     try {
       logger.debug("🧹 [CLEAR_CHAT] Clearing all chat data and context");
       
-      // Clear UI immediately for smooth UX
+      // Save current session to DB first (needs chatMessages before clear)
+      await saveCurrentSession();
+      
       AppStorage.removeItemSync("chatMessages");
       setChatMessages(finnyConstants.getInitialChatMessages(userName));
       setCurrentSessionId(null);
+      setChatId('');
       setIsNewSession(true);
       setShowNudges(true);
       
-      // 🔥 IMPORTANT: Clear goal flow state
       setGoalFlow(null);
       logger.debug("🔥 [CLEAR_CHAT] Goal flow cleared");
       
-      // Generate new chat_id for fresh conversation (backend uses this to clear context)
-      const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-      setChatId(newChatId);
-      AppStorage.setItemSync("chatId", newChatId);
-      
-      // Store current user ID for verification
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.id) {
         AppStorage.setItemSync("currentChatUserId", user.id);
       }
-      
-      logger.debug("🆕 [CLEAR_CHAT] New chat ID generated:", newChatId);
-      
-      // Save current session to database in the background (don't await)
-      // Note: saveCurrentSession is defined later, but this is fine since it's called asynchronously
-      saveCurrentSession().catch((error: any) => {
-        logger.error("Background database save failed:", error);
-      });
       
       logger.debug("✅ [CLEAR_CHAT] Chat cleared successfully");
     } catch (error) {
@@ -375,6 +366,8 @@ export const useChat = (userName?: string | null) => {
         } else {
           sessionId = data;
           setCurrentSessionId(data);
+          setChatId(data);
+          AppStorage.setItemSync("chatId", data);
           logger.info("✅ Chat session saved successfully:", data);
         }
       }
@@ -392,25 +385,17 @@ export const useChat = (userName?: string | null) => {
       AppStorage.removeItemSync('chatMessages');
       setChatMessages(finnyConstants.getInitialChatMessages(userName));
       setCurrentSessionId(null);
+      setChatId('');
       setIsNewSession(true);
       setShowNudges(true);
       
-      // 🔥 IMPORTANT: Clear goal flow state for fresh session
       setGoalFlow(null);
       logger.debug("🔥 [NEW_SESSION] Goal flow cleared");
       
-      // Generate new chat_id for fresh conversation
-      const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-      setChatId(newChatId);
-      AppStorage.setItemSync("chatId", newChatId);
-      
-      // Store current user ID for verification
       const { data: { user } } = await supabase.auth.getUser();
       if (user?.id) {
         AppStorage.setItemSync("currentChatUserId", user.id);
       }
-      
-      logger.debug("🆕 [NEW_SESSION] New chat ID generated:", newChatId);
       
       logger.info("Started new chat session");
     } catch (error) {
@@ -483,22 +468,18 @@ export const useChat = (userName?: string | null) => {
         lastMsg: sortedMessages[sortedMessages.length - 1]?.text?.substring(0, 50) + '...'
       });
 
-      // Set messages and state
+      // Set messages and state - use session UUID as chatId
       setChatMessages(sortedMessages);
       setCurrentSessionId(sessionId);
+      setChatId(sessionId);
       setIsNewSession(false);
       AppStorage.setItemSync('chatMessages', JSON.stringify(sortedMessages));
+      AppStorage.setItemSync("chatId", sessionId);
       setShowNudges(sortedMessages.length <= 1);
       
-      // Clear goal flow when loading old session (old sessions don't have active goal flows)
       setGoalFlow(null);
       
-      // Generate new chatId for this loaded session to prevent context mixing
-      // The backend uses chatId for conversation context, so we need a fresh one
-      const newChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
-      setChatId(newChatId);
-      AppStorage.setItemSync("chatId", newChatId);
-      logger.info("[LOAD_SESSION] Generated new chatId for loaded session:", newChatId);
+      logger.info("[LOAD_SESSION] Using session UUID as chatId:", sessionId);
       
       logger.info("[LOAD_SESSION] ✅ Session restored successfully");
     } catch (error) {
@@ -1436,7 +1417,7 @@ export const useChat = (userName?: string | null) => {
       const requestBody: any = {
         action: apiAction,
         message: action,
-        chat_id: chatId,
+        chat_id: chatId || currentSessionId || `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
         context: isGoalAction && goalFlow ? { goal_flow: goalFlow } : {},
         stream: false,
       };
@@ -1638,13 +1619,47 @@ export const useChat = (userName?: string | null) => {
       // Show initial progress
       setProgressStatus(randomWarmMessage);
 
+      // Create session on first message - use UUID as chat_id everywhere
+      let effectiveChatId = chatId || currentSessionId;
+      if (!effectiveChatId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user?.id) {
+          const newUserMsg: ChatMessage = {
+            id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+            sender: 'user',
+            text: messageText,
+            timestamp: Date.now(),
+          };
+          const messagesForSession = [...chatMessages, newUserMsg];
+          const { hasUser } = validateMessages(messagesForSession);
+          if (hasUser) {
+            const { data: sessionUuid, error } = await supabase.rpc('save_chat_session', {
+              p_user_id: user.id,
+              p_session_title: truncate(messageText, 60),
+              p_first_message: messageText,
+              p_messages: messagesForSession,
+            });
+            if (!error && sessionUuid) {
+              setCurrentSessionId(sessionUuid);
+              setChatId(sessionUuid);
+              AppStorage.setItemSync("chatId", sessionUuid);
+              effectiveChatId = sessionUuid;
+              logger.info("[CHAT] Created session on first message:", sessionUuid);
+            }
+          }
+        }
+      }
+      if (!effectiveChatId) {
+        effectiveChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+      }
+
       // 1) First classify the message to determine intent (skip if goal flow active)
       const classifyRes = goalFlow?.active ? null : await authenticatedFetch(`${BASE_URL}/api/finny`, {
         method: "POST",
         body: JSON.stringify({
           action: "classify",
           message: messageText,
-          chat_id: chatId,
+          chat_id: effectiveChatId,
           context: {}
         }),
       });
@@ -1675,7 +1690,7 @@ export const useChat = (userName?: string | null) => {
               body: JSON.stringify({
                 action: "classify",
                 message: messageText,
-                chat_id: chatId,
+                chat_id: effectiveChatId,
                 context: {}
               }),
             });
@@ -1756,7 +1771,7 @@ export const useChat = (userName?: string | null) => {
           ? {
               action: "ask",
               message: messageText,
-              chat_id: chatId,
+              chat_id: effectiveChatId,
               context: {},
               classification: classifyData,
               stream: true
@@ -1764,7 +1779,7 @@ export const useChat = (userName?: string | null) => {
           : {
               action: goalFlow?.active ? "goal_conversation" : classifyData.intent,
               message: messageText,
-              chat_id: chatId,
+              chat_id: effectiveChatId,
               context: goalFlow ? { goal_flow: goalFlow } : {},
               stream: true
             };
@@ -1841,7 +1856,7 @@ export const useChat = (userName?: string | null) => {
           body: JSON.stringify({
             action: "ask",
             message: messageText,
-            chat_id: chatId,
+            chat_id: effectiveChatId,
             context: {},
             classification: classifyData,
             stream: false
@@ -1853,7 +1868,7 @@ export const useChat = (userName?: string | null) => {
           body: JSON.stringify({
             action: goalFlow?.active ? "goal_conversation" : classifyData.intent,
             message: messageText,
-            chat_id: chatId,
+            chat_id: effectiveChatId,
             context: goalFlow ? { goal_flow: goalFlow } : {},
             stream: false
           }),
