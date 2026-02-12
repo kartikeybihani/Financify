@@ -1620,8 +1620,19 @@ export const useChat = (userName?: string | null) => {
       setProgressStatus(randomWarmMessage);
 
       // Create session on first message - use UUID as chat_id everywhere
+      // Client-generated IDs (chat_<timestamp>_<random>) are ephemeral; create DB session so chat_sessions row exists
+      const isClientGeneratedChatId =
+        typeof (chatId || "") === "string" &&
+        (chatId || "").startsWith("chat_") &&
+        !(chatId || "").match(
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+        );
+      const shouldCreateSession =
+        !(chatId || currentSessionId) ||
+        (isClientGeneratedChatId && !currentSessionId);
+
       let effectiveChatId = chatId || currentSessionId;
-      if (!effectiveChatId) {
+      if (shouldCreateSession) {
         const { data: { user } } = await supabase.auth.getUser();
         if (user?.id) {
           const newUserMsg: ChatMessage = {

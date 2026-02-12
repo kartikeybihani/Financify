@@ -1191,6 +1191,11 @@ async function logConversation(conversationData) {
             msg.includes("classification_details") ||
             msg.includes("prompt_used"));
         if (missingCols) {
+          logWarn(
+            `⚠️ [CONVERSATION_LOG] Insert failed (missing columns: ${error.message}). ` +
+            `Falling back to insert WITHOUT base_packs/prompt_used. ` +
+            `Ensure migrations add_base_packs_to_conversation_logs.sql and 20260212190000_add_prompt_used_to_conversation_logs.sql are applied.`,
+          );
           const {
             metrics,
             request_id,
