@@ -2461,12 +2461,22 @@ export default async function handler(req, res) {
                 { userId }
               );
 
+              // Extract last 30 days of raw transactions for the LLM to
+              // cross-reference pattern categories against actual merchant names.
+              const thirtyDaysAgo = new Date();
+              thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+              const thirtyDayCutoff = thirtyDaysAgo.toISOString().slice(0, 10);
+              const recentTransactions = filtered.filter(
+                (tx) => tx.date >= thirtyDayCutoff
+              );
+
               const llmResult = await callOnboardingLLM({
                 openRouterApiKey,
                 fetchFn: fetch,
                 patterns: topTwoPatterns,
                 analysisWindow: "last 6 months",
                 userProfile: profile || null,
+                recentTransactions,
               });
 
               const insightsJson =

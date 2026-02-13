@@ -365,12 +365,12 @@ export default function InsightsScreen() {
   }, []);
 
   // Handler for receiving the modal open function from child
-  const handleOpenAddCategoryModalRef = useCallback((openFn: () => void) => {
+  const handleOpenAddCategoryModalRef = useCallback((openFn: (() => void) | null) => {
     // Store in ref immediately (safe during render)
     openAddCategoryModalRef.current = openFn;
     // Update flag after render completes to trigger re-render for button visibility
     setTimeout(() => {
-      setHasOpenAddCategoryModal(true);
+      setHasOpenAddCategoryModal(openFn !== null);
     }, 0);
   }, []);
 

@@ -624,9 +624,12 @@ export default function InvestmentsScreen({
         // but for now, we'll just show the empty state
         if (!hasStoredData) {
           logger.info("Investments: No stored data found, showing empty state");
+          // Skip populate - no investment connections to sync to main accounts table
+          return;
         }
 
         // Populate investment accounts in main accounts table (non-blocking)
+        // Only when we have connections - avoids pointless API calls and rate-limit burn
         populateInvestmentAccountsInDB().catch((err) =>
           logger.error("Failed to populate investment accounts:", err),
         );
@@ -859,100 +862,100 @@ export default function InvestmentsScreen({
         const staleConnections: ConnectionRow[] = [];
 
         for (const conn of snaptradeConnections) {
-        if (!conn.last_synced_at) {
-          // Never synced - treat as stale
-          staleConnections.push(conn);
-          logger.info(
-            `📅 Connection ${conn.account_id?.substring(
-              0,
-              8,
-            )}... never synced - will sync`,
-          );
-        } else {
-          const lastSynced = new Date(conn.last_synced_at);
-          const hoursSinceSync =
-            (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60);
-
-          if (hoursSinceSync < 3) {
-            recentConnections.push(conn);
-            logger.info(
-              `⏰ Connection ${conn.account_id?.substring(
-                0,
-                8,
-              )}... synced ${hoursSinceSync.toFixed(
-                1,
-              )} hours ago - skipping SnapTrade sync`,
-            );
-          } else {
+          if (!conn.last_synced_at) {
+            // Never synced - treat as stale
             staleConnections.push(conn);
             logger.info(
               `📅 Connection ${conn.account_id?.substring(
                 0,
                 8,
-              )}... synced ${hoursSinceSync.toFixed(1)} hours ago - will sync`,
+              )}... never synced - will sync`,
             );
+          } else {
+            const lastSynced = new Date(conn.last_synced_at);
+            const hoursSinceSync =
+              (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60);
+
+            if (hoursSinceSync < 3) {
+              recentConnections.push(conn);
+              logger.info(
+                `⏰ Connection ${conn.account_id?.substring(
+                  0,
+                  8,
+                )}... synced ${hoursSinceSync.toFixed(
+                  1,
+                )} hours ago - skipping SnapTrade sync`,
+              );
+            } else {
+              staleConnections.push(conn);
+              logger.info(
+                `📅 Connection ${conn.account_id?.substring(
+                  0,
+                  8,
+                )}... synced ${hoursSinceSync.toFixed(1)} hours ago - will sync`,
+              );
+            }
           }
-        }
         }
 
         // Sync all SnapTrade accounts sequentially (only stale ones)
         for (let i = 0; i < staleConnections.length; i++) {
-        const conn = staleConnections[i];
-        try {
-          logger.info(
-            `🔄 Syncing account ${i + 1}/${staleConnections.length}: ${
-              conn.brokerage_name || conn.account_name || conn.account_id
-            }`,
-          );
-
-          // Step 1: Call paid refresh endpoint to trigger SnapTrade to update their cache
-          await refreshSnaptradeInvestments(user.id, conn.account_id);
-
-          // Step 2: Wait for SnapTrade to process the refresh (they need time to update their cache)
-          logger.info(
-            "⏳ Waiting for SnapTrade to process refresh (5 seconds)...",
-          );
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-
-          // Step 3: Now sync the fresh data from SnapTrade API to our database
-          logger.debug("🔄 Syncing fresh data from SnapTrade API...");
-          await syncSnaptradeInvestments(user.id, conn.account_id);
-
-          // Step 3.5: Ensure balances are recalculated from active holdings
-          logger.debug("🔄 Recalculating balances from active holdings...");
+          const conn = staleConnections[i];
           try {
-            await recalculateInvestmentBalances(user.id, conn.account_id);
-            logger.debug("✅ Balances recalculated successfully");
-          } catch (recalcError) {
-            logger.warn(
-              "⚠️ Failed to recalculate balances (continuing anyway):",
-              recalcError,
+            logger.info(
+              `🔄 Syncing account ${i + 1}/${staleConnections.length}: ${
+                conn.brokerage_name || conn.account_name || conn.account_id
+              }`,
             );
-          }
 
-          logger.info(
-            `✅ Successfully synced account ${i + 1}/${staleConnections.length}`,
-          );
-        } catch (err: any) {
-          const errorMsg = `Failed to sync ${
-            conn.brokerage_name || conn.account_name || conn.account_id
-          }: ${err.message || "Unknown error"}`;
-          logger.error(`❌ ${errorMsg}`, err);
-          syncErrors.push(errorMsg);
+            // Step 1: Call paid refresh endpoint to trigger SnapTrade to update their cache
+            await refreshSnaptradeInvestments(user.id, conn.account_id);
 
-          // Check if this is a disabled connection error - if so, stop syncing others
-          if (
-            err.statusCode === 402 ||
-            err.code === "CONNECTION_DISABLED" ||
-            err.requiresReconnect
-          ) {
-            logger.error(
-              "🔴 Connection disabled detected, stopping sync...",
-              err,
+            // Step 2: Wait for SnapTrade to process the refresh (they need time to update their cache)
+            logger.info(
+              "⏳ Waiting for SnapTrade to process refresh (5 seconds)...",
             );
-            throw err; // Re-throw to trigger the disabled connection handler below
+            await new Promise((resolve) => setTimeout(resolve, 5000));
+
+            // Step 3: Now sync the fresh data from SnapTrade API to our database
+            logger.debug("🔄 Syncing fresh data from SnapTrade API...");
+            await syncSnaptradeInvestments(user.id, conn.account_id);
+
+            // Step 3.5: Ensure balances are recalculated from active holdings
+            logger.debug("🔄 Recalculating balances from active holdings...");
+            try {
+              await recalculateInvestmentBalances(user.id, conn.account_id);
+              logger.debug("✅ Balances recalculated successfully");
+            } catch (recalcError) {
+              logger.warn(
+                "⚠️ Failed to recalculate balances (continuing anyway):",
+                recalcError,
+              );
+            }
+
+            logger.info(
+              `✅ Successfully synced account ${i + 1}/${staleConnections.length}`,
+            );
+          } catch (err: any) {
+            const errorMsg = `Failed to sync ${
+              conn.brokerage_name || conn.account_name || conn.account_id
+            }: ${err.message || "Unknown error"}`;
+            logger.error(`❌ ${errorMsg}`, err);
+            syncErrors.push(errorMsg);
+
+            // Check if this is a disabled connection error - if so, stop syncing others
+            if (
+              err.statusCode === 402 ||
+              err.code === "CONNECTION_DISABLED" ||
+              err.requiresReconnect
+            ) {
+              logger.error(
+                "🔴 Connection disabled detected, stopping sync...",
+                err,
+              );
+              throw err; // Re-throw to trigger the disabled connection handler below
+            }
           }
-        }
         }
 
         // Log summary of sync strategy
@@ -1493,7 +1496,9 @@ export default function InvestmentsScreen({
 
           // Check connection status from SnapTrade API
           try {
-            logger.debug("🔍 Verifying connection status after reconnection...");
+            logger.debug(
+              "🔍 Verifying connection status after reconnection...",
+            );
             const connectionDetails = await getSnaptradeConnectionDetails(
               user.id,
               connections[0]?.account_id || "",
@@ -1514,7 +1519,9 @@ export default function InvestmentsScreen({
               setConnections(updatedConnections || []);
 
               // Reload all investment data (without triggering auto-sync)
-              logger.debug("🔄 Reloading investment data after reconnection...");
+              logger.debug(
+                "🔄 Reloading investment data after reconnection...",
+              );
               await loadFromDbWithoutAutoSync();
 
               // Trigger a sync to get fresh data
@@ -1989,7 +1996,9 @@ export default function InvestmentsScreen({
               styles.emptyStateButton,
               (isDemoMode || isPremiumLocked) && { opacity: 0.5 },
             ]}
-            onPress={isPremiumLocked ? showPaywall : handleAddInvestmentAccount}
+            onPress={
+              isPremiumLocked ? () => showPaywall() : handleAddInvestmentAccount
+            }
             activeOpacity={isDemoMode ? 1 : 0.8}
             disabled={isDemoMode}
           >

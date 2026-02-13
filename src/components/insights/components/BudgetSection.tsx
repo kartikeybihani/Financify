@@ -90,17 +90,20 @@ export default function BudgetSection({
   const openAddCategoryModalRef = useRef(openAddCategoryModal);
   openAddCategoryModalRef.current = openAddCategoryModal;
 
-  // Set up the ref callback in useEffect to avoid calling during render
+  // Only expose the FAB callback when user has an active budget
   useEffect(() => {
     if (onOpenAddCategoryModalRef) {
-      // Pass a stable function that calls the current ref value
-      // This function is stored in parent's ref, not called immediately
-      const stableCallback = () => {
-        openAddCategoryModalRef.current();
-      };
-      onOpenAddCategoryModalRef(stableCallback);
+      if (hasActiveBudget) {
+        const stableCallback = () => {
+          openAddCategoryModalRef.current();
+        };
+        onOpenAddCategoryModalRef(stableCallback);
+      } else {
+        // Pass null to hide the FAB when no budget exists
+        (onOpenAddCategoryModalRef as (fn: (() => void) | null) => void)(null);
+      }
     }
-  }, [onOpenAddCategoryModalRef]);
+  }, [onOpenAddCategoryModalRef, hasActiveBudget]);
 
   // Expose refreshBudget function to parent for pull-to-refresh
   useEffect(() => {

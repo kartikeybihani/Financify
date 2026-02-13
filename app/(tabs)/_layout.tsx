@@ -41,7 +41,7 @@ export default function TabLayout() {
     () => () => {
       if (paywallTimerRef.current) clearTimeout(paywallTimerRef.current);
     },
-    []
+    [],
   );
 
   // Show notification permission modal when: onboarding completed, no active push token for this device, and (never dismissed or dismissed > 2 days ago)
@@ -78,7 +78,7 @@ export default function TabLayout() {
         }
 
         const dismissedAtRaw = AppStorage.getItemSync(
-          NOTIFICATION_PROMPT_DISMISSED_AT_KEY
+          NOTIFICATION_PROMPT_DISMISSED_AT_KEY,
         );
         if (dismissedAtRaw) {
           const dismissedAt = new Date(dismissedAtRaw).getTime();
@@ -112,7 +112,7 @@ export default function TabLayout() {
   const handleNotificationDontAllow = () => {
     AppStorage.setItemSync(
       NOTIFICATION_PROMPT_DISMISSED_AT_KEY,
-      new Date().toISOString()
+      new Date().toISOString(),
     );
     setShowNotificationModal(false);
     schedulePostNotificationPaywall();
@@ -124,7 +124,7 @@ export default function TabLayout() {
   const shouldUseNativeTabs = isIOS && iosVersion >= 26;
 
   logger.debug(
-    `Platform: ${Platform.OS}, iOS Version: ${iosVersion}, Should use NativeTabs: ${shouldUseNativeTabs}`
+    `Platform: ${Platform.OS}, iOS Version: ${iosVersion}, Should use NativeTabs: ${shouldUseNativeTabs}`,
   );
 
   const tabs = [
@@ -136,16 +136,16 @@ export default function TabLayout() {
     },
     { name: "chat", label: "Finny", icon: "fire", iconCategory: "FontAwesome" },
     {
-      name: "goals",
-      label: "Goals",
-      icon: "target",
-      iconCategory: "MaterialCommunityIcons",
-    },
-    {
       name: "insights",
       label: "Insights",
       icon: "stats-chart-outline",
       iconCategory: "Ionicons",
+    },
+    {
+      name: "goals",
+      label: "Goals",
+      icon: "target",
+      iconCategory: "MaterialCommunityIcons",
     },
   ];
 
@@ -169,13 +169,13 @@ export default function TabLayout() {
             <Label>Finny</Label>
             <Icon sf={{ default: "flame", selected: "flame.fill" }} />
           </NativeTabs.Trigger>
-          <NativeTabs.Trigger name="goals">
-            <Label>Goals</Label>
-            <Icon sf={{ default: "target", selected: "target" }} />
-          </NativeTabs.Trigger>
           <NativeTabs.Trigger name="insights">
             <Label>Insights</Label>
             <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="goals">
+            <Label>Goals</Label>
+            <Icon sf={{ default: "target", selected: "target" }} />
           </NativeTabs.Trigger>
         </NativeTabs>
         {modal}
@@ -204,8 +204,8 @@ export default function TabLayout() {
                   tab.iconCategory === "Ionicons"
                     ? Ionicons
                     : tab.iconCategory === "MaterialCommunityIcons"
-                    ? MaterialCommunityIcons
-                    : FontAwesome;
+                      ? MaterialCommunityIcons
+                      : FontAwesome;
                 return (
                   <IconComponent
                     name={tab.icon as any}

@@ -1055,10 +1055,26 @@ export const getSnaptradeConnectionsFromDB = async () => {
 };
 
 // === Populate Investment Accounts in Main Accounts Table ===
+// Throttle: API allows 5 calls/min. Prevent thundering herd from multiple mount points.
+const POPULATE_THROTTLE_MS = 15_000; // 15s min between calls
+let lastPopulateAt = 0;
+let lastPopulateUserId: string | null = null;
+
 export const populateInvestmentAccountsInDB = async () => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return { success: false, populated: 0 }; // Graceful: don't throw during logout race
+
+    const now = Date.now();
+    if (
+      lastPopulateUserId === user.id &&
+      now - lastPopulateAt < POPULATE_THROTTLE_MS
+    ) {
+      logger.debug("🔄 Skipping populate (throttled) - called recently");
+      return { success: true, populated: 0 };
+    }
+    lastPopulateAt = now;
+    lastPopulateUserId = user.id;
 
     logger.debug("🔄 Populating investment accounts via API endpoint...");
 

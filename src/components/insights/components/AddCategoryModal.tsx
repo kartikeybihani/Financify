@@ -8,7 +8,6 @@ import {
   TouchableWithoutFeedback,
   ScrollView,
   TextInput,
-  Dimensions,
   KeyboardAvoidingView,
   Platform,
   Alert,
@@ -41,7 +40,8 @@ interface AddCategoryModalProps {
   onCategoryAdded: () => Promise<void>;
 }
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+// Fallback for when Modal renders outside SafeAreaProvider (insets can be 0)
+const FALLBACK_BOTTOM_INSET = Platform.OS === "ios" ? 34 : 0;
 
 const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
   visible,
@@ -52,7 +52,10 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
   const [selectedIcon, setSelectedIcon] = useState("💰");
   const [budgetAmount, setBudgetAmount] = useState("");
   const [loading, setLoading] = useState(false);
-  const insets = useSafeAreaInsets();
+  const rawInsets = useSafeAreaInsets();
+  const insets = {
+    bottom: rawInsets.bottom || FALLBACK_BOTTOM_INSET,
+  };
 
   // Reset form when modal closes
   useEffect(() => {
@@ -258,7 +261,6 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
       transparent
       animationType="slide"
       onRequestClose={handleClose}
-      statusBarTranslucent={true}
     >
       <TouchableWithoutFeedback onPress={handleClose}>
         <View style={styles.overlay}>
@@ -266,189 +268,149 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
             <KeyboardAvoidingView
               behavior={Platform.OS === "ios" ? "padding" : "height"}
               style={styles.keyboardAvoidingView}
-              keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
             >
               <LinearGradient
                 colors={FAB_GRADIENT_COLORS}
-                style={styles.content}
+                style={styles.sheet}
               >
+                {/* Drag handle */}
+                <View style={styles.handleContainer}>
+                  <View style={styles.handle} />
+                </View>
+
+                {/* Header */}
                 <View style={styles.header}>
-                  <View style={styles.headerTextContainer}>
-                    <Text style={styles.headerTitle}>Add New Category</Text>
+                  <Text style={styles.headerTitle}>Add New Category</Text>
+                  <TouchableOpacity
+                    onPress={handleClose}
+                    style={styles.closeButton}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                  >
+                    <Ionicons name="close" size={18} color="rgba(255,255,255,0.6)" />
+                  </TouchableOpacity>
+                </View>
+
+                {/* Category Name */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionLabel}>CATEGORY NAME</Text>
+                  <View style={styles.nameRow}>
+                    <TouchableOpacity
+                      style={[
+                        styles.iconBox,
+                        (isIconSelected({ type: "emoji", value: selectedIcon }) ||
+                          CURATED_ICONS.some((icon) => icon.value === selectedIcon)) &&
+                          styles.iconBoxSelected,
+                      ]}
+                      activeOpacity={0.7}
+                    >
+                      {renderSelectedIcon()}
+                    </TouchableOpacity>
+                    <TextInput
+                      style={styles.categoryInput}
+                      value={categoryName}
+                      onChangeText={setCategoryName}
+                      placeholder="Enter category name"
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                      autoFocus
+                      autoCapitalize="words"
+                      returnKeyType="done"
+                      onSubmitEditing={handleSave}
+                    />
                   </View>
                 </View>
 
-                <ScrollView
-                  showsVerticalScrollIndicator={false}
-                  contentContainerStyle={[
-                    styles.scrollContent,
-                    {
-                      paddingBottom:
-                        Math.max(20, SCREEN_HEIGHT * 0.025) +
-                        Math.max(insets.bottom, 20),
-                    },
-                  ]}
-                  keyboardShouldPersistTaps="handled"
-                  keyboardDismissMode="interactive"
-                  bounces={false}
-                  nestedScrollEnabled={true}
-                >
-                  {/* Category Name Section */}
-                  <View style={styles.nameSection}>
-                    <Text style={styles.sectionLabel}>CATEGORY NAME</Text>
-                    <View style={styles.topRow}>
+                {/* Budget */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionLabel}>BUDGET</Text>
+                  <View style={styles.budgetInputRow}>
+                    <Text style={styles.budgetPrefix}>$</Text>
+                    <TextInput
+                      style={styles.budgetInput}
+                      keyboardType="decimal-pad"
+                      value={budgetAmount}
+                      onChangeText={setBudgetAmount}
+                      placeholder="0"
+                      placeholderTextColor="rgba(255,255,255,0.35)"
+                    />
+                  </View>
+                  <Text style={styles.budgetHint}>
+                    Set a monthly budget limit for this category
+                  </Text>
+                </View>
+
+                {/* Icon Selection */}
+                <View style={styles.section}>
+                  <Text style={styles.sectionLabel}>CHOOSE ICON</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={styles.iconScrollContent}
+                    bounces={false}
+                  >
+                    {CURATED_ICONS.map((icon, index) => (
                       <TouchableOpacity
+                        key={`${icon.type}-${icon.value}-${index}`}
                         style={[
-                          styles.iconBox,
-                          isIconSelected({
-                            type: "emoji",
-                            value: selectedIcon,
-                          }) ||
-                          CURATED_ICONS.some(
-                            (icon) => icon.value === selectedIcon,
-                          )
-                            ? styles.iconBoxSelected
-                            : null,
+                          styles.iconOption,
+                          isIconSelected(icon) && styles.iconOptionSelected,
                         ]}
+                        onPress={() => setSelectedIcon(icon.value)}
                         activeOpacity={0.7}
-                        accessibilityLabel="Selected icon"
-                        accessibilityRole="button"
                       >
-                        {renderSelectedIcon()}
+                        {renderIcon(icon, true)}
                       </TouchableOpacity>
-                      <TextInput
-                        style={styles.categoryInput}
-                        value={categoryName}
-                        onChangeText={setCategoryName}
-                        placeholder="Enter category name"
-                        placeholderTextColor="rgba(255,255,255,0.4)"
-                        autoFocus
-                        autoCapitalize="words"
-                        returnKeyType="done"
-                        onSubmitEditing={handleSave}
-                        accessibilityLabel="Category name input"
-                      />
-                    </View>
-                  </View>
+                    ))}
+                  </ScrollView>
+                </View>
 
-                  {/* Budget Section */}
-                  <View style={styles.budgetSection}>
-                    <Text style={styles.sectionLabel}>BUDGET</Text>
-                    <View style={styles.budgetInputRow}>
-                      <Text style={styles.budgetPrefix}>$</Text>
-                      <TextInput
-                        style={styles.budgetInput}
-                        keyboardType="decimal-pad"
-                        value={budgetAmount}
-                        onChangeText={setBudgetAmount}
-                        placeholder="0"
-                        placeholderTextColor="rgba(255,255,255,0.4)"
-                        accessibilityLabel="Budget amount input"
-                      />
-                    </View>
-                    <Text style={styles.budgetHint}>
-                      Set a monthly budget limit for this category
-                    </Text>
-                  </View>
-
-                  {/* Icon Selection Section */}
-                  <View style={styles.iconSection}>
-                    <Text style={styles.sectionLabel}>CHOOSE ICON</Text>
-                    <ScrollView
-                      horizontal
-                      showsHorizontalScrollIndicator={false}
-                      style={styles.iconScroll}
-                      contentContainerStyle={styles.iconScrollContent}
-                      bounces={false}
-                    >
-                      {CURATED_ICONS.map((icon, index) => (
-                        <TouchableOpacity
-                          key={`${icon.type}-${icon.value}-${index}`}
-                          style={[
-                            styles.iconOption,
-                            isIconSelected(icon) && styles.iconOptionSelected,
-                          ]}
-                          onPress={() => setSelectedIcon(icon.value)}
-                          activeOpacity={0.7}
-                          accessibilityLabel={`Select ${icon.name} icon`}
-                          accessibilityRole="button"
-                          accessibilityState={{
-                            selected: isIconSelected(icon),
-                          }}
-                        >
-                          {renderIcon(icon, true)}
-                        </TouchableOpacity>
-                      ))}
-                    </ScrollView>
-                  </View>
-                </ScrollView>
-
-                {/* Bottom action buttons */}
-                <View style={styles.bottomButtonRow}>
+                {/* Buttons */}
+                <View
+                  style={[
+                    styles.buttonRow,
+                    { paddingBottom: Math.max(insets.bottom, 20) },
+                  ]}
+                >
                   <TouchableOpacity
-                    style={[
-                      styles.bottomButtonContainer,
-                      styles.bottomCancelButtonContainer,
-                    ]}
+                    style={[styles.btn, styles.cancelBtn]}
                     onPress={handleClose}
                     disabled={loading}
                     activeOpacity={0.7}
-                    accessibilityLabel="Cancel"
-                    accessibilityRole="button"
                   >
                     <LinearGradient
                       colors={[
                         "rgba(142, 142, 147, 0.15)",
                         "rgba(142, 142, 147, 0.05)",
                       ]}
-                      style={styles.bottomCancelButton}
+                      style={styles.btnInner}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
                       <Ionicons name="close-circle" size={16} color="#fff" />
-                      <Text
-                        style={[styles.bottomButtonText, { color: "#fff" }]}
-                      >
-                        Cancel
-                      </Text>
+                      <Text style={styles.btnText}>Cancel</Text>
                     </LinearGradient>
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     style={[
-                      styles.bottomButtonContainer,
-                      styles.bottomSaveButtonContainer,
-                      (!categoryName.trim() || loading) &&
-                        styles.buttonDisabled,
+                      styles.btn,
+                      styles.saveBtn,
+                      (!categoryName.trim() || loading) && styles.btnDisabled,
                     ]}
                     onPress={handleSave}
                     disabled={!categoryName.trim() || loading}
                     activeOpacity={0.7}
-                    accessibilityLabel={
-                      loading ? "Adding category" : "Add category"
-                    }
-                    accessibilityRole="button"
-                    accessibilityState={{
-                      disabled: !categoryName.trim() || loading,
-                    }}
                   >
                     <LinearGradient
                       colors={[
                         "rgba(74, 144, 226, 0.15)",
                         "rgba(74, 145, 226, 0.41)",
                       ]}
-                      style={styles.bottomSaveButton}
+                      style={styles.btnInner}
                       start={{ x: 0, y: 0 }}
                       end={{ x: 1, y: 1 }}
                     >
-                      <Ionicons
-                        name="checkmark-circle"
-                        size={16}
-                        color="#fff"
-                      />
-                      <Text
-                        style={[styles.bottomButtonText, { color: "#fff" }]}
-                      >
+                      <Ionicons name="checkmark-circle" size={16} color="#fff" />
+                      <Text style={styles.btnText}>
                         {loading ? "Adding..." : "Add Category"}
                       </Text>
                     </LinearGradient>
@@ -463,6 +425,8 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
   );
 };
 
+const PADDING_H = 20;
+
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
@@ -472,42 +436,93 @@ const styles = StyleSheet.create({
   keyboardAvoidingView: {
     width: "100%",
   },
-  content: {
+  sheet: {
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    minHeight: SCREEN_HEIGHT * 0.5,
-    maxHeight: SCREEN_HEIGHT * 0.85,
-    width: SCREEN_WIDTH,
+    paddingHorizontal: PADDING_H,
+    overflow: "hidden",
+  },
+  handleContainer: {
+    alignItems: "center",
+    paddingTop: 10,
+    paddingBottom: 4,
+  },
+  handle: {
+    width: 40,
+    height: 4,
+    borderRadius: 2,
+    backgroundColor: "rgba(255,255,255,0.18)",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
-    paddingTop: 16,
-    paddingBottom: 8,
+    paddingTop: 8,
+    paddingBottom: 16,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.1)",
   },
-  headerTextContainer: {
-    flex: 1,
-    alignItems: "center",
-  },
   headerTitle: {
-    fontSize: Math.max(18, SCREEN_WIDTH * 0.05),
+    fontSize: 18,
     fontWeight: "600",
     color: "#fff",
-    textAlign: "center",
-    paddingVertical: 7,
   },
-  scrollContent: {
-    padding: Math.max(20, SCREEN_WIDTH * 0.05),
+  closeButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  nameSection: {
-    marginBottom: 24,
+  section: {
+    paddingTop: 20,
   },
-  budgetSection: {
-    marginBottom: 24,
+  sectionLabel: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  iconBox: {
+    width: 52,
+    height: 52,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.12)",
+  },
+  iconBoxSelected: {
+    borderColor: "#4A90E2",
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+  },
+  iconEmoji: {
+    fontSize: 26,
+  },
+  iconEmojiRow: {
+    fontSize: 20,
+  },
+  categoryInput: {
+    flex: 1,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "500",
+    height: 52,
   },
   budgetInputRow: {
     flexDirection: "row",
@@ -517,7 +532,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.12)",
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    height: 52,
   },
   budgetPrefix: {
     color: "rgba(255,255,255,0.8)",
@@ -532,72 +547,17 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   budgetHint: {
-    color: "rgba(255,255,255,0.5)",
+    color: "rgba(255,255,255,0.4)",
     fontSize: 12,
-    marginTop: 8,
-  },
-  sectionLabel: {
-    color: "rgba(255,255,255,0.6)",
-    fontSize: 11,
-    fontWeight: "700",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-    marginBottom: 12,
-  },
-  topRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  iconBox: {
-    width: 56,
-    height: 56,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "rgba(255,255,255,0.12)",
-  },
-  iconBoxSelected: {
-    borderColor: "#4A90E2",
-    backgroundColor: "rgba(74, 144, 226, 0.15)",
-  },
-  iconEmoji: {
-    fontSize: 28,
-  },
-  iconEmojiRow: {
-    fontSize: 20,
-  },
-  categoryInput: {
-    flex: 1,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-    color: "#fff",
-    fontSize: 16,
-    minHeight: 56,
-    fontWeight: "500",
-  },
-  iconSection: {
-    marginBottom: 8,
-  },
-  iconScroll: {
-    marginHorizontal: -Math.max(20, SCREEN_WIDTH * 0.05),
-    paddingHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
+    marginTop: 6,
   },
   iconScrollContent: {
-    gap: 12,
-    paddingRight: Math.max(20, SCREEN_WIDTH * 0.05),
-    paddingTop: 5,
-    paddingBottom: 5,
+    gap: 10,
+    paddingVertical: 2,
   },
   iconOption: {
-    width: 50,
-    height: 50,
+    width: 46,
+    height: 46,
     borderRadius: 12,
     backgroundColor: "rgba(255,255,255,0.08)",
     alignItems: "center",
@@ -610,48 +570,37 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(74, 144, 226, 0.2)",
     transform: [{ scale: 1.05 }],
   },
-  bottomButtonRow: {
+  buttonRow: {
     flexDirection: "row",
-    marginHorizontal: Math.max(20, SCREEN_WIDTH * 0.05),
-    marginBottom: Math.max(20, SCREEN_HEIGHT * 0.025),
-    marginTop: 5,
     gap: 12,
+    paddingTop: 24,
   },
-  bottomButtonContainer: {
+  btn: {
     borderRadius: 12,
     overflow: "hidden",
   },
-  bottomCancelButtonContainer: {
+  cancelBtn: {
     flex: 0.4,
   },
-  bottomSaveButtonContainer: {
+  saveBtn: {
     flex: 0.6,
   },
-  bottomCancelButton: {
+  btnInner: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     paddingVertical: 16,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(142, 142, 147, 0.3)",
+    borderColor: "rgba(255,255,255,0.1)",
     gap: 8,
   },
-  bottomSaveButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 16,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.3)",
-    gap: 8,
-  },
-  bottomButtonText: {
+  btnText: {
     fontSize: 16,
     fontWeight: "500",
+    color: "#fff",
   },
-  buttonDisabled: {
+  btnDisabled: {
     opacity: 0.5,
   },
 });
