@@ -322,7 +322,7 @@ export const demoGoals = [
     label: "Europe Trip",
     note: "Flight + 2 weeks",
     target_amount: 4500,
-    current_amount: 1575,
+    current_amount: 2875,
     target_date: "2026-09-01",
     category: "vacation" as const,
     status: "active" as const,
@@ -532,6 +532,400 @@ export const demoInvestmentHoldings = [
     industry: "Internet",
   },
 ];
+
+// ——— budget data (rich demo budget for BudgetView) ———
+// Matches BudgetData interface from @/src/types/budget
+export const demoBudgetData = [
+  // — Food (parent with children) —
+  {
+    category: "Food",
+    spent: 340,
+    budget: 650,
+    color: "#FF6B6B",
+    icon: "🍽️",
+    categoryId: "demo-cat-food",
+    entryId: "demo-entry-food",
+    parentCategoryId: null,
+    children: [
+      {
+        category: "Food",
+        spent: 110,
+        budget: 250,
+        color: "#FF6B6B",
+        icon: "🍽️",
+        categoryId: "demo-cat-food",
+        entryId: "demo-entry-food-self",
+        parentCategoryId: "demo-cat-food",
+        children: [],
+      },
+      {
+        category: "Coffee",
+        spent: 38,
+        budget: 70,
+        color: "#D4A574",
+        icon: "☕",
+        categoryId: "demo-cat-coffee",
+        entryId: "demo-entry-coffee",
+        parentCategoryId: "demo-cat-food",
+        children: [],
+      },
+      {
+        category: "Groceries",
+        spent: 170,
+        budget: 270,
+        color: "#4ECDC4",
+        icon: "🛒",
+        categoryId: "demo-cat-groceries",
+        entryId: "demo-entry-groceries",
+        parentCategoryId: "demo-cat-food",
+        children: [],
+      },
+    ],
+  },
+  // — Rent —
+  {
+    category: "Rent",
+    spent: 1200,
+    budget: 1250,
+    color: "#9B59B6",
+    icon: "🏠",
+    categoryId: "demo-cat-rent",
+    entryId: "demo-entry-rent",
+    parentCategoryId: null,
+    children: [],
+  },
+  // — Shopping (parent with children) —
+  {
+    category: "Shopping",
+    spent: 285,
+    budget: 550,
+    color: "#4A90E2",
+    icon: "🛍️",
+    categoryId: "demo-cat-shopping",
+    entryId: "demo-entry-shopping",
+    parentCategoryId: null,
+    children: [
+      {
+        category: "Shopping",
+        spent: 120,
+        budget: 250,
+        color: "#4A90E2",
+        icon: "🛍️",
+        categoryId: "demo-cat-shopping",
+        entryId: "demo-entry-shopping-self",
+        parentCategoryId: "demo-cat-shopping",
+        children: [],
+      },
+      {
+        category: "Electronics",
+        spent: 89,
+        budget: 200,
+        color: "#3498DB",
+        icon: "💻",
+        categoryId: "demo-cat-electronics",
+        entryId: "demo-entry-electronics",
+        parentCategoryId: "demo-cat-shopping",
+        children: [],
+      },
+      {
+        category: "Clothing",
+        spent: 76,
+        budget: 100,
+        color: "#E056A0",
+        icon: "👕",
+        categoryId: "demo-cat-clothing",
+        entryId: "demo-entry-clothing",
+        parentCategoryId: "demo-cat-shopping",
+        children: [],
+      },
+    ],
+  },
+  // — Transportation (parent with children) —
+  {
+    category: "Transportation",
+    spent: 165,
+    budget: 400,
+    color: "#2ECC71",
+    icon: "🚗",
+    categoryId: "demo-cat-transport",
+    entryId: "demo-entry-transport",
+    parentCategoryId: null,
+    children: [
+      {
+        category: "Gas",
+        spent: 108,
+        budget: 250,
+        color: "#27AE60",
+        icon: "⛽",
+        categoryId: "demo-cat-gas",
+        entryId: "demo-entry-gas",
+        parentCategoryId: "demo-cat-transport",
+        children: [],
+      },
+      {
+        category: "Rideshare",
+        spent: 57,
+        budget: 150,
+        color: "#1ABC9C",
+        icon: "🚕",
+        categoryId: "demo-cat-rideshare",
+        entryId: "demo-entry-rideshare",
+        parentCategoryId: "demo-cat-transport",
+        children: [],
+      },
+    ],
+  },
+  // — Entertainment —
+  {
+    category: "Entertainment",
+    spent: 88,
+    budget: 200,
+    color: "#FF9500",
+    icon: "🎬",
+    categoryId: "demo-cat-entertainment",
+    entryId: "demo-entry-entertainment",
+    parentCategoryId: null,
+    children: [],
+  },
+  // — Bills & Utilities —
+  {
+    category: "Bills & Utilities",
+    spent: 159,
+    budget: 320,
+    color: "#607D8B",
+    icon: "💡",
+    categoryId: "demo-cat-bills",
+    entryId: "demo-entry-bills",
+    parentCategoryId: null,
+    children: [],
+  },
+  // — Health & Fitness —
+  {
+    category: "Health & Fitness",
+    spent: 45,
+    budget: 120,
+    color: "#E74C3C",
+    icon: "💪",
+    categoryId: "demo-cat-health",
+    entryId: "demo-entry-health",
+    parentCategoryId: null,
+    children: [],
+  },
+  // — Subscriptions —
+  {
+    category: "Subscriptions",
+    spent: 72,
+    budget: 130,
+    color: "#8E44AD",
+    icon: "📱",
+    categoryId: "demo-cat-subs",
+    entryId: "demo-entry-subs",
+    parentCategoryId: null,
+    children: [],
+  },
+  // — Personal Care —
+  {
+    category: "Personal Care",
+    spent: 28,
+    budget: 80,
+    color: "#F39C12",
+    icon: "✨",
+    categoryId: "demo-cat-personal",
+    entryId: "demo-entry-personal",
+    parentCategoryId: null,
+    children: [],
+  },
+  // — Education —
+  {
+    category: "Education",
+    spent: 15,
+    budget: 60,
+    color: "#16A085",
+    icon: "📚",
+    categoryId: "demo-cat-education",
+    entryId: "demo-entry-education",
+    parentCategoryId: null,
+    children: [],
+  },
+];
+
+// Pre-computed totals for demo budget
+// Total spent: 340+1200+285+165+88+159+45+72+28+15 = 2397
+// Total budget: 650+1250+550+400+200+320+120+130+80+60 = 3760
+export const demoBudgetTotalBudget = 3760;
+export const demoBudgetTotalSpent = 2397;
+
+// Category breakdown that matches the budget data above (BudgetView calculates totalSpent from this)
+export const demoBudgetCategoryBreakdown: [string, { amount: number; percentage: number; color: string; hasRecurringTransactions: boolean }][] = [
+  ["Food", { amount: 340, percentage: 14.2, color: "#FF6B6B", hasRecurringTransactions: false }],
+  ["Rent", { amount: 1200, percentage: 50.1, color: "#9B59B6", hasRecurringTransactions: true }],
+  ["Shopping", { amount: 285, percentage: 11.9, color: "#4A90E2", hasRecurringTransactions: false }],
+  ["Transportation", { amount: 165, percentage: 6.9, color: "#2ECC71", hasRecurringTransactions: false }],
+  ["Entertainment", { amount: 88, percentage: 3.7, color: "#FF9500", hasRecurringTransactions: false }],
+  ["Bills & Utilities", { amount: 159, percentage: 6.6, color: "#607D8B", hasRecurringTransactions: true }],
+  ["Health & Fitness", { amount: 45, percentage: 1.9, color: "#E74C3C", hasRecurringTransactions: false }],
+  ["Subscriptions", { amount: 72, percentage: 3.0, color: "#8E44AD", hasRecurringTransactions: true }],
+  ["Personal Care", { amount: 28, percentage: 1.2, color: "#F39C12", hasRecurringTransactions: false }],
+  ["Education", { amount: 15, percentage: 0.6, color: "#16A085", hasRecurringTransactions: false }],
+];
+
+// Icon map for demo spending breakdown (keyed by category name)
+export const demoCategoryIcons: Record<string, string> = {
+  "Food": "🍽️",
+  Rent: "🏠",
+  Shopping: "🛍️",
+  Transportation: "🚗",
+  Entertainment: "🎬",
+  "Bills & Utilities": "💡",
+  "Health & Fitness": "💪",
+  Subscriptions: "📱",
+  "Personal Care": "✨",
+  Education: "📚",
+  Coffee: "☕",
+  Delivery: "🛵",
+  Groceries: "🛒",
+  Electronics: "💻",
+  Clothing: "👕",
+  Gas: "⛽",
+  Rideshare: "🚕",
+};
+
+// ——— recurring streams (subscriptions, bills, income) ———
+// RecurringStream: average_amount > 0 = outflow (expense), < 0 = inflow (income)
+const DEMO_ACCOUNT_CHECKING = "dVLNLWjABZI38BWNADAPuKdmj3RjoetJA7KqR";
+const DEMO_ACCOUNT_CREDIT = "N1EMEzm36PhAKd5GQNQRirBzqlJqpxFyN9dzp";
+
+export const demoRecurringStreams = {
+  subscriptions: [
+    {
+      stream_id: "demo-stream-netflix",
+      description: "Netflix",
+      merchant_name: "Netflix",
+      category: "Recreation",
+      stream_type: "subscription",
+      frequency: "monthly",
+      average_amount: 15.99,
+      last_amount: 15.99,
+      last_date: "2026-01-04",
+      first_date: "2025-06-04",
+      is_active: true,
+      account_id: DEMO_ACCOUNT_CREDIT,
+      transaction_ids: ["tx-4", "tx-35"],
+      iso_currency_code: "USD",
+      user_dismissed: false,
+    },
+    {
+      stream_id: "demo-stream-spotify",
+      description: "Spotify",
+      merchant_name: "Spotify",
+      category: "Recreation",
+      stream_type: "subscription",
+      frequency: "monthly",
+      average_amount: 10.99,
+      last_amount: 10.99,
+      last_date: "2026-01-05",
+      first_date: "2025-07-05",
+      is_active: true,
+      account_id: DEMO_ACCOUNT_CREDIT,
+      transaction_ids: ["tx-5", "tx-46"],
+      iso_currency_code: "USD",
+      user_dismissed: false,
+    },
+    {
+      stream_id: "demo-stream-apple",
+      description: "Apple iCloud",
+      merchant_name: "Apple",
+      category: "Service",
+      stream_type: "subscription",
+      frequency: "monthly",
+      average_amount: 9.99,
+      last_amount: 9.99,
+      last_date: "2026-01-17",
+      first_date: "2025-10-10",
+      is_active: true,
+      account_id: DEMO_ACCOUNT_CREDIT,
+      transaction_ids: ["tx-11", "tx-48"],
+      iso_currency_code: "USD",
+      user_dismissed: false,
+    },
+  ],
+  bills: [
+    {
+      stream_id: "demo-stream-gym",
+      description: "Gym membership",
+      merchant_name: "Planet Fitness",
+      category: "Recreation",
+      stream_type: "bill",
+      frequency: "monthly",
+      average_amount: 65,
+      last_amount: 65,
+      last_date: "2026-01-10",
+      first_date: "2025-09-14",
+      is_active: true,
+      account_id: DEMO_ACCOUNT_CHECKING,
+      transaction_ids: ["tx-15", "tx-41"],
+      iso_currency_code: "USD",
+      user_dismissed: false,
+    },
+  ],
+  income: [
+    {
+      stream_id: "demo-stream-salary",
+      description: "Payroll",
+      merchant_name: "ACME Corp",
+      category: "Income",
+      stream_type: "income",
+      frequency: "monthly",
+      average_amount: -5000,
+      last_amount: -5000,
+      last_date: "2026-01-02",
+      first_date: "2025-08-02",
+      is_active: true,
+      account_id: DEMO_ACCOUNT_CHECKING,
+      transaction_ids: ["tx-1", "tx-32"],
+      iso_currency_code: "USD",
+      user_dismissed: false,
+    },
+  ],
+  other: [],
+  inactive: [],
+};
+
+// Demo recurring data formatted for RecurringSection (mutable copies for type compatibility)
+export const demoRecurringData = {
+  subscriptions: demoRecurringStreams.subscriptions.map((s) => ({ ...s, transaction_ids: [...s.transaction_ids] })),
+  income: demoRecurringStreams.income.map((s) => ({ ...s, transaction_ids: [...s.transaction_ids] })),
+  bills: demoRecurringStreams.bills.map((s) => ({ ...s, transaction_ids: [...s.transaction_ids] })),
+  other: [],
+  inactive: [],
+};
+
+// Demo transactions per stream for detail view (amount: negative = inflow, positive = outflow)
+export const demoRecurringTransactionsByStream: Record<
+  string,
+  Array<{ id: string; name: string; amount: number; date: string; authorized_date?: string; accounts?: { user_items?: { institution_name: string } } }>
+> = {
+  "demo-stream-netflix": [
+    { id: "tx-4", name: "Netflix", amount: 15.99, date: "2025-12-04", authorized_date: "2025-12-04", accounts: { user_items: { institution_name: "Capital One" } } },
+    { id: "tx-35", name: "Netflix", amount: 15.99, date: "2026-01-04", authorized_date: "2026-01-04", accounts: { user_items: { institution_name: "Capital One" } } },
+  ],
+  "demo-stream-spotify": [
+    { id: "tx-5", name: "Spotify", amount: 10.99, date: "2025-12-05", authorized_date: "2025-12-05", accounts: { user_items: { institution_name: "Capital One" } } },
+    { id: "tx-46", name: "Spotify", amount: 10.99, date: "2026-01-15", authorized_date: "2026-01-15", accounts: { user_items: { institution_name: "Capital One" } } },
+  ],
+  "demo-stream-apple": [
+    { id: "tx-11", name: "Apple iCloud", amount: 9.99, date: "2025-12-10", authorized_date: "2025-12-10", accounts: { user_items: { institution_name: "Capital One" } } },
+    { id: "tx-48", name: "Apple iCloud", amount: 9.99, date: "2026-01-17", authorized_date: "2026-01-17", accounts: { user_items: { institution_name: "Capital One" } } },
+  ],
+  "demo-stream-gym": [
+    { id: "tx-15", name: "Gym", amount: 65, date: "2025-12-14", authorized_date: "2025-12-14", accounts: { user_items: { institution_name: "Chase" } } },
+    { id: "tx-41", name: "Gym", amount: 65, date: "2026-01-10", authorized_date: "2026-01-10", accounts: { user_items: { institution_name: "Chase" } } },
+  ],
+  "demo-stream-salary": [
+    { id: "tx-1", name: "Payroll", amount: -5000, date: "2025-12-02", authorized_date: "2025-12-02", accounts: { user_items: { institution_name: "Chase" } } },
+    { id: "tx-32", name: "Payroll", amount: -5000, date: "2026-01-02", authorized_date: "2026-01-02", accounts: { user_items: { institution_name: "Chase" } } },
+  ],
+};
 
 // ——— cash_entries (empty; no cash tracking in demo) ———
 export const demoCashEntries: Array<{

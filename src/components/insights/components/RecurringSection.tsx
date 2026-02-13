@@ -23,6 +23,11 @@ import {
 import IconButton from "@/src/components/shared/IconButton";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 import { supabase } from "@/src/lib/supabase/supabase";
+import { useDemoMode } from "@/src/contexts/DemoContext";
+import {
+  demoRecurringData,
+  demoRecurringTransactionsByStream,
+} from "@/src/data/demo/demoData";
 import {
   bulkUpdateRecurringStatus,
   dismissRecurringStream,
@@ -69,6 +74,12 @@ export default function RecurringSection({
   titleStyle,
   onRunAnalysis,
 }: Props) {
+  const { isDemoMode } = useDemoMode();
+
+  // In demo mode, use demo data and skip loading
+  const effectiveRecurringData = isDemoMode ? demoRecurringData : recurringData;
+  const effectiveIsLoading = isDemoMode ? false : isLoading;
+
   const [selectedStream, setSelectedStream] = useState<RecurringStream | null>(
     null,
   );
@@ -107,7 +118,7 @@ export default function RecurringSection({
   }, [analyzing]);
 
   useEffect(() => {
-    if (!isLoading) {
+    if (!effectiveIsLoading) {
       setLoadingMessageIndex(0);
       return;
     }
@@ -117,7 +128,7 @@ export default function RecurringSection({
       );
     }, 2200);
     return () => clearInterval(interval);
-  }, [isLoading]);
+  }, [effectiveIsLoading]);
 
   const isIOS = Platform.OS === "ios";
   const iosVersion = isIOS
@@ -149,14 +160,14 @@ export default function RecurringSection({
     fetchUserId();
   }, []);
 
-  // Pre-load transactions for all recurring streams when data is available
+  // Pre-load transactions for all recurring streams when data is available (skip in demo - we use inline data)
   useEffect(() => {
-    if (recurringData && !isLoading) {
+    if (effectiveRecurringData && !effectiveIsLoading && !isDemoMode) {
       const allStreams = [
-        ...(recurringData.subscriptions || []),
-        ...(recurringData.bills || []),
-        ...(recurringData.income || []),
-        ...(recurringData.other || []),
+        ...(effectiveRecurringData.subscriptions || []),
+        ...(effectiveRecurringData.bills || []),
+        ...(effectiveRecurringData.income || []),
+        ...(effectiveRecurringData.other || []),
       ].filter((stream) => stream.is_active);
 
       // Pre-load transactions for each stream in the background
@@ -188,7 +199,7 @@ export default function RecurringSection({
         }
       });
     }
-  }, [recurringData, isLoading]);
+  }, [effectiveRecurringData, effectiveIsLoading, isDemoMode]);
 
   // Function to clear cache (useful for refresh scenarios)
   const clearTransactionsCache = () => {
@@ -197,12 +208,12 @@ export default function RecurringSection({
 
   // Build and pad list so there are always two items per row
   const data: ListItem[] = useMemo(() => {
-    const active = recurringData
+    const active = effectiveRecurringData
       ? [
-          ...(recurringData.subscriptions || []),
-          ...(recurringData.bills || []),
-          ...(recurringData.income || []),
-          ...(recurringData.other || []),
+          ...(effectiveRecurringData.subscriptions || []),
+          ...(effectiveRecurringData.bills || []),
+          ...(effectiveRecurringData.income || []),
+          ...(effectiveRecurringData.other || []),
         ].filter((item) => item.is_active)
       : [];
 
@@ -210,9 +221,9 @@ export default function RecurringSection({
       return [...active, { spacer: true, id: "spacer" }];
     }
     return active;
-  }, [recurringData]);
+  }, [effectiveRecurringData]);
 
-  const inactiveStreams = (recurringData?.inactive || []) as RecurringStream[];
+  const inactiveStreams = (effectiveRecurringData?.inactive || []) as RecurringStream[];
 
   const getStreamTypeIcon = (stream: RecurringStream) => {
     const merchant = (
@@ -306,26 +317,27 @@ export default function RecurringSection({
   };
 
   const handleCardPress = async (stream: RecurringStream) => {
-    // Instant switch - no animations
     setSelectedStream(stream);
     setShowTransactionHistory(true);
 
-    // Check if we have cached transactions
+    if (isDemoMode) {
+      const demoTransactions = demoRecurringTransactionsByStream[stream.stream_id] || [];
+      setStreamTransactions(demoTransactions as RecurringTransaction[]);
+      setLoadingTransactions(false);
+      return;
+    }
+
     const cachedTransactions = transactionsCache.current.get(stream.stream_id);
 
     if (cachedTransactions) {
-      // Use cached data immediately
       setStreamTransactions(cachedTransactions);
       setLoadingTransactions(false);
     } else {
-      // Load from API if not cached
       setLoadingTransactions(true);
-      setStreamTransactions([]); // Clear previous transactions
+      setStreamTransactions([]);
 
-      // Load in background
       getTransactionsForRecurringStream(stream.stream_id)
         .then((transactions) => {
-          // Cache the result for future use
           transactionsCache.current.set(stream.stream_id, transactions);
           setStreamTransactions(transactions);
         })
@@ -661,8 +673,8 @@ export default function RecurringSection({
           </View>
         )}
 
-        {/* Remove or Add back button */}
-        {!loadingTransactions && streamTransactions.length > 0 && (
+        {/* Remove or Add back button (hidden in demo mode) */}
+        {!loadingTransactions && streamTransactions.length > 0 && !isDemoMode && (
           <>
             {selectedStream.is_active && !selectedStream.user_dismissed ? (
               <TouchableOpacity
@@ -798,7 +810,7 @@ export default function RecurringSection({
     return renderLoadingView(ANALYSIS_MESSAGES, analysisMessageIndex);
   }
 
-  if (isLoading) {
+  if (effectiveIsLoading) {
     return renderLoadingView(LOADING_MESSAGES, loadingMessageIndex);
   }
 
@@ -823,7 +835,7 @@ export default function RecurringSection({
     <View style={{ paddingHorizontal: 20, marginTop: 16, marginBottom: 50 }}>
       <View style={styles.sectionHeader}>
         <Text style={titleStyle}>Recurring Transactions</Text>
-        {onRunAnalysis && userId && (
+        {onRunAnalysis && userId && !isDemoMode && (
           <TouchableOpacity
             onPress={handleRunAnalysis}
             disabled={analyzing}

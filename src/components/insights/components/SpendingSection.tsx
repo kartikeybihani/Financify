@@ -1,10 +1,15 @@
-import React, { useState } from "react";
+import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import PersonalityBadge from "@/src/components/insights/PersonalityBadge";
 import SpendingBreakdown from "@/src/components/insights/SpendingBreakdown";
 import { MonthOption } from "./MonthSelector";
 import MonthPickerModal from "@/src/components/modals/MonthPickerModal";
 import { analyzeSpendingPersonality } from "@/src/utils/analytics/personalityAnalysis";
+import { useDemoMode } from "@/src/contexts/DemoContext";
+import {
+  demoBudgetCategoryBreakdown,
+  demoCategoryIcons,
+} from "@/src/data/demo/demoData";
 
 interface Props {
   titleStyle: any;
@@ -45,16 +50,31 @@ export default function SpendingSection({
   selectedYear,
   onMonthSelect,
 }: Props) {
+  const { isDemoMode } = useDemoMode();
   const [monthPickerVisible, setMonthPickerVisible] = useState(false);
 
+  // In demo mode, use the demo category breakdown and icon map
+  const effectiveBreakdown = isDemoMode
+    ? demoBudgetCategoryBreakdown
+    : categoryBreakdown;
+
+  const demoGetCategoryIcon = useCallback(
+    (name: string) => demoCategoryIcons[name] || "",
+    [],
+  );
+
+  const effectiveGetCategoryIcon = isDemoMode
+    ? demoGetCategoryIcon
+    : getCategoryIcon;
+
   // Calculate total spent from category breakdown
-  const totalSpent = categoryBreakdown.reduce(
+  const totalSpent = effectiveBreakdown.reduce(
     (sum, [_, data]) => sum + data.amount,
     0,
   );
 
   // Analyze spending personality
-  const personality = analyzeSpendingPersonality(categoryBreakdown, totalSpent);
+  const personality = analyzeSpendingPersonality(effectiveBreakdown, totalSpent);
 
   // Format period display
   const formatPeriodDisplay = () => {
@@ -90,10 +110,10 @@ export default function SpendingSection({
       <PersonalityBadge personality={personality} showDetails={true} />
 
       <SpendingBreakdown
-        categoryBreakdown={categoryBreakdown}
+        categoryBreakdown={effectiveBreakdown}
         onCategoryPress={onCategoryPress}
         formatCategoryName={formatCategoryName}
-        getCategoryIcon={getCategoryIcon}
+        getCategoryIcon={effectiveGetCategoryIcon}
         period={formatPeriodDisplay()}
         onPeriodPress={() => setMonthPickerVisible(true)}
       />

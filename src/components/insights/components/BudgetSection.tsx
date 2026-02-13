@@ -8,6 +8,13 @@ import BudgetCreationModal from "@/src/components/modals/BudgetCreationModal";
 import { useBudget } from "@/src/hooks/useBudget";
 import { LoadingIndicator } from "@/src/shared/components/LoadingStates";
 import logger from "@/src/utils/core/logger";
+import { useDemoMode } from "@/src/contexts/DemoContext";
+import {
+  demoBudgetData,
+  demoBudgetTotalBudget,
+  demoBudgetTotalSpent,
+  demoBudgetCategoryBreakdown,
+} from "@/src/data/demo/demoData";
 
 interface Props {
   titleStyle: any;
@@ -44,6 +51,7 @@ export default function BudgetSection({
   onRefreshBudgetRef,
   refreshCategories,
 }: Props) {
+  const { isDemoMode } = useDemoMode();
   const [addCategoryModalVisible, setAddCategoryModalVisible] = useState(false);
   const [showManualBudgetModal, setShowManualBudgetModal] = useState(false);
   const [showFinnyBudgetModal, setShowFinnyBudgetModal] = useState(false);
@@ -67,9 +75,10 @@ export default function BudgetSection({
 
   // Check if user has an active budget period with entries
   const hasActiveBudget =
-    budgetSummary?.period?.status === "active" &&
+    isDemoMode ||
+    (budgetSummary?.period?.status === "active" &&
     budgetData.length > 0 &&
-    !budgetLoading;
+    !budgetLoading);
 
   // Calculate total spent from category breakdown (fallback)
   const totalSpent = categoryBreakdown.reduce(
@@ -130,7 +139,17 @@ export default function BudgetSection({
   return (
     <View style={styles.container}>
       {/* Show loading when fetching with no cache; empty state when loaded but no budget; otherwise BudgetView */}
-      {budgetLoading ? (
+      {isDemoMode ? (
+        <BudgetView
+          categoryBreakdown={demoBudgetCategoryBreakdown}
+          onCategoryPress={onCategoryPress}
+          formatCategoryName={formatCategoryName}
+          budgets={demoBudgetData}
+          totalBudget={demoBudgetTotalBudget}
+          totalSpent={demoBudgetTotalSpent}
+          budgetSummary={null}
+        />
+      ) : budgetLoading ? (
         <LoadingIndicator
           message="Loading your budget..."
           style={styles.loadingIndicator}

@@ -37,7 +37,7 @@ export default function CleanInsightsHeader({
           toValue: 1,
           duration: 1000,
           useNativeDriver: true,
-        })
+        }),
       );
       rotation.start();
       return () => rotation.stop();
@@ -65,7 +65,7 @@ export default function CleanInsightsHeader({
       Alert.alert(
         "Sync Status",
         `Last sync: ${syncStatus.lastSync}\nNext sync: ${syncStatus.nextSync}\n\nData syncs automatically every day at 8 AM ET.`,
-        [{ text: "OK" }]
+        [{ text: "OK" }],
       );
     }
   };
@@ -146,6 +146,7 @@ const styles = StyleSheet.create({
     paddingVertical: 1,
     minHeight: 34,
     position: "relative",
+    // marginTop: 55,
   },
   titleContainer: {
     alignItems: "center",

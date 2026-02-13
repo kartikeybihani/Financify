@@ -64,6 +64,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     position: "relative",
     minHeight: 50,
+    // marginTop: 55,
   },
   leftIconContainer: {
     position: "absolute",

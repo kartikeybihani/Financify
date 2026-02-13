@@ -674,12 +674,11 @@ const Goals: React.FC<GoalsProps> = ({
 
       {/* Remove overlay loader; rely solely on RefreshControl spinner to avoid duplication */}
 
-      {sortedGoalsData.length !== 0 && !isPremiumLocked && (
+      {sortedGoalsData.length !== 0 && !isPremiumLocked && !isDemoMode && (
         <TouchableOpacity
           style={[
             styles.addGoalButton,
             { bottom: Math.max(insets.bottom, 16) + 72 },
-            isDemoMode && { opacity: 0.5 },
           ]}
           onPress={() => {
             if (isDemoMode) return;
