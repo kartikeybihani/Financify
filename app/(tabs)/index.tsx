@@ -1200,6 +1200,21 @@ export default function HomeScreen() {
               formatCurrency={formatCurrency}
               isLoading={financialLoading || financialInitialLoad}
               isInitialLoad={financialInitialLoad}
+              onAddAccounts={() => {
+                openModal("accounts", {
+                  initialExpandedCategory: "accounts",
+                  onAccountAdded: async () => {
+                    logger.info(
+                      "New account added, refreshing financial data..."
+                    );
+                    await fetchFreshData();
+                    logger.info("Financial data refreshed after new account");
+                  },
+                  onCashAdded: () => {
+                    openModal("cashInput");
+                  },
+                });
+              }}
               onCardPress={(cardType) => {
                 openModal("accounts", {
                   initialExpandedCategory: cardType,

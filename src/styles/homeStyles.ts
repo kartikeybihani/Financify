@@ -257,6 +257,22 @@ export const styles = StyleSheet.create({
     color: "#888",
     marginTop: 2,
   },
+  addNewAccountsButton: {
+    alignSelf: "flex-start",
+    paddingVertical: 8,
+    paddingHorizontal: 14,
+    marginBottom: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.35)",
+    backgroundColor: "rgba(74, 144, 226, 0.08)",
+  },
+  addNewAccountsButtonText: {
+    color: "#4A90E2",
+    fontSize: FONTS.sm,
+    fontWeight: "600",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+  },
   summaryRow: {
     flexDirection: "row",
     justifyContent: "space-between",
