@@ -11,7 +11,10 @@ import Purchases, { CustomerInfo } from "react-native-purchases";
 import type { LOG_LEVEL } from "react-native-purchases";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
-import { ENTITLEMENT_ID } from "@/src/constants/subscription";
+import {
+  ENTITLEMENT_ID,
+  GRANDFATHERED_USER_IDS,
+} from "@/src/constants/subscription";
 
 const log = logger.scope("RevenueCat");
 if (__DEV__) log.setLevel("debug");
@@ -55,8 +58,15 @@ export function SubscriptionProvider({
   const [paywallVisible, setPaywallVisible] = useState(false);
   const onPaywallConvertRef = React.useRef<(() => void) | null>(null);
   const onPaywallDismissRef = React.useRef<(() => void) | null>(null);
+  const currentUserIdRef = React.useRef<string | null>(null);
 
   const updateFromCustomerInfo = useCallback((info: CustomerInfo | null) => {
+    const uid = currentUserIdRef.current;
+    if (uid && GRANDFATHERED_USER_IDS.has(uid)) {
+      log.info("Grandfathered user → isPremium = true");
+      setIsPremium(true);
+      return;
+    }
     if (!info) {
       log.info("CustomerInfo: null → isPremium = false");
       setIsPremium(false);
@@ -168,6 +178,7 @@ export function SubscriptionProvider({
         if (cancelled) return;
 
         if (user?.id) {
+          currentUserIdRef.current = user.id;
           const currentId = await Purchases.getAppUserID().catch(() => null);
           log.info("App user ID", { current: currentId, supabase: user.id });
           if (currentId !== user.id) {
@@ -175,6 +186,7 @@ export function SubscriptionProvider({
             log.info("Purchases.logIn completed");
           }
         } else {
+          currentUserIdRef.current = null;
           log.info("No Supabase user, using anonymous RevenueCat user");
         }
 
@@ -206,6 +218,7 @@ export function SubscriptionProvider({
           hasSession: !!session?.user?.id,
         });
         if (event === "SIGNED_IN" && session?.user?.id) {
+          currentUserIdRef.current = session.user.id;
           const currentId = await Purchases.getAppUserID().catch(() => null);
           if (currentId !== session.user.id) {
             await Purchases.logIn(session.user.id);
@@ -214,6 +227,7 @@ export function SubscriptionProvider({
           const info = await Purchases.getCustomerInfo();
           updateFromCustomerInfo(info);
         } else if (event === "SIGNED_OUT") {
+          currentUserIdRef.current = null;
           await Purchases.logOut();
           log.info("Purchases.logOut after sign-out");
           setIsPremium(false);
