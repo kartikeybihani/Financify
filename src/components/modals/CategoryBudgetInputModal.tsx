@@ -18,6 +18,7 @@ import {
   updateBudgetPeriodMeta,
 } from "@/src/types/budget";
 import logger from "@/src/utils/core/logger";
+import { getColorForCategoryName } from "@/lib/categoryColors";
 
 interface CategoryBudgetInputModalProps {
   visible: boolean;
@@ -75,7 +76,7 @@ export default function CategoryBudgetInputModal({
             name: category.name,
             slug: category.slug,
             icon: category.icon,
-            color: "#4A90E2",
+            color: getColorForCategoryName(category.name),
             rank: 0,
             is_active: true,
           });

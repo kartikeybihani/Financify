@@ -26,6 +26,7 @@ import {
   buildBudgetGenerationPrompt,
   buildCategoryMappingPrompt,
 } from "../lib/prompt_engine.js";
+import { getColorForCategoryName } from "../lib/categoryColors.js";
 import { runRecurringAnalysis } from "../lib/recurringAnalysis.js";
 import crypto from "crypto";
 
@@ -836,7 +837,7 @@ async function handleBudgetCreation(req, res, userId) {
                 name: cat.name,
                 slug: slug,
                 icon: cat.icon || "📦",
-                color: "#4A90E2",
+                color: getColorForCategoryName(cat.name),
                 rank: 0,
                 is_active: true,
               });

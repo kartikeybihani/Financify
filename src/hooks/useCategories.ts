@@ -2,6 +2,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
+import { getColorForCategoryName } from "@/lib/categoryColors";
 
 // Types
 export interface Category {
@@ -115,28 +116,7 @@ export function useCategories(userId?: string) {
     if (category?.color) {
       return category.color;
     }
-
-    // Fallback color mapping
-    const colorMap: { [key: string]: string } = {
-      'Groceries': '#4CAF50',
-      'Food': '#FF6B6B',
-      'Dining Out': '#FF6B6B',
-      'Housing': '#8E44AD',
-      'Transportation': '#45B7D1',
-      'Shopping': '#4ECDC4',
-      'Entertainment': '#96CEB4',
-      'Subscriptions': '#9C27B0',
-      'Health & Fitness': '#2E7D32',
-      'Bills & Utilities': '#FF9800',
-      'Personal Care': '#E91E63',
-      'Travel': '#2196F3',
-      'Education': '#795548',
-      'Savings & Investments': '#27AE60',
-      'Income': '#1B5E20',
-      'Other': '#607D8B',
-    };
-    
-    return colorMap[categoryName] || '#607D8B';
+    return getColorForCategoryName(categoryName);
   }, [getCategoryByName]);
 
   const formatCategoryName = useCallback((category: string): string => {

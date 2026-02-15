@@ -13,6 +13,7 @@ import { CategoryTransaction, BudgetData } from "@/src/types/budget";
 import { useWindowDimensions } from "react-native";
 import TransactionDetailModal from "@/src/components/modals/TransactionDetailModal";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
+import { formatCategoryName } from "@/src/utils/categories/categoryService";
 
 export interface CategoryTransactionsModalProps {
   visible: boolean;
@@ -56,7 +57,7 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
     const date = new Date(dateStr + "T00:00:00");
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
       2,
-      "0"
+      "0",
     )}`;
   };
 
@@ -91,11 +92,11 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
       acc.set(key, existing);
       return acc;
     },
-    new Map()
+    new Map(),
   );
 
   const monthKeys = Array.from(grouped.keys()).sort((a, b) =>
-    b.localeCompare(a)
+    b.localeCompare(a),
   );
 
   return (
@@ -180,7 +181,7 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
                             const displayName =
                               tx.merchant_name || tx.name || "Transaction";
                             const formattedDate = new Date(
-                              effectiveDate + "T00:00:00"
+                              effectiveDate + "T00:00:00",
                             ).toLocaleDateString("en-US", {
                               month: "short",
                               day: "numeric",
@@ -246,6 +247,9 @@ const CategoryTransactionsModal: React.FC<CategoryTransactionsModalProps> = ({
                                     <Text style={styles.txItemDate}>
                                       {formattedDate}
                                     </Text>
+                                    {/* <Text style={styles.txItemCategory}>
+                                      {formatCategoryName(tx.category_label)}
+                                    </Text> */}
                                   </View>
                                 </View>
                                 <Text
@@ -399,6 +403,12 @@ const styles = StyleSheet.create({
   txItemDate: {
     color: "rgba(255,255,255,0.6)",
     fontSize: 12,
+  },
+  txItemCategory: {
+    color: "#4A90E2",
+    fontSize: 11,
+    fontWeight: "500",
+    marginTop: 2,
   },
   txItemAmount: {
     color: "#fff",

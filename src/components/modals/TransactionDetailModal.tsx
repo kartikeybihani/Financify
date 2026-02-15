@@ -613,6 +613,9 @@ export default function TransactionDetailModal({
         return;
       }
 
+      // Clear optimistic category update so stale "Other" etc. doesn't overwrite after refresh
+      OptimisticUpdateManager.clearCategoryUpdate(transaction.id);
+
       // If marking as internal transfer (not removing), create a category rule for future transactions
       if (!currentlyInternalTransfer) {
         try {

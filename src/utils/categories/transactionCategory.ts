@@ -4,10 +4,11 @@
  * Single source of truth for determining which category to display for a transaction.
  * 
  * Priority Order:
- * 1. category_id -> categories.name (if category_id exists and categories is joined) - ALWAYS WINS
- * 2. new_category (user explicit override, but skip INTERNAL_TRANSFER) - legacy fallback
- * 3. recurring_stream-based category (if part of active recurring stream)
- * 4. top_category (Plaid's original fallback)
+ * 1. INTERNAL_TRANSFER (new_category or top_category) - always wins over category_id
+ * 2. category_id -> categories.name (if category_id exists and categories is joined)
+ * 3. new_category (user explicit override) - legacy fallback
+ * 4. recurring_stream-based category (if part of active recurring stream)
+ * 5. top_category (Plaid's original fallback)
  * 
  * @module transactionCategory
  */
@@ -28,10 +29,11 @@ export const STREAM_TYPE_TO_CATEGORY: Record<string, string> = {
  * Get the display category for a transaction
  * 
  * Priority Order:
- * 1. category_id -> categories.name (if category_id exists and categories is joined) - ALWAYS WINS
- * 2. new_category (user explicit override, but skip INTERNAL_TRANSFER) - legacy fallback
- * 3. recurring_stream-based category (if part of active recurring stream)
- * 4. top_category (Plaid's original fallback)
+ * 1. INTERNAL_TRANSFER (new_category or top_category)
+ * 2. category_id -> categories.name (if category_id exists and categories is joined)
+ * 3. new_category (user explicit override) - legacy fallback
+ * 4. recurring_stream-based category (if part of active recurring stream)
+ * 5. top_category (Plaid's original fallback)
  * 
  * @param transaction - Transaction object with all fields
  * @returns The category name to display
@@ -43,13 +45,8 @@ export const STREAM_TYPE_TO_CATEGORY: Record<string, string> = {
  * ```
  */
 export function getDisplayCategory(transaction: Transaction): string {
-  // Priority 1: Use category_id -> categories.name if available (preferred method)
-  // This ensures category name changes are reflected immediately without updating transactions
-  if (transaction.category_id && transaction.categories?.name) {
-    return transaction.categories.name;
-  }
-  
-  // Internal transfer: always show INTERNAL_TRANSFER, never "Other"
+  // Priority 1: Internal transfer - always show INTERNAL_TRANSFER, never "Other"
+  // Must check before category_id so stale optimistic updates don't overwrite
   if (
     transaction.new_category === 'INTERNAL_TRANSFER' ||
     transaction.top_category === 'INTERNAL_TRANSFER'
@@ -57,12 +54,18 @@ export function getDisplayCategory(transaction: Transaction): string {
     return 'INTERNAL_TRANSFER';
   }
 
-  // Priority 2: User explicit override - legacy fallback
+  // Priority 2: Use category_id -> categories.name if available (preferred method)
+  // This ensures category name changes are reflected immediately without updating transactions
+  if (transaction.category_id && transaction.categories?.name) {
+    return transaction.categories.name;
+  }
+
+  // Priority 3: User explicit override - legacy fallback
   if (transaction.new_category) {
     return transaction.new_category;
   }
 
-  // Priority 3: Recurring stream-based category
+  // Priority 4: Recurring stream-based category
   if (transaction.recurring_stream_id && transaction.recurring_streams) {
     const stream = Array.isArray(transaction.recurring_streams)
       ? transaction.recurring_streams[0]
@@ -78,7 +81,7 @@ export function getDisplayCategory(transaction: Transaction): string {
     }
   }
   
-  // Priority 4: Plaid's original category
+  // Priority 5: Plaid's original category
   return transaction.top_category || transaction.category || 'Other';
 }
 

@@ -23,6 +23,7 @@ import {
   updateBudgetPeriodMeta,
 } from "@/src/types/budget";
 import { CURATED_ICONS } from "@/src/components/shared/modal-constants";
+import { getColorForCategoryName } from "@/lib/categoryColors";
 
 export const FAB_GRADIENT_COLORS = [
   "rgba(31, 31, 31, 0.98)",
@@ -162,7 +163,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
         name: categoryName.trim(),
         slug: slug,
         icon: selectedIcon,
-        color: "#4A90E2",
+        color: getColorForCategoryName(categoryName.trim()),
         rank: nextRank,
         is_active: true,
       });
