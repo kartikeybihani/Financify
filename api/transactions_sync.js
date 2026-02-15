@@ -925,6 +925,12 @@ async function handleBudgetCreation(req, res, userId) {
         throw new Error("Invalid response format from LLM");
       }
 
+      // Enforce integer limits (LLM may return decimals)
+      llmResponse.categories.forEach((cat) => {
+        const val = cat.limit;
+        cat.limit = Math.round(Number(val) || 0);
+      });
+
       // Ensure Savings category is included (should be first category)
       const savingsAmountValue =
         savingsAmount != null && Number(savingsAmount) > 0
@@ -1002,8 +1008,9 @@ async function handleBudgetCreation(req, res, userId) {
                   savingsIdx >= 0 ? (savingsIdx === 0 ? 1 : 0) : 0,
                 );
           if (adjustIdx >= 0) {
-            categories[adjustIdx].limit =
-              (categories[adjustIdx].limit || 0) + difference;
+            categories[adjustIdx].limit = Math.round(
+              (categories[adjustIdx].limit || 0) + difference,
+            );
           }
         } else {
           // Over budget: proportionally scale down non-Savings categories
@@ -1039,7 +1046,7 @@ async function handleBudgetCreation(req, res, userId) {
               if (absorbIdx >= 0) {
                 categories[absorbIdx].limit = Math.max(
                   0,
-                  (categories[absorbIdx].limit || 0) + roundingDiff,
+                  Math.round((categories[absorbIdx].limit || 0) + roundingDiff),
                 );
               }
             }
