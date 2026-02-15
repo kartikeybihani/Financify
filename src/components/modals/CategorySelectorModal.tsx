@@ -25,6 +25,7 @@ interface CategorySelectorModalProps {
   transactionId: string | null;
   merchantName?: string;
   transactionName?: string;
+  transactionAmount?: number;
   currentCategoryName?: string;
   onClose: () => void;
 }
@@ -34,6 +35,7 @@ export default function CategorySelectorModal({
   transactionId,
   merchantName,
   transactionName,
+  transactionAmount,
   currentCategoryName,
   onClose,
 }: CategorySelectorModalProps) {
@@ -126,6 +128,30 @@ export default function CategorySelectorModal({
     }
   };
 
+  const handleSimilarTransactionsFlow = (categoryId: string) => {
+    const amount = transactionAmount != null && transactionAmount > 0 ? transactionAmount : null;
+    const categoryName = categories.find((c) => c.id === categoryId)?.name ?? "this category";
+    if (amount != null) {
+      Alert.alert(
+        "Create rule for future transactions?",
+        `We'll auto-categorize new similar transactions.\n\n• All amounts: Every future payment like this (any amount) → ${categoryName}\n\n• $${amount.toFixed(2)} only: Only payments of exactly $${amount.toFixed(2)} → ${categoryName}. Other amounts won't match.`,
+        [
+          { text: "Cancel", style: "cancel" },
+          {
+            text: "All amounts",
+            onPress: () => handleUpdateOption("similar", categoryId, null),
+          },
+          {
+            text: `$${amount.toFixed(2)} only`,
+            onPress: () => handleUpdateOption("similar", categoryId, amount),
+          },
+        ]
+      );
+    } else {
+      handleUpdateOption("similar", categoryId, null);
+    }
+  };
+
   const handleCategorySelect = async (categoryId: string) => {
     if (!transactionId) return;
 
@@ -157,8 +183,8 @@ export default function CategorySelectorModal({
           onPress: () => handleUpdateOption("single", categoryId),
         },
         {
-          text: "All Similar Transactions",
-          onPress: () => handleUpdateOption("similar", categoryId),
+          text: "Create a category rule",
+          onPress: () => handleSimilarTransactionsFlow(categoryId),
         },
       ]
     );
@@ -166,7 +192,8 @@ export default function CategorySelectorModal({
 
   const handleUpdateOption = async (
     updateType: "single" | "similar",
-    categoryId: string
+    categoryId: string,
+    ruleAmount: number | null = null
   ) => {
     if (!transactionId) return;
 
@@ -379,6 +406,7 @@ export default function CategorySelectorModal({
               p_match_field: matchField,
               p_match_value: matchValue,
               p_category_name: selectedCategory.name,
+              p_amount: ruleAmount,
             }
           );
 

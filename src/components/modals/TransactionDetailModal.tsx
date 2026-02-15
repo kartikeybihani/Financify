@@ -1042,6 +1042,7 @@ export default function TransactionDetailModal({
         transactionId={transaction?.id || null}
         merchantName={transaction?.merchant_name}
         transactionName={transaction?.name}
+        transactionAmount={transaction?.amount != null ? Math.abs(Number(transaction.amount)) : undefined}
         currentCategoryName={getDisplayCategory(updatedCategory, transaction)}
         onClose={() => setShowCategorySelector(false)}
       />

@@ -112,6 +112,7 @@ CREATE TABLE public.category_rules (
   created_at timestamp with time zone DEFAULT now(),
   match_field text DEFAULT 'merchant_name'::text,
   transaction_name text,
+  amount numeric,
   CONSTRAINT category_rules_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.chat_sessions (

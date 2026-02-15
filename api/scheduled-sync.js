@@ -563,7 +563,7 @@ async function syncItemTransactions(item_id, user_id) {
     // Fetch active merchant rules (category_rules) for priority matching
     const { data: merchantRules, error: rulesError } = await supabase
       .from("category_rules")
-      .select("merchant_name, transaction_name, top_category_id, match_field")
+      .select("merchant_name, transaction_name, top_category_id, match_field, amount")
       .eq("user_id", user_id)
       .eq("active", true);
 
@@ -571,26 +571,34 @@ async function syncItemTransactions(item_id, user_id) {
       console.error("Error fetching merchant rules:", rulesError);
     }
 
-    // Build merchant rules lookup map
-    const merchantRulesMap = new Map();
-    const transactionNameRulesMap = new Map();
+    // Build merchant rules lookup maps (amount-specific first, then general)
+    const merchantRulesWithAmount = new Map();
+    const merchantRulesWithoutAmount = new Map();
+    const transactionNameRulesWithAmount = new Map();
+    const transactionNameRulesWithoutAmount = new Map();
     if (merchantRules) {
       merchantRules.forEach((rule) => {
-        // top_category_id is actually the category_id (despite the confusing name)
         const categoryId = rule.top_category_id;
         const matchField = rule.match_field || "merchant_name";
+        const hasAmount = rule.amount != null;
 
         if (matchField === "merchant_name" && rule.merchant_name) {
-          // Normalize merchant name for matching (case-insensitive)
           const key = rule.merchant_name.toLowerCase().trim();
-          merchantRulesMap.set(key, categoryId);
+          if (hasAmount) {
+            merchantRulesWithAmount.set(`${key}::${Number(rule.amount)}`, categoryId);
+          } else {
+            merchantRulesWithoutAmount.set(key, categoryId);
+          }
         } else if (
           (matchField === "transaction_name" || !rule.merchant_name) &&
           rule.transaction_name
         ) {
-          // Normalize transaction name for matching (case-insensitive)
           const key = rule.transaction_name.toLowerCase().trim();
-          transactionNameRulesMap.set(key, categoryId);
+          if (hasAmount) {
+            transactionNameRulesWithAmount.set(`${key}::${Number(rule.amount)}`, categoryId);
+          } else {
+            transactionNameRulesWithoutAmount.set(key, categoryId);
+          }
         }
       });
     }
@@ -758,23 +766,24 @@ async function syncItemTransactions(item_id, user_id) {
         if (!detectedAsInternalTransfer) {
           const merchantName = txn.merchant_name || null;
           const transactionName = txn.name || null;
+          const txnAmount = Math.abs(Number(txn.amount) || 0);
 
-          // Check merchant_name rules first
+          // Check merchant_name rules: amount-specific first, then general
           if (merchantName) {
             const merchantKey = merchantName.toLowerCase().trim();
-            const ruleCategoryId = merchantRulesMap.get(merchantKey);
-            if (ruleCategoryId) {
-              categoryId = ruleCategoryId;
-            }
+            categoryId =
+              merchantRulesWithAmount.get(`${merchantKey}::${txnAmount}`) ||
+              merchantRulesWithoutAmount.get(merchantKey) ||
+              null;
           }
 
-          // If no merchant rule match, check transaction_name rules
+          // If no merchant rule match, check transaction_name rules: amount-specific first, then general
           if (!categoryId && transactionName) {
             const transactionKey = transactionName.toLowerCase().trim();
-            const ruleCategoryId = transactionNameRulesMap.get(transactionKey);
-            if (ruleCategoryId) {
-              categoryId = ruleCategoryId;
-            }
+            categoryId =
+              transactionNameRulesWithAmount.get(`${transactionKey}::${txnAmount}`) ||
+              transactionNameRulesWithoutAmount.get(transactionKey) ||
+              null;
           }
         }
 

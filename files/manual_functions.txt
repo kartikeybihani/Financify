@@ -30,15 +30,16 @@ TRANSACTION & CATEGORY MANAGEMENT
 
 4. create_or_update_category_rule ⭐ ACTIVE (NEW)
    - Creates or updates a category rule for merchant_name or transaction name matching
-   - Parameters: p_user_id (uuid), p_match_field (text), p_match_value (text), p_category_name (text)
+   - Parameters: p_user_id (uuid), p_match_field (text), p_match_value (text), p_category_name (text), p_amount (numeric, optional, default NULL)
    - Returns: uuid (rule_id)
    - Purpose: Creates category rules that support both merchant_name-based and name-based matching (fixes Zelle NULL merchant_name issue)
    - Used in: CategorySelectorModal.tsx (similar transactions updates)
    - Notes:
      * match_field must be either 'merchant_name' or 'name'
+     * p_amount: when set, rule matches only that exact amount; NULL = match all amounts
      * Supports user-specific and default categories
      * Case-insensitive category name matching
-     * Updates existing rule if one exists, otherwise creates new
+     * Updates existing rule if one exists (same user, match field/value, amount), otherwise creates new
 
 FINANCIAL ANALYTICS & REPORTING
 -------------------------------
