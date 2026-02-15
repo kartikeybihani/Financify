@@ -335,6 +335,9 @@ export default function InsightsScreen() {
   // Enhanced filtering state
   const [showEnhancedFilterModal, setShowEnhancedFilterModal] = useState(false);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [accountsLoaded, setAccountsLoaded] = useState(false);
+  const [isLoadingFilteredTransactions, setIsLoadingFilteredTransactions] =
+    useState(false);
 
   // Account addition modal states
   const [showCategoryModal, setShowCategoryModal] = useState(false);
@@ -712,6 +715,7 @@ export default function InsightsScreen() {
   // When in demo mode, set transactions, accounts, and investment data immediately (no async)
   useEffect(() => {
     if (isDemoMode) {
+      setAccountsLoaded(true);
       const demoTx = getDemoTransactionsForInsights();
       setTransactions(demoTx);
       processTransactionsData(demoTx);
@@ -1078,14 +1082,16 @@ export default function InsightsScreen() {
     };
   }, [searchQuery, activeSectionKey, filterOptions]);
 
-  // Check cache when transactions section is active and we have accounts but no filtered transactions yet
+  // Check cache when transactions section is active and we have no filtered transactions yet
+  // Run when: (accounts loaded and have accounts) OR (accounts not yet loaded) — to set mightHaveTransactions from cache
   useEffect(() => {
     let isCancelled = false;
 
     const checkCacheIfNeeded = async () => {
+      const hasAccountsOrUnknown = accounts.length > 0 || !accountsLoaded;
       if (
         activeSectionKey === "transactions" &&
-        accounts.length > 0 &&
+        hasAccountsOrUnknown &&
         filteredTransactions.length === 0
       ) {
         // If there's an active search query and we have 0 results,
@@ -1127,6 +1133,7 @@ export default function InsightsScreen() {
   }, [
     activeSectionKey,
     accounts.length,
+    accountsLoaded,
     filteredTransactions.length,
     searchQuery,
     isSearching,
@@ -1354,6 +1361,8 @@ export default function InsightsScreen() {
       }
     } catch (error) {
       logger.error("Error loading user accounts:", error);
+    } finally {
+      setAccountsLoaded(true);
     }
   };
 
@@ -1401,6 +1410,9 @@ export default function InsightsScreen() {
     reset: boolean = false,
     search: string = "",
   ) => {
+    if (reset) {
+      setIsLoadingFilteredTransactions(true);
+    }
     try {
       const userId = await getUserId();
       if (!userId) {
@@ -1595,6 +1607,10 @@ export default function InsightsScreen() {
       );
     } catch (error) {
       logger.error("❌ Error loading filtered transactions:", error);
+    } finally {
+      if (reset) {
+        setIsLoadingFilteredTransactions(false);
+      }
     }
   };
 
@@ -2310,7 +2326,10 @@ export default function InsightsScreen() {
       formatCategoryName: formatCategoryFromHook,
       onAddAccount: () => setShowCategoryModal(true),
       hasAccounts: accounts.length > 0,
-      isLoadingTransactions: isLoading && activeSectionKey === "transactions",
+      isLoadingTransactions:
+        (isLoading && activeSectionKey === "transactions") ||
+        (activeSectionKey === "transactions" && isLoadingFilteredTransactions),
+      isLoadingAccounts: !accountsLoaded,
       mightHaveTransactions,
       accounts,
       filterOptions,
@@ -2338,6 +2357,8 @@ export default function InsightsScreen() {
       accounts,
       isLoading,
       activeSectionKey,
+      isLoadingFilteredTransactions,
+      accountsLoaded,
       mightHaveTransactions,
       filterOptions,
       searchQuery,

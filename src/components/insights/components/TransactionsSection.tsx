@@ -17,6 +17,7 @@ import {
   Image,
 } from "react-native";
 import { Ionicons, AntDesign } from "@expo/vector-icons";
+import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 import { useCategories } from "@/src/hooks/useCategories";
 import TransactionDetailModal from "@/src/components/modals/TransactionDetailModal";
 import { Transaction } from "@/src/types/plaid";
@@ -68,6 +69,7 @@ interface Props {
   onAddAccount?: () => void;
   hasAccounts?: boolean;
   isLoadingTransactions?: boolean;
+  isLoadingAccounts?: boolean;
   mightHaveTransactions?: boolean;
   accounts?: Account[];
   filterOptions?: FilterOptions;
@@ -105,6 +107,7 @@ function TransactionsSection(props: Props) {
     onAddAccount,
     hasAccounts = false,
     isLoadingTransactions = false,
+    isLoadingAccounts = false,
     mightHaveTransactions = false,
     accounts = [],
     filterOptions,
@@ -415,37 +418,25 @@ function TransactionsSection(props: Props) {
         </View>
       )} */}
 
-      {(isLoadingTransactions ||
-        (mightHaveTransactions &&
-          displayedTransactions.length === 0 &&
-          !searchQuery.trim())) &&
-      hasAccounts ? (
-        // User has accounts but transactions are loading, show loading screen
+      {isLoadingTransactions ||
+      isLoadingAccounts ||
+      (mightHaveTransactions &&
+        displayedTransactions.length === 0 &&
+        !searchQuery.trim() &&
+        hasAccounts) ? (
+        // Show loading: transactions loading, accounts loading, or have accounts + might have transactions
         // Don't show loading if there's an active search query - we've already searched
-        <View style={styles.loadingStateContainer}>
-          <View style={styles.loadingStateContent}>
-            <Image
-              source={require("@/assets/images/finnylap3.png")}
-              style={{
-                width: 150,
-                height: 140,
-                borderRadius: 80,
-              }}
-              resizeMode="cover"
-            />
-            <Text style={styles.loadingStateTitle}>
-              Pulling up your transactions now
-            </Text>
-            <Text style={styles.loadingStateMessage}>
-              We're fetching your latest transaction data...
-            </Text>
-          </View>
-        </View>
+        <FinnyLoadingIndicator
+          message="Pulling up your transactions now"
+          imageSource={require("@/assets/images/finnylap3.png")}
+          duration={1400}
+        />
       ) : displayedTransactions.length === 0 &&
         !isLoadingTransactions &&
+        !isLoadingAccounts &&
         !mightHaveTransactions &&
         !hasAccounts ? (
-        // No accounts, show empty state
+        // No accounts (confirmed), show empty state
         <View style={styles.emptyStateContainer}>
           <View style={styles.emptyStateContent}>
             <View style={styles.emptyStateIconContainer}>
@@ -635,7 +626,7 @@ function TransactionsSection(props: Props) {
                 </View>
               );
             }
-            
+
             if (hasMoreTransactions) {
               return (
                 <View style={loadMoreStyles.container}>
@@ -644,14 +635,12 @@ function TransactionsSection(props: Props) {
                     activeOpacity={0.7}
                     style={loadMoreStyles.button}
                   >
-                    <Text style={loadMoreStyles.buttonText}>
-                      Load More
-                    </Text>
+                    <Text style={loadMoreStyles.buttonText}>Load More</Text>
                   </TouchableOpacity>
                 </View>
               );
             }
-            
+
             if (filteredTransactions.length > 0) {
               return (
                 <View style={loadMoreStyles.container}>
@@ -661,7 +650,7 @@ function TransactionsSection(props: Props) {
                 </View>
               );
             }
-            
+
             return null;
           }}
         />
@@ -697,41 +686,6 @@ function TransactionsSection(props: Props) {
 }
 
 const styles = StyleSheet.create({
-  loadingStateContainer: {
-    alignItems: "center",
-    justifyContent: "center",
-    paddingVertical: 60,
-    paddingHorizontal: 32,
-  },
-  loadingStateContent: {
-    alignItems: "center",
-    justifyContent: "center",
-    maxWidth: 320,
-  },
-  loadingStateIconContainer: {
-    width: 120,
-    height: 120,
-    borderRadius: 60,
-    backgroundColor: "rgba(74, 144, 226, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.2)",
-  },
-  loadingStateTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#fff",
-    marginBottom: 12,
-    textAlign: "center",
-  },
-  loadingStateMessage: {
-    fontSize: 14,
-    color: "rgba(255, 255, 255, 0.7)",
-    textAlign: "center",
-    lineHeight: 22,
-  },
   emptyStateContainer: {
     alignItems: "center",
     justifyContent: "center",

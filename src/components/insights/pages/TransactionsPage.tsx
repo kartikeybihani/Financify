@@ -26,6 +26,7 @@ interface TransactionsPageProps {
   onAddAccount?: () => void;
   hasAccounts?: boolean;
   isLoadingTransactions?: boolean;
+  isLoadingAccounts?: boolean;
   mightHaveTransactions?: boolean;
   accounts?: Account[];
   filterOptions?: FilterOptions;
@@ -56,6 +57,7 @@ const TransactionsPage = React.memo<TransactionsPageProps>(
     onAddAccount,
     hasAccounts,
     isLoadingTransactions,
+    isLoadingAccounts,
     mightHaveTransactions,
     accounts,
     filterOptions,
@@ -116,6 +118,7 @@ const TransactionsPage = React.memo<TransactionsPageProps>(
           onAddAccount={onAddAccount}
           hasAccounts={hasAccounts}
           isLoadingTransactions={isLoadingTransactions}
+          isLoadingAccounts={isLoadingAccounts}
           mightHaveTransactions={mightHaveTransactions}
           accounts={accounts}
           filterOptions={filterOptions}

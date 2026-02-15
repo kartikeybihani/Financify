@@ -32,7 +32,7 @@ export default function SharedBanners({
         .filter((item) => !item.dismissed)
         .map((item) => (
           <ReAuthBanner
-            key={item.item_id}
+            key={`${item.item_id}-${item.type ?? "re_auth"}`}
             institutionName={item.institution_name}
             onReAuth={() => onReAuth(item.item_id)}
             onDismiss={() => onDismissReAuth(item.item_id)}
