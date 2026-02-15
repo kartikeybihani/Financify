@@ -11,7 +11,8 @@ import {
 import { syncSnaptradeInvestments } from "../lib/snaptradeSync.js";
 
 const SCHEDULED_SYNC_CRON_SECRET =
-  process.env.SCHEDULED_SYNC_CRON_SECRET || process.env.BIGGEST_MOVER_CRON_SECRET;
+  process.env.SCHEDULED_SYNC_CRON_SECRET ||
+  process.env.BIGGEST_MOVER_CRON_SECRET;
 
 /** Infer trigger_source from mode for sync_logs */
 function getTriggerSource(mode) {
@@ -35,7 +36,7 @@ export default async function handler(req, res) {
 
   const url = new URL(
     req.url || "/",
-    `http://${req.headers?.host || "localhost"}`
+    `http://${req.headers?.host || "localhost"}`,
   );
   const mode = url.searchParams.get("mode") || "scheduled";
 
@@ -69,7 +70,7 @@ export default async function handler(req, res) {
 
   console.log(
     "🔄 Starting scheduled transaction sync at",
-    new Date().toISOString()
+    new Date().toISOString(),
   );
 
   const startedAt = new Date().toISOString();
@@ -95,9 +96,7 @@ export default async function handler(req, res) {
         trigger_source: getTriggerSource(mode),
         started_at: startedAt,
         completed_at: completedAt,
-        duration_ms: Math.round(
-          (new Date(completedAt) - new Date(startedAt))
-        ),
+        duration_ms: Math.round(new Date(completedAt) - new Date(startedAt)),
       });
       return res.status(500).json({ error: "Failed to fetch user items" });
     }
@@ -114,9 +113,7 @@ export default async function handler(req, res) {
         trigger_source: getTriggerSource(mode),
         started_at: startedAt,
         completed_at: completedAt,
-        duration_ms: Math.round(
-          (new Date(completedAt) - new Date(startedAt))
-        ),
+        duration_ms: Math.round(new Date(completedAt) - new Date(startedAt)),
       });
       return res.status(200).json({
         message: "No items to sync",
@@ -126,14 +123,14 @@ export default async function handler(req, res) {
     }
 
     const plaidItems = userItems.filter(
-      (item) => !item.item_id.startsWith("snaptrade-")
+      (item) => !item.item_id.startsWith("snaptrade-"),
     );
     const snaptradeItems = userItems.filter((item) =>
-      item.item_id.startsWith("snaptrade-")
+      item.item_id.startsWith("snaptrade-"),
     );
 
     console.log(
-      `📊 Found ${userItems.length} items (Plaid: ${plaidItems.length}, SnapTrade: ${snaptradeItems.length}) | mode=${mode}`
+      `📊 Found ${userItems.length} items (Plaid: ${plaidItems.length}, SnapTrade: ${snaptradeItems.length}) | mode=${mode}`,
     );
 
     let results;
@@ -178,13 +175,11 @@ export default async function handler(req, res) {
       trigger_source: getTriggerSource(mode),
       started_at: startedAt,
       completed_at: completedAt,
-      duration_ms: Math.round(
-        (new Date(completedAt) - new Date(startedAt))
-      ),
+      duration_ms: Math.round(new Date(completedAt) - new Date(startedAt)),
     });
 
     console.log(
-      `✅ Scheduled sync complete: ${results.synced} successful, ${results.errors} failed`
+      `✅ Scheduled sync complete: ${results.synced} successful, ${results.errors} failed`,
     );
 
     return res.status(200).json({
@@ -206,8 +201,10 @@ export default async function handler(req, res) {
     console.error("❌ Scheduled sync error:", error);
     const completedAt = new Date().toISOString();
     const mode =
-      new URL(req.url || "/", `http://${req.headers?.host || "localhost"}`)
-        .searchParams.get("mode") || "scheduled";
+      new URL(
+        req.url || "/",
+        `http://${req.headers?.host || "localhost"}`,
+      ).searchParams.get("mode") || "scheduled";
     await insertSyncLog({
       sync_type: mode,
       total_items: 0,
@@ -219,9 +216,7 @@ export default async function handler(req, res) {
       trigger_source: getTriggerSource(mode),
       started_at: startedAt,
       completed_at: completedAt,
-      duration_ms: Math.round(
-        (new Date(completedAt) - new Date(startedAt))
-      ),
+      duration_ms: Math.round(new Date(completedAt) - new Date(startedAt)),
     });
     return res.status(500).json({
       error: "Scheduled sync failed",
@@ -252,7 +247,7 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
             syncResult.removed
           } removed transactions, ${
             syncResult.derivedBalancesUpdated || 0
-          } derived balances updated`
+          } derived balances updated`,
         );
       } else {
         results.errors++;
@@ -263,7 +258,7 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
         });
         console.error(
           `❌ Failed to sync item ${item.item_id}:`,
-          syncResult.error
+          syncResult.error,
         );
       }
     } catch (error) {
@@ -280,7 +275,7 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
   for (const item of snaptradeItems) {
     try {
       console.log(
-        `🔄 Syncing SnapTrade item ${item.item_id} for user ${item.user_id}`
+        `🔄 Syncing SnapTrade item ${item.item_id} for user ${item.user_id}`,
       );
 
       const accountId = item.item_id.replace("snaptrade-", "");
@@ -293,13 +288,13 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
 
       if (connectionErr || !connection) {
         throw new Error(
-          `SnapTrade connection not found for account ${accountId}`
+          `SnapTrade connection not found for account ${accountId}`,
         );
       }
 
       if (!connection.is_active) {
         throw new Error(
-          `SnapTrade connection inactive for account ${accountId}`
+          `SnapTrade connection inactive for account ${accountId}`,
         );
       }
 
@@ -313,7 +308,7 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
         lastResult = await syncSnaptradeInvestments(
           item.user_id,
           connection.snaptrade_user_id,
-          connection.account_id
+          connection.account_id,
         );
 
         if (lastResult.success) {
@@ -324,7 +319,7 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
         if (attempt < maxRetries) {
           const waitTime = attempt * 2000;
           console.log(
-            `⚠️ SnapTrade sync failed, retrying in ${waitTime}ms (attempt ${attempt}/${maxRetries})...`
+            `⚠️ SnapTrade sync failed, retrying in ${waitTime}ms (attempt ${attempt}/${maxRetries})...`,
           );
           await new Promise((resolve) => setTimeout(resolve, waitTime));
         }
@@ -332,7 +327,7 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
 
       if (!syncSuccessful) {
         throw new Error(
-          lastResult?.error || "SnapTrade sync failed after retries"
+          lastResult?.error || "SnapTrade sync failed after retries",
         );
       }
 
@@ -347,7 +342,7 @@ async function runScheduledSync(plaidItems, snaptradeItems) {
       });
       console.error(
         `❌ SnapTrade sync failed for item ${item.item_id}:`,
-        error
+        error,
       );
     }
   }
@@ -371,14 +366,14 @@ async function runWeeklyBalanceSync(plaidItems) {
         {
           p_item_id: item.item_id,
           p_user_id: item.user_id,
-        }
+        },
       );
 
       if (tokenErr || !access_token) {
         throw new Error(
           `Access token not found: ${
             tokenErr?.message || "Token is null/undefined"
-          }`
+          }`,
         );
       }
 
@@ -416,7 +411,7 @@ async function runWeeklyBalanceSync(plaidItems) {
       });
       console.error(
         `❌ Weekly balance sync failed for ${item.item_id}:`,
-        error
+        error,
       );
     }
   }
@@ -436,7 +431,7 @@ async function syncItemTransactions(item_id, user_id) {
     if (statusError) {
       console.error(
         `⚠️ Failed to set sync_status to in_progress for ${item_id}:`,
-        statusError
+        statusError,
       );
       // Continue anyway - this is not critical
     }
@@ -451,7 +446,7 @@ async function syncItemTransactions(item_id, user_id) {
       {
         p_item_id: item_id,
         p_user_id: user_id,
-      }
+      },
     );
 
     if (tokenErr || !access_token) {
@@ -464,14 +459,14 @@ async function syncItemTransactions(item_id, user_id) {
       throw new Error(
         `Access token not found: ${
           tokenErr?.message || "Token is null/undefined"
-        }`
+        }`,
       );
     }
 
     console.log(
       `✅ Access token retrieved successfully for item ${item_id} (token length: ${
         access_token?.length || 0
-      })`
+      })`,
     );
 
     // Get current cursor
@@ -533,8 +528,39 @@ async function syncItemTransactions(item_id, user_id) {
           fullError: JSON.stringify(plaidResponse),
         });
 
+        // Plaid item-level errors that require user to reconnect via Link update mode
+        const REQUIRES_UPDATE_ERROR_CODES = new Set([
+          "NO_ACCOUNTS",
+          "ITEM_LOGIN_REQUIRED",
+          "INVALID_ACCESS_TOKEN",
+          "PRODUCT_NOT_READY",
+          "INVALID_MFA",
+          "MFA_NOT_SUPPORTED",
+          "ITEM_LOCKED",
+          "INSUFFICIENT_CREDENTIALS",
+          "USER_SETUP_REQUIRED",
+          "USER_ACTION_REQUIRED",
+        ]);
+
+        if (REQUIRES_UPDATE_ERROR_CODES.has(errorCode)) {
+          const { error: updateErr } = await supabase
+            .from("user_items")
+            .update({ requires_update_mode: true })
+            .eq("item_id", item_id);
+          if (updateErr) {
+            console.error(
+              `⚠️ Failed to set requires_update_mode for item ${item_id}:`,
+              updateErr,
+            );
+          } else {
+            console.log(
+              `✅ Set requires_update_mode for item ${item_id} (${errorCode})`,
+            );
+          }
+        }
+
         throw new Error(
-          `Plaid API error (${errorCode}): ${errorMessage} | Type: ${errorType} | Request ID: ${requestId}`
+          `Plaid API error (${errorCode}): ${errorMessage} | Type: ${errorType} | Request ID: ${requestId}`,
         );
       }
     }
@@ -552,18 +578,21 @@ async function syncItemTransactions(item_id, user_id) {
 
     // Build category name -> category_id map (case-insensitive for matching)
     const categoryIdMap = new Map();
+    const validCategoryIds = new Set();
     if (userCategories) {
       userCategories.forEach((cat) => {
-        // Store both exact name and lowercase for flexible matching
         categoryIdMap.set(cat.name, cat.id);
         categoryIdMap.set(cat.name.toLowerCase(), cat.id);
+        validCategoryIds.add(cat.id);
       });
     }
 
     // Fetch active merchant rules (category_rules) for priority matching
     const { data: merchantRules, error: rulesError } = await supabase
       .from("category_rules")
-      .select("merchant_name, transaction_name, top_category_id, match_field, amount")
+      .select(
+        "merchant_name, transaction_name, top_category_id, match_field, amount",
+      )
       .eq("user_id", user_id)
       .eq("active", true);
 
@@ -572,6 +601,7 @@ async function syncItemTransactions(item_id, user_id) {
     }
 
     // Build merchant rules lookup maps (amount-specific first, then general)
+    // Only include rules whose top_category_id exists in categories table (avoids FK violations)
     const merchantRulesWithAmount = new Map();
     const merchantRulesWithoutAmount = new Map();
     const transactionNameRulesWithAmount = new Map();
@@ -579,13 +609,19 @@ async function syncItemTransactions(item_id, user_id) {
     if (merchantRules) {
       merchantRules.forEach((rule) => {
         const categoryId = rule.top_category_id;
+        if (!validCategoryIds.has(categoryId)) {
+          return; // Skip rules with stale/invalid category reference
+        }
         const matchField = rule.match_field || "merchant_name";
         const hasAmount = rule.amount != null;
 
         if (matchField === "merchant_name" && rule.merchant_name) {
           const key = rule.merchant_name.toLowerCase().trim();
           if (hasAmount) {
-            merchantRulesWithAmount.set(`${key}::${Number(rule.amount)}`, categoryId);
+            merchantRulesWithAmount.set(
+              `${key}::${Number(rule.amount)}`,
+              categoryId,
+            );
           } else {
             merchantRulesWithoutAmount.set(key, categoryId);
           }
@@ -595,7 +631,10 @@ async function syncItemTransactions(item_id, user_id) {
         ) {
           const key = rule.transaction_name.toLowerCase().trim();
           if (hasAmount) {
-            transactionNameRulesWithAmount.set(`${key}::${Number(rule.amount)}`, categoryId);
+            transactionNameRulesWithAmount.set(
+              `${key}::${Number(rule.amount)}`,
+              categoryId,
+            );
           } else {
             transactionNameRulesWithoutAmount.set(key, categoryId);
           }
@@ -661,7 +700,7 @@ async function syncItemTransactions(item_id, user_id) {
       const { data: removedTxs, error: removedFetchErr } = await supabase
         .from("transactions")
         .select(
-          "plaid_transaction_id, is_reviewed, category_id, new_category, linked_goal_id, if_recurring, recurring_stream_id, amount, account_id, pending"
+          "plaid_transaction_id, is_reviewed, category_id, new_category, linked_goal_id, if_recurring, recurring_stream_id, amount, account_id, pending",
         )
         .eq("user_id", user_id)
         .in("plaid_transaction_id", removedIds);
@@ -669,7 +708,7 @@ async function syncItemTransactions(item_id, user_id) {
       if (removedFetchErr) {
         console.error(
           "⚠️ Failed to fetch removed transactions for pending→posted merge:",
-          removedFetchErr
+          removedFetchErr,
         );
       } else if (removedTxs) {
         removedExisting = removedTxs;
@@ -708,7 +747,7 @@ async function syncItemTransactions(item_id, user_id) {
           detailed,
           txn.name || null,
           txn.merchant_name || null,
-          txn.original_description || null
+          txn.original_description || null,
         );
 
         // Apply comprehensive category mapping using both primary and detailed
@@ -741,7 +780,7 @@ async function syncItemTransactions(item_id, user_id) {
           // Set category based on stream type (will be used as new_category)
           // Note: This will only be set if the transaction doesn't already have new_category
           const categoryFromStream = getCategoryFromStreamType(
-            streamData.streamType
+            streamData.streamType,
           );
           if (categoryFromStream && streamData.streamType !== "other") {
             newCategory = categoryFromStream;
@@ -781,7 +820,9 @@ async function syncItemTransactions(item_id, user_id) {
           if (!categoryId && transactionName) {
             const transactionKey = transactionName.toLowerCase().trim();
             categoryId =
-              transactionNameRulesWithAmount.get(`${transactionKey}::${txnAmount}`) ||
+              transactionNameRulesWithAmount.get(
+                `${transactionKey}::${txnAmount}`,
+              ) ||
               transactionNameRulesWithoutAmount.get(transactionKey) ||
               null;
           }
@@ -851,7 +892,8 @@ async function syncItemTransactions(item_id, user_id) {
           row.is_reviewed = meta.is_reviewed;
           if (meta.category_id != null) row.category_id = meta.category_id;
           if (meta.new_category != null) row.new_category = meta.new_category;
-          if (meta.linked_goal_id != null) row.linked_goal_id = meta.linked_goal_id;
+          if (meta.linked_goal_id != null)
+            row.linked_goal_id = meta.linked_goal_id;
           if (meta.if_recurring === "yes") row.if_recurring = "yes";
         }
 
@@ -880,15 +922,15 @@ async function syncItemTransactions(item_id, user_id) {
 
         if (accountsErr) {
           throw new Error(
-            `Failed to validate accounts: ${accountsErr.message}`
+            `Failed to validate accounts: ${accountsErr.message}`,
           );
         }
 
         const validAccountIds = new Set(
-          existingAccounts?.map((a) => a.account_id) || []
+          existingAccounts?.map((a) => a.account_id) || [],
         );
         const invalidRows = rows.filter(
-          (r) => !validAccountIds.has(r.account_id)
+          (r) => !validAccountIds.has(r.account_id),
         );
 
         if (invalidRows.length > 0) {
@@ -899,8 +941,8 @@ async function syncItemTransactions(item_id, user_id) {
             `⚠️ Skipping ${
               invalidRows.length
             } transactions for deleted accounts (account_ids: ${invalidAccountIds.join(
-              ", "
-            )})`
+              ", ",
+            )})`,
           );
           // Filter out transactions with invalid account_ids instead of throwing error
           rows = rows.filter((r) => validAccountIds.has(r.account_id));
@@ -910,7 +952,7 @@ async function syncItemTransactions(item_id, user_id) {
       const { data: fetchedExistingTxs, error: fetchErr } = await supabase
         .from("transactions")
         .select(
-          "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id, amount, account_id, pending"
+          "plaid_transaction_id, new_category, category_id, if_recurring, recurring_stream_id, amount, account_id, pending",
         )
         .eq("user_id", user_id)
         .in("plaid_transaction_id", plaidTxIds);
@@ -925,10 +967,10 @@ async function syncItemTransactions(item_id, user_id) {
       if (fetchErr) {
         console.error(
           "⚠️ CRITICAL: Error fetching existing transactions to preserve user overrides:",
-          fetchErr
+          fetchErr,
         );
         console.error(
-          "⚠️ Skipping new_category and if_recurring updates to protect user data integrity"
+          "⚠️ Skipping new_category and if_recurring updates to protect user data integrity",
         );
       }
 
@@ -963,16 +1005,16 @@ async function syncItemTransactions(item_id, user_id) {
 
         // We can safely verify - check if this is an existing transaction
         const existingTx = existingTxs.find(
-          (tx) => tx.plaid_transaction_id === row.plaid_transaction_id
+          (tx) => tx.plaid_transaction_id === row.plaid_transaction_id,
         );
         const isNewTransaction = !existingTx;
 
         // Preserve user overrides for existing transactions
         const existingCategory = existingCategoryMap.get(
-          row.plaid_transaction_id
+          row.plaid_transaction_id,
         );
         const existingRecurring = existingRecurringMap.get(
-          row.plaid_transaction_id
+          row.plaid_transaction_id,
         );
 
         const updatedRow = { ...row };
@@ -985,7 +1027,7 @@ async function syncItemTransactions(item_id, user_id) {
 
         // Existing transaction - preserve user overrides
         const existingCategoryId = existingCategoryIdMap.get(
-          row.plaid_transaction_id
+          row.plaid_transaction_id,
         );
 
         if (existingCategoryId) {
@@ -1063,7 +1105,7 @@ async function syncItemTransactions(item_id, user_id) {
         .delete()
         .in(
           "plaid_transaction_id",
-          removed.map((r) => r.transaction_id)
+          removed.map((r) => r.transaction_id),
         );
 
       if (deleteErr) {
@@ -1085,12 +1127,20 @@ async function syncItemTransactions(item_id, user_id) {
           .lt("date", yesterdayStr);
 
         if (markError) {
-          console.error("[scheduled-sync] Failed to auto-mark historical transactions:", markError);
+          console.error(
+            "[scheduled-sync] Failed to auto-mark historical transactions:",
+            markError,
+          );
         } else {
-          console.log("[scheduled-sync] Auto-marked historical transactions (date < yesterday) as reviewed");
+          console.log(
+            "[scheduled-sync] Auto-marked historical transactions (date < yesterday) as reviewed",
+          );
         }
       } catch (markErr) {
-        console.error("[scheduled-sync] Error auto-marking historical transactions (non-blocking):", markErr);
+        console.error(
+          "[scheduled-sync] Error auto-marking historical transactions (non-blocking):",
+          markErr,
+        );
       }
     }
 
@@ -1108,7 +1158,7 @@ async function syncItemTransactions(item_id, user_id) {
 
     if (updateError) {
       throw new Error(
-        `Failed to update sync status to completed: ${updateError.message}`
+        `Failed to update sync status to completed: ${updateError.message}`,
       );
     }
 
@@ -1119,7 +1169,7 @@ async function syncItemTransactions(item_id, user_id) {
       modified,
       removed,
       existingTxs, // Now always defined (initialized as empty array if no added/modified)
-      removedExisting
+      removedExisting,
     );
 
     return {
@@ -1158,7 +1208,7 @@ async function updateDerivedBalances(
   modified,
   removed,
   existingTxs,
-  removedExisting
+  removedExisting,
 ) {
   const existingMap = new Map();
   existingTxs.forEach((tx) => {
@@ -1232,7 +1282,7 @@ async function updateDerivedBalances(
     if (accountErr || !accountRow) {
       console.error(
         "⚠️ Account not found for derived balance update:",
-        accountId
+        accountId,
       );
       continue;
     }

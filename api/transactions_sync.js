@@ -1563,11 +1563,12 @@ export default async function handler(req, res) {
 
     // Build category name -> category_id map (case-insensitive for matching)
     const categoryIdMap = new Map();
+    const validCategoryIds = new Set();
     if (userCategories) {
       userCategories.forEach((cat) => {
-        // Store both exact name and lowercase for flexible matching
         categoryIdMap.set(cat.name, cat.id);
         categoryIdMap.set(cat.name.toLowerCase(), cat.id);
+        validCategoryIds.add(cat.id);
       });
     }
 
@@ -1585,6 +1586,7 @@ export default async function handler(req, res) {
     }
 
     // Build merchant rules lookup maps (amount-specific first, then general)
+    // Only include rules whose top_category_id exists in categories table (avoids FK violations)
     const merchantRulesWithAmount = new Map();
     const merchantRulesWithoutAmount = new Map();
     const transactionNameRulesWithAmount = new Map();
@@ -1592,6 +1594,9 @@ export default async function handler(req, res) {
     if (merchantRules) {
       merchantRules.forEach((rule) => {
         const categoryId = rule.top_category_id;
+        if (!validCategoryIds.has(categoryId)) {
+          return; // Skip rules with stale/invalid category reference
+        }
         const matchField = rule.match_field || "merchant_name";
         const hasAmount = rule.amount != null;
 
