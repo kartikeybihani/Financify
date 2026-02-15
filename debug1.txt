@@ -1,0 +1,29 @@
+-- Orphan transactions: top_category from Plaid mapper but category_id is null
+-- Exclude INTERNAL_TRANSFER and Income (expected to be unmapped)
+SELECT 
+  top_category,
+  COUNT(*) AS tx_count,
+  COUNT(DISTINCT user_id) AS user_count
+FROM transactions
+WHERE category_id IS NULL
+  AND top_category NOT IN ('INTERNAL_TRANSFER', 'Income')
+  AND user_id = '6e18728a-eaea-4c7e-99a5-f35f3378b69d'
+GROUP BY top_category
+ORDER BY tx_count DESC;
+
+result-
+[
+  {
+    "top_category": "Other",
+    "tx_count": 216,
+    "user_count": 1
+  },
+  ... (rest of results)
+]
+
+-- ============================================================================
+-- DEBUG QUERY: What would each orphan top_category map to?
+-- Shows: user_id, top_category, tx_count, has_matching_category, target_category_name, target_category_id
+-- "match" = user has a category with same name as top_category → map there
+-- "other" = no match → map to Other
+-- ============================================================================
