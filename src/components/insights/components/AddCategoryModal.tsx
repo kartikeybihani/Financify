@@ -36,6 +36,7 @@ export const FAB_BUTTON_GRADIENT_COLORS = [
 
 interface AddCategoryModalProps {
   visible: boolean;
+  initialCategoryName?: string | null;
   onClose: () => void;
   onCategoryAdded: () => Promise<void>;
 }
@@ -45,6 +46,7 @@ const FALLBACK_BOTTOM_INSET = Platform.OS === "ios" ? 34 : 0;
 
 const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
   visible,
+  initialCategoryName,
   onClose,
   onCategoryAdded,
 }) => {
@@ -57,10 +59,14 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
     bottom: rawInsets.bottom || FALLBACK_BOTTOM_INSET,
   };
 
-  // Reset form when modal closes
+  // Reset form when modal closes, or set initial name when opening with prefill
   useEffect(() => {
+    if (visible && initialCategoryName?.trim()) {
+      setCategoryName(initialCategoryName.trim());
+      setSelectedIcon("💰");
+      setBudgetAmount("");
+    }
     if (!visible) {
-      // Reset form state after modal closes
       const timer = setTimeout(() => {
         setCategoryName("");
         setSelectedIcon("💰");
@@ -69,7 +75,7 @@ const AddCategoryModal: React.FC<AddCategoryModalProps> = ({
       }, 300); // Wait for animation to complete
       return () => clearTimeout(timer);
     }
-  }, [visible]);
+  }, [visible, initialCategoryName]);
 
   const handleSave = async () => {
     if (!categoryName.trim()) {

@@ -574,14 +574,28 @@ async function remapTransactionsToBudgetCategories(userId) {
       return;
     }
 
-    const mappings = llmResponse.mappings;
+    let mappings = llmResponse.mappings || {};
+
+    // 5. Ensure ALL transaction categories have a mapping (orphan → Other)
+    const allTransactionKeys = Array.from(categorySet);
+    for (const key of allTransactionKeys) {
+      if (!(key in mappings) || mappings[key] === undefined) {
+        mappings[key] = null; // null → Other in update loop
+        console.log(
+          `[CATEGORY_MAPPING] Orphan category "${key}" not in LLM response, mapping to Other`
+        );
+      }
+    }
+
+    const llmKeyCount = Object.keys(llmResponse.mappings || {}).length;
+    const orphanCount = allTransactionKeys.filter(
+      (k) => mappings[k] === null
+    ).length;
     console.log(
-      `[CATEGORY_MAPPING] Received ${
-        Object.keys(mappings).length
-      } mappings from LLM`
+      `[CATEGORY_MAPPING] Final mappings: ${Object.keys(mappings).length} (LLM: ${llmKeyCount}, orphan→Other: ${orphanCount})`
     );
 
-    // 5. Get "Other" category ID
+    // 6. Get "Other" category ID
     const { data: otherCategory } = await supabase
       .from("categories")
       .select("id")
@@ -591,7 +605,7 @@ async function remapTransactionsToBudgetCategories(userId) {
 
     const otherCategoryId = otherCategory?.id || null;
 
-    // 6. Bulk update transactions
+    // 7. Bulk update transactions
     let updatedCount = 0;
     for (const [transactionKey, budgetCategoryName] of Object.entries(
       mappings
@@ -651,10 +665,19 @@ async function remapTransactionsToBudgetCategories(userId) {
       `[CATEGORY_MAPPING] Successfully updated ${updatedCount} transaction category groups`
     );
 
-    // Update status to completed
+    // 8. Store LLM result in budget_periods and update status to completed
+    const categoryMappingResult = {
+      mappings,
+      transaction_categories_count: transactionCategories.length,
+      budget_categories_count: budgetCategories.length,
+    };
+
     await supabase
       .from("budget_periods")
-      .update({ category_mapping_status: "completed" })
+      .update({
+        category_mapping_status: "completed",
+        category_mapping_result: categoryMappingResult,
+      })
       .eq("id", activePeriod.id);
 
     console.log(

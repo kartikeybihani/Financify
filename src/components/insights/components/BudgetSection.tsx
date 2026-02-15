@@ -53,6 +53,7 @@ export default function BudgetSection({
 }: Props) {
   const { isDemoMode } = useDemoMode();
   const [addCategoryModalVisible, setAddCategoryModalVisible] = useState(false);
+  const [addCategoryInitialName, setAddCategoryInitialName] = useState<string | null>(null);
   const [showManualBudgetModal, setShowManualBudgetModal] = useState(false);
   const [showFinnyBudgetModal, setShowFinnyBudgetModal] = useState(false);
 
@@ -60,6 +61,7 @@ export default function BudgetSection({
   // Pass categoryBreakdown so spent amounts use accurate data from spending breakdown
   const {
     budgetData,
+    orphanCategories,
     totalBudget,
     totalSpent: budgetTotalSpent,
     loading: budgetLoading,
@@ -90,8 +92,9 @@ export default function BudgetSection({
   const displayTotalSpent =
     budgetTotalSpent > 0 ? budgetTotalSpent : totalSpent;
 
-  // Expose function to open add category modal to parent
-  const openAddCategoryModal = useCallback(() => {
+  // Expose function to open add category modal to parent (optionally with initial category name for orphans)
+  const openAddCategoryModal = useCallback((initialName?: string | null) => {
+    setAddCategoryInitialName(initialName ?? null);
     setAddCategoryModalVisible(true);
   }, []);
 
@@ -167,6 +170,8 @@ export default function BudgetSection({
           onCategoryPress={onCategoryPress}
           formatCategoryName={formatCategoryName}
           budgets={budgetData}
+          orphanCategories={orphanCategories}
+          onAddOrphanToBudget={openAddCategoryModal}
           totalBudget={totalBudget}
           totalSpent={displayTotalSpent}
           budgetSummary={budgetSummary}
@@ -183,7 +188,11 @@ export default function BudgetSection({
       {/* Add Category Modal */}
       <AddCategoryModal
         visible={addCategoryModalVisible}
-        onClose={() => setAddCategoryModalVisible(false)}
+        initialCategoryName={addCategoryInitialName}
+        onClose={() => {
+          setAddCategoryModalVisible(false);
+          setAddCategoryInitialName(null);
+        }}
         onCategoryAdded={async () => {
           // Refresh budget data after adding category
           if (refreshBudget) {

@@ -49,8 +49,13 @@ import {
 import { PremiumLockOverlay } from "@/src/components/subscription/PremiumLockOverlay";
 import IconButton from "@/src/components/shared/IconButton";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
+import { AnimatedCurrency } from "@/src/components/shared/AnimatedNumber";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+
+/** Guard against NaN/Infinity for display values */
+const safeNum = (n: number): number =>
+  typeof n === "number" && Number.isFinite(n) ? n : 0;
 
 interface Holding {
   symbol: string;
@@ -2122,13 +2127,12 @@ export default function InvestmentsScreen({
                 </Text>
               </View>
             ) : (
-              <Text style={styles.portfolioValue}>
-                $
-                {totalPortfolioValue.toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </Text>
+              <AnimatedCurrency
+                value={safeNum(totalPortfolioValue)}
+                style={styles.portfolioValue}
+                decimals={2}
+                duration={400}
+              />
             )}
 
             {/* Today's Performance - only show actual daily gains/losses */}
@@ -2144,10 +2148,24 @@ export default function InvestmentsScreen({
                       },
                     ]}
                   >
-                    Today: {todayPerformance.amount >= 0 ? "+" : ""}$
-                    {Math.abs(todayPerformance.amount).toFixed(2)} (
-                    {todayPerformance.amount >= 0 ? "+" : ""}
-                    {todayPerformance.percentage.toFixed(2)}%)
+                    Today:{" "}
+                    <AnimatedCurrency
+                      value={safeNum(todayPerformance.amount)}
+                      showSign
+                      decimals={2}
+                      duration={400}
+                      style={StyleSheet.flatten([
+                        styles.todayPerformanceText,
+                        {
+                          color:
+                            todayPerformance.amount >= 0
+                              ? "#4ECDC4"
+                              : "#FF6B6B",
+                        },
+                      ])}
+                    />{" "}
+                    ({todayPerformance.amount >= 0 ? "+" : ""}
+                    {safeNum(todayPerformance.percentage).toFixed(2)}%)
                   </Text>
                   <Ionicons
                     name={
@@ -2175,10 +2193,21 @@ export default function InvestmentsScreen({
                       },
                     ]}
                   >
-                    Total: {totalUnrealizedPL >= 0 ? "+" : ""}$
-                    {Math.abs(totalUnrealizedPL).toFixed(2)} (
-                    {totalUnrealizedPL >= 0 ? "+" : ""}
-                    {Math.abs(totalUnrealizedPLPercent).toFixed(2)}%)
+                    Total:{" "}
+                    <AnimatedCurrency
+                      value={safeNum(totalUnrealizedPL)}
+                      showSign
+                      decimals={2}
+                      duration={400}
+                      style={StyleSheet.flatten([
+                        styles.todayPerformanceText,
+                        {
+                          color: totalUnrealizedPL >= 0 ? "#4ECDC4" : "#FF6B6B",
+                        },
+                      ])}
+                    />{" "}
+                    ({totalUnrealizedPL >= 0 ? "+" : ""}
+                    {safeNum(Math.abs(totalUnrealizedPLPercent)).toFixed(2)}%)
                   </Text>
                   <Ionicons
                     name={
@@ -2193,13 +2222,15 @@ export default function InvestmentsScreen({
             )}
 
             {!isLoading && totalCash > 0 && (
-              <Text style={styles.availableCash}>
-                Available Cash: $
-                {totalCash.toLocaleString("en-US", {
-                  minimumFractionDigits: 2,
-                  maximumFractionDigits: 2,
-                })}
-              </Text>
+              <View style={styles.availableCashRow}>
+                <Text style={styles.availableCash}>Available Cash: </Text>
+                <AnimatedCurrency
+                  value={safeNum(totalCash)}
+                  style={styles.availableCash}
+                  decimals={2}
+                  duration={400}
+                />
+              </View>
             )}
           </View>
           <View style={styles.accountInfo}>
@@ -2475,32 +2506,28 @@ export default function InvestmentsScreen({
                   </View>
                   <View style={styles.holdingRight}>
                     <View style={styles.holdingRightValues}>
-                      <Text style={styles.holdingTotalValue}>
-                        $
-                        {holdingsSortBy === "last_price" && h.price != null
-                          ? Number(h.price).toLocaleString("en-US", {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            })
-                          : (h.market_value ?? 0).toLocaleString("en-US", {
-                              minimumFractionDigits: 2,
-                              maximumFractionDigits: 2,
-                            }) || "0.00"}
-                      </Text>
-                      <Text
-                        style={[
+                      <AnimatedCurrency
+                        value={safeNum(
+                          holdingsSortBy === "last_price" && h.price != null
+                            ? Number(h.price)
+                            : (h.market_value ?? 0),
+                        )}
+                        style={styles.holdingTotalValue}
+                        decimals={2}
+                        duration={350}
+                      />
+                      <AnimatedCurrency
+                        value={safeNum(gainLossValue)}
+                        showSign
+                        decimals={2}
+                        duration={350}
+                        style={StyleSheet.flatten([
                           styles.holdingGainLoss,
                           gainLossValue >= 0
                             ? styles.holdingGainLossPositive
                             : styles.holdingGainLossNegative,
-                        ]}
-                      >
-                        {gainLossValue >= 0 ? "+" : "−"}$
-                        {Math.abs(gainLossValue).toLocaleString("en-US", {
-                          minimumFractionDigits: 2,
-                          maximumFractionDigits: 2,
-                        })}
-                      </Text>
+                        ])}
+                      />
                     </View>
                     <View
                       style={[
@@ -2541,8 +2568,8 @@ export default function InvestmentsScreen({
                         ]}
                       >
                         {holdingsSortBy === "percent_of_account"
-                          ? `${displayPercentage.toFixed(1)}%`
-                          : `${displayPercentage >= 0 ? "+" : ""}${displayPercentage.toFixed(1)}%`}
+                          ? `${safeNum(displayPercentage).toFixed(1)}%`
+                          : `${safeNum(displayPercentage) >= 0 ? "+" : ""}${safeNum(displayPercentage).toFixed(1)}%`}
                       </Text>
                     </View>
                   </View>
@@ -2591,13 +2618,12 @@ export default function InvestmentsScreen({
                   </View>
                 </View>
                 <View style={styles.holdingRight}>
-                  <Text style={styles.stockValue}>
-                    $
-                    {o.market_value?.toLocaleString("en-US", {
-                      minimumFractionDigits: 2,
-                      maximumFractionDigits: 2,
-                    }) || "0.00"}
-                  </Text>
+                  <AnimatedCurrency
+                    value={safeNum(o.market_value ?? 0)}
+                    style={styles.stockValue}
+                    decimals={2}
+                    duration={350}
+                  />
                   <View style={styles.stockDetails}>
                     <Text style={styles.stockDetail}>
                       ${o.price?.toFixed(2) || "0.00"} premium per contract

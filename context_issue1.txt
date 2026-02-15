@@ -1,0 +1,442 @@
+select * from categories
+where user_id = '6e18728a-eaea-4c7e-99a5-f35f3378b69d'
+
+Results below-
+[
+  {
+    "id": "30113b86-f3d9-409e-8ab2-38bbd6540dbf",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "Transportation",
+    "slug": "transportation",
+    "icon": "🚗",
+    "color": "#4A90E2",
+    "rank": 0,
+    "is_active": true
+  },
+  {
+    "id": "d07c674a-22da-4a4b-932f-16067535ae3c",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "Personal Care",
+    "slug": "personal-care",
+    "icon": "🚿",
+    "color": "#4A90E2",
+    "rank": 0,
+    "is_active": true
+  },
+  {
+    "id": "d6f48890-671f-4bd9-bbb7-d0ec95ce3c3c",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "Entertainment",
+    "slug": "entertainment",
+    "icon": "🎉",
+    "color": "#4A90E2",
+    "rank": 0,
+    "is_active": true
+  },
+  {
+    "id": "77df50f6-9080-4361-bfef-4f975ce84fce",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "Savings",
+    "slug": "savings",
+    "icon": "💰",
+    "color": "#4A90E2",
+    "rank": 0,
+    "is_active": true
+  },
+  {
+    "id": "9eeb2139-dc64-4766-b54a-62a9c2708b93",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "Shopping",
+    "slug": "shopping",
+    "icon": "🛍️",
+    "color": "#4A90E2",
+    "rank": 0,
+    "is_active": true
+  },
+  {
+    "id": "bf4afa17-e234-40fa-bd83-2e509462696d",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "Groceries",
+    "slug": "groceries",
+    "icon": "🛒",
+    "color": "#4A90E2",
+    "rank": 0,
+    "is_active": true
+  },
+  {
+    "id": "778d6629-1c0d-4072-a8ad-ffd670d59da6",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "Health",
+    "slug": "health",
+    "icon": "🏥",
+    "color": "#4A90E2",
+    "rank": 0,
+    "is_active": true
+  },
+  {
+    "id": "4c14f0d9-7ae1-48d7-b06f-6f236cf2fa0c",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "Food",
+    "slug": "food",
+    "icon": "🍴",
+    "color": "#4A90E2",
+    "rank": 0,
+    "is_active": true
+  },
+  {
+    "id": "dea901be-dc7b-487d-852b-9e3673f2d6a8",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "Other",
+    "slug": "other",
+    "icon": "🤝",
+    "color": "#4A90E2",
+    "rank": 0,
+    "is_active": true
+  },
+  {
+    "id": "7a3dd629-fc65-4207-835c-b369e44094a9",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "Subscriptions",
+    "slug": "subscriptions",
+    "icon": "🔁",
+    "color": "#4A90E2",
+    "rank": 1,
+    "is_active": true
+  },
+  {
+    "id": "0a16131e-e175-413e-94b3-9e7739c456a4",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "Housing",
+    "slug": "housing",
+    "icon": "🏠",
+    "color": "#4A90E2",
+    "rank": 0,
+    "is_active": true
+  }
+]
+
+
+select * from budget_periods
+where user_id = '6e18728a-eaea-4c7e-99a5-f35f3378b69d'
+results -
+[
+  {
+    "id": "6d50643b-5aaa-4f3e-a967-60b860a3f3aa",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "name": "February 2026 Budget",
+    "period_start": "2026-02-01",
+    "period_end": "2026-02-28",
+    "period_type": "monthly",
+    "currency_code": "USD",
+    "total_limit": null,
+    "rollover_mode": "none",
+    "status": "active",
+    "created_at": "2026-02-08 21:50:32.080565+00",
+    "updated_at": "2026-02-12 03:02:58.351308+00",
+    "budget_analysis": "{\n  \"categories\": [\n    {\n      \"name\": \"Savings\",\n      \"icon\": \"💰\",\n      \"limit\": 1000\n    },\n    {\n      \"name\": \"Groceries\",\n      \"icon\": \"🛒\",\n      \"limit\": 300\n    },\n    {\n      \"name\": \"Food\",\n      \"icon\": \"🍴\",\n      \"limit\": 400\n    },\n    {\n      \"name\": \"Housing\",\n      \"icon\": \"🏠\",\n      \"limit\": 800\n    },\n    {\n      \"name\": \"Transportation\",\n      \"icon\": \"🚗\",\n      \"limit\": 200\n    },\n    {\n      \"name\": \"Personal Care\",\n      \"icon\": \"🚿\",\n      \"limit\": 100\n    },\n    {\n      \"name\": \"Entertainment\",\n      \"icon\": \"🎉\",\n      \"limit\": 150\n    },\n    {\n      \"name\": \"Shopping\",\n      \"icon\": \"🛍️\",\n      \"limit\": 200\n    },\n    {\n      \"name\": \"Health\",\n      \"icon\": \"🏥\",\n      \"limit\": 50\n    },\n    {\n      \"name\": \"Other\",\n      \"icon\": \"🤝\",\n      \"limit\": 400\n    }\n  ]\n}",
+    "category_mapping_status": "completed"
+  }
+]
+
+
+select * from budget_entries
+where budget_period_id = '6d50643b-5aaa-4f3e-a967-60b860a3f3aa'
+results - 
+[
+  {
+    "id": "39b0f9af-c789-49c8-a7ba-da58bd4d0a4f",
+    "budget_period_id": "6d50643b-5aaa-4f3e-a967-60b860a3f3aa",
+    "scope_type": "category",
+    "category_id": "77df50f6-9080-4361-bfef-4f975ce84fce",
+    "group_key": null,
+    "label": "Savings",
+    "limit_amount": "1000",
+    "is_flexible": false,
+    "created_at": "2026-02-08 21:50:32.373591+00",
+    "updated_at": "2026-02-08 21:51:29.88662+00"
+  },
+  {
+    "id": "efd80cbd-1592-4c6b-bdfb-75dc68a909f8",
+    "budget_period_id": "6d50643b-5aaa-4f3e-a967-60b860a3f3aa",
+    "scope_type": "category",
+    "category_id": "bf4afa17-e234-40fa-bd83-2e509462696d",
+    "group_key": null,
+    "label": "Groceries",
+    "limit_amount": "300",
+    "is_flexible": false,
+    "created_at": "2026-02-08 21:50:32.610954+00",
+    "updated_at": "2026-02-08 21:51:30.183884+00"
+  },
+  {
+    "id": "079abaf1-ce8b-4827-9d73-18076b6fb334",
+    "budget_period_id": "6d50643b-5aaa-4f3e-a967-60b860a3f3aa",
+    "scope_type": "category",
+    "category_id": "4c14f0d9-7ae1-48d7-b06f-6f236cf2fa0c",
+    "group_key": null,
+    "label": "Food",
+    "limit_amount": "400",
+    "is_flexible": false,
+    "created_at": "2026-02-08 21:50:32.801064+00",
+    "updated_at": "2026-02-08 21:51:30.309441+00"
+  },
+  {
+    "id": "6382cb5b-f856-438b-9215-9ce653a62e32",
+    "budget_period_id": "6d50643b-5aaa-4f3e-a967-60b860a3f3aa",
+    "scope_type": "category",
+    "category_id": "0a16131e-e175-413e-94b3-9e7739c456a4",
+    "group_key": null,
+    "label": "Housing",
+    "limit_amount": "800",
+    "is_flexible": false,
+    "created_at": "2026-02-08 21:50:32.972686+00",
+    "updated_at": "2026-02-08 21:51:30.444852+00"
+  },
+  {
+    "id": "288014e6-952f-45a6-a024-0fded59c8b03",
+    "budget_period_id": "6d50643b-5aaa-4f3e-a967-60b860a3f3aa",
+    "scope_type": "category",
+    "category_id": "30113b86-f3d9-409e-8ab2-38bbd6540dbf",
+    "group_key": null,
+    "label": "Transportation",
+    "limit_amount": "200",
+    "is_flexible": false,
+    "created_at": "2026-02-08 21:50:33.192273+00",
+    "updated_at": "2026-02-08 21:51:30.57817+00"
+  },
+  {
+    "id": "92a42bfd-5d38-4e3b-b007-8332a1eaa63c",
+    "budget_period_id": "6d50643b-5aaa-4f3e-a967-60b860a3f3aa",
+    "scope_type": "category",
+    "category_id": "d07c674a-22da-4a4b-932f-16067535ae3c",
+    "group_key": null,
+    "label": "Personal Care",
+    "limit_amount": "100",
+    "is_flexible": false,
+    "created_at": "2026-02-08 21:50:33.357758+00",
+    "updated_at": "2026-02-08 21:51:30.700927+00"
+  },
+  {
+    "id": "94949a23-ed31-4ea7-8e49-6f682f478f55",
+    "budget_period_id": "6d50643b-5aaa-4f3e-a967-60b860a3f3aa",
+    "scope_type": "category",
+    "category_id": "d6f48890-671f-4bd9-bbb7-d0ec95ce3c3c",
+    "group_key": null,
+    "label": "Entertainment",
+    "limit_amount": "150",
+    "is_flexible": false,
+    "created_at": "2026-02-08 21:50:33.523207+00",
+    "updated_at": "2026-02-08 21:51:30.8441+00"
+  },
+  {
+    "id": "c57c5035-f5d9-4d60-a8ef-a62ef6ee0b2d",
+    "budget_period_id": "6d50643b-5aaa-4f3e-a967-60b860a3f3aa",
+    "scope_type": "category",
+    "category_id": "9eeb2139-dc64-4766-b54a-62a9c2708b93",
+    "group_key": null,
+    "label": "Shopping",
+    "limit_amount": "200",
+    "is_flexible": false,
+    "created_at": "2026-02-08 21:50:33.680552+00",
+    "updated_at": "2026-02-08 21:51:30.98665+00"
+  },
+  {
+    "id": "6ac2941b-2588-4777-82fc-628baa9e49da",
+    "budget_period_id": "6d50643b-5aaa-4f3e-a967-60b860a3f3aa",
+    "scope_type": "category",
+    "category_id": "778d6629-1c0d-4072-a8ad-ffd670d59da6",
+    "group_key": null,
+    "label": "Health",
+    "limit_amount": "50",
+    "is_flexible": false,
+    "created_at": "2026-02-08 21:50:33.849778+00",
+    "updated_at": "2026-02-08 21:51:31.09981+00"
+  },
+  {
+    "id": "aaccd1ee-ad20-4b00-9b84-2731bf4e2130",
+    "budget_period_id": "6d50643b-5aaa-4f3e-a967-60b860a3f3aa",
+    "scope_type": "category",
+    "category_id": "dea901be-dc7b-487d-852b-9e3673f2d6a8",
+    "group_key": null,
+    "label": "Other",
+    "limit_amount": "0",
+    "is_flexible": false,
+    "created_at": "2026-02-08 21:50:33.983072+00",
+    "updated_at": "2026-02-08 21:51:31.318855+00"
+  }
+]
+
+
+select * from transactions
+where top_category = 'Loans'
+and user_id = '6e18728a-eaea-4c7e-99a5-f35f3378b69d'
+
+[
+  {
+    "id": "42cde177-141a-45e9-a76f-abebff5f0bc4",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "account_id": "BAmAZX7oMYiw6g4oKaZOuXVD8vrQ7VFgONxbq",
+    "plaid_transaction_id": "4xYx5XvKmPI8LdNXK4Axc5OPkkO0y9SELkYPQ",
+    "date": "2026-01-28",
+    "amount": "227.58",
+    "iso_currency_code": "USD",
+    "name": "DEPT EDUCATION DES:STUDENT LN ID:0000 INDN:GOFANDI, JUSVIN A. CO ID:XXXXX01001 PPD",
+    "merchant_name": "Dept Education",
+    "category": "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT",
+    "transaction_type": "online",
+    "pending": false,
+    "inserted_at": "2026-02-08 21:47:43.051481+00",
+    "top_category": "Loans",
+    "sub_category": "Student Loan Payment",
+    "new_category": null,
+    "recurring_stream_id": null,
+    "if_recurring": "no",
+    "linked_goal_id": null,
+    "authorized_date": null,
+    "category_id": null,
+    "is_reviewed": true
+  },
+  {
+    "id": "911f7beb-dea3-4206-bce2-dc2dc804ea32",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "account_id": "BAmAZX7oMYiw6g4oKaZOuXVD8vrQ7VFgONxbq",
+    "plaid_transaction_id": "OEjEapd6KZhvyOdq4mZzSM0o8YYrdjS3wD0zo",
+    "date": "2025-12-30",
+    "amount": "227.58",
+    "iso_currency_code": "USD",
+    "name": "DEPT EDUCATION DES:STUDENT LN ID:0000 INDN:GOFANDI, JUSVIN A. CO ID:XXXXX01001 PPD",
+    "merchant_name": "Dept Education",
+    "category": "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT",
+    "transaction_type": "online",
+    "pending": false,
+    "inserted_at": "2026-02-08 21:47:54.777462+00",
+    "top_category": "Loans",
+    "sub_category": "Student Loan Payment",
+    "new_category": null,
+    "recurring_stream_id": null,
+    "if_recurring": "no",
+    "linked_goal_id": null,
+    "authorized_date": null,
+    "category_id": null,
+    "is_reviewed": true
+  },
+  {
+    "id": "3a239625-13d9-4819-b5c7-0d6df7498ed3",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "account_id": "BAmAZX7oMYiw6g4oKaZOuXVD8vrQ7VFgONxbq",
+    "plaid_transaction_id": "Xgdgqp3Kx7HZ5Y3g1AnPIP9KQxxpLeU8ok37P",
+    "date": "2025-12-01",
+    "amount": "227.58",
+    "iso_currency_code": "USD",
+    "name": "DEPT EDUCATION DES:STUDENT LN ID:0000 INDN:GOFANDI, JUSVIN A. CO ID:XXXXX01001 PPD",
+    "merchant_name": "Dept Education",
+    "category": "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT",
+    "transaction_type": "online",
+    "pending": false,
+    "inserted_at": "2026-02-08 21:47:54.777462+00",
+    "top_category": "Loans",
+    "sub_category": "Student Loan Payment",
+    "new_category": null,
+    "recurring_stream_id": null,
+    "if_recurring": "no",
+    "linked_goal_id": null,
+    "authorized_date": null,
+    "category_id": null,
+    "is_reviewed": true
+  },
+  {
+    "id": "16041eb5-798f-42c5-bd20-cbfdcada8aca",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "account_id": "BAmAZX7oMYiw6g4oKaZOuXVD8vrQ7VFgONxbq",
+    "plaid_transaction_id": "Nm0m5pewy4cAvzY95XV3SnqBRYYzVyFrZ01K3",
+    "date": "2025-12-01",
+    "amount": "45",
+    "iso_currency_code": "USD",
+    "name": "Zelle payment to BADMINTON SPORTS CLUB Accounts Conf# mmyazw616",
+    "merchant_name": "Minto Money",
+    "category": "LOAN_PAYMENTS_PERSONAL_LOAN_PAYMENT",
+    "transaction_type": "other",
+    "pending": false,
+    "inserted_at": "2026-02-08 21:47:54.777462+00",
+    "top_category": "Loans",
+    "sub_category": "Personal Loan Payment",
+    "new_category": null,
+    "recurring_stream_id": null,
+    "if_recurring": "no",
+    "linked_goal_id": null,
+    "authorized_date": null,
+    "category_id": null,
+    "is_reviewed": true
+  },
+  {
+    "id": "50b955a9-8bab-421f-81d9-3e187670b34c",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "account_id": "BAmAZX7oMYiw6g4oKaZOuXVD8vrQ7VFgONxbq",
+    "plaid_transaction_id": "VgZg1pq34RHJgOqoL8YeSN1qr33Lw8CLR8bOL",
+    "date": "2025-10-28",
+    "amount": "227.58",
+    "iso_currency_code": "USD",
+    "name": "DEPT EDUCATION DES:STUDENT LN ID:0000 INDN:GOFANDI, JUSVIN A. CO ID:XXXXX01001 PPD",
+    "merchant_name": "Dept Education",
+    "category": "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT",
+    "transaction_type": "online",
+    "pending": false,
+    "inserted_at": "2026-02-08 21:47:54.777462+00",
+    "top_category": "Loans",
+    "sub_category": "Student Loan Payment",
+    "new_category": null,
+    "recurring_stream_id": null,
+    "if_recurring": "no",
+    "linked_goal_id": null,
+    "authorized_date": null,
+    "category_id": null,
+    "is_reviewed": true
+  },
+  {
+    "id": "dea179d8-a698-41cf-b950-8056cea01b81",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "account_id": "BAmAZX7oMYiw6g4oKaZOuXVD8vrQ7VFgONxbq",
+    "plaid_transaction_id": "9DYDLXajZQHgZB8M6ODdSB6PxjjZegtKAR3dz",
+    "date": "2025-09-24",
+    "amount": "227.58",
+    "iso_currency_code": "USD",
+    "name": "DEPT EDUCATION DES:STUDENT LN ID:6RA1INC7CA1 INDN:JUSVIN A GOFANDI CO ID:XXXXX01002 WEB",
+    "merchant_name": "Dept Education",
+    "category": "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT",
+    "transaction_type": "online",
+    "pending": false,
+    "inserted_at": "2026-02-08 21:47:54.777462+00",
+    "top_category": "Loans",
+    "sub_category": "Student Loan Payment",
+    "new_category": null,
+    "recurring_stream_id": null,
+    "if_recurring": "no",
+    "linked_goal_id": null,
+    "authorized_date": null,
+    "category_id": null,
+    "is_reviewed": true
+  },
+  {
+    "id": "a6a53ac9-b860-45d5-ac62-2c8763a97a77",
+    "user_id": "6e18728a-eaea-4c7e-99a5-f35f3378b69d",
+    "account_id": "BAmAZX7oMYiw6g4oKaZOuXVD8vrQ7VFgONxbq",
+    "plaid_transaction_id": "Nm0m5pewy4cAvzY95XV3SnqBRYYzVyFrZ01dN",
+    "date": "2024-12-23",
+    "amount": "317.97",
+    "iso_currency_code": "USD",
+    "name": "PURCHASE 1222 SP JOYBADMINTON.C SOUTH EL MONTCA XXXXX0943XXXXXXXXXX5307",
+    "merchant_name": "Minto Money",
+    "category": "LOAN_PAYMENTS_PERSONAL_LOAN_PAYMENT",
+    "transaction_type": "other",
+    "pending": false,
+    "inserted_at": "2026-02-08 21:47:54.777462+00",
+    "top_category": "Loans",
+    "sub_category": "Personal Loan Payment",
+    "new_category": null,
+    "recurring_stream_id": null,
+    "if_recurring": "no",
+    "linked_goal_id": null,
+    "authorized_date": null,
+    "category_id": null,
+    "is_reviewed": true
+  }
+]

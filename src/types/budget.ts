@@ -109,11 +109,19 @@ export interface CategoryData {
   hasRecurringTransactions: boolean;
 }
 
+export interface OrphanCategory {
+  category: string;
+  amount: number;
+  color: string;
+}
+
 export interface BudgetViewProps {
   categoryBreakdown: [string, CategoryData][];
   onCategoryPress: (category: string, data: CategoryData) => void;
   formatCategoryName: (category: string) => string;
   budgets?: BudgetData[];
+  orphanCategories?: OrphanCategory[];
+  onAddOrphanToBudget?: (categoryName: string) => void;
   totalBudget?: number;
   totalSpent?: number;
   budgetSummary?: any;

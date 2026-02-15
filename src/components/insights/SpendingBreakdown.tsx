@@ -1,12 +1,14 @@
 import React from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  Animated,
-} from "react-native";
+import { View, Text, StyleSheet, TouchableOpacity } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import {
+  AnimatedCurrency,
+  AnimatedNumber,
+} from "@/src/components/shared/AnimatedNumber";
+
+/** Guard against NaN/Infinity for display values */
+const safeNum = (n: number): number =>
+  typeof n === "number" && Number.isFinite(n) ? n : 0;
 
 interface CategoryData {
   amount: number;
@@ -32,9 +34,8 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
   onPeriodPress,
   getCategoryIcon: getCategoryIconFromDb,
 }) => {
-  const totalSpent = categoryBreakdown.reduce(
-    (sum, [_, data]) => sum + data.amount,
-    0,
+  const totalSpent = safeNum(
+    categoryBreakdown.reduce((sum, [_, data]) => sum + safeNum(data.amount), 0),
   );
 
   // Get top 3 categories for the main display
@@ -160,9 +161,12 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
           </View>
           <View style={styles.totalContainer}>
             <Text style={styles.totalLabel}>Total Spent</Text>
-            <Text style={styles.totalAmount}>
-              ${totalSpent.toLocaleString()}
-            </Text>
+            <AnimatedCurrency
+              value={totalSpent}
+              style={styles.totalAmount}
+              decimals={0}
+              duration={400}
+            />
             {onPeriodPress ? (
               <TouchableOpacity
                 style={styles.periodChip}
@@ -244,14 +248,21 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
                       {formatCategoryName(category)}
                     </Text>
 
-                    <Text style={styles.flowAmount}>
-                      ${data.amount.toLocaleString()}
-                    </Text>
+                    <AnimatedCurrency
+                      value={safeNum(data.amount)}
+                      style={styles.flowAmount}
+                      decimals={0}
+                      duration={350}
+                    />
 
                     <View style={styles.flowPercentageContainer}>
-                      <Text style={styles.flowPercentage}>
-                        {data.percentage.toFixed(0)}%
-                      </Text>
+                      <AnimatedNumber
+                        value={safeNum(data.percentage)}
+                        suffix="%"
+                        decimals={0}
+                        duration={350}
+                        style={styles.flowPercentage}
+                      />
                     </View>
                   </View>
                 </TouchableOpacity>
@@ -301,14 +312,19 @@ const SpendingBreakdown: React.FC<SpendingBreakdownProps> = ({
                 </View>
 
                 <View style={styles.remainingRight}>
-                  <Text style={styles.remainingAmount}>
-                    ${data.amount.toLocaleString()}
-                  </Text>
-                  <Text
+                  <AnimatedCurrency
+                    value={safeNum(data.amount)}
+                    style={styles.remainingAmount}
+                    decimals={0}
+                    duration={350}
+                  />
+                  <AnimatedNumber
+                    value={safeNum(data.percentage)}
+                    suffix="%"
+                    decimals={0}
+                    duration={350}
                     style={[styles.remainingPercentage, { color: data.color }]}
-                  >
-                    {data.percentage.toFixed(0)}%
-                  </Text>
+                  />
                 </View>
               </TouchableOpacity>
             ))}

@@ -164,10 +164,15 @@ export const styles = StyleSheet.create({
     fontSize: FONTS.sm,
     color: "rgba(255, 255, 255, 0.6)",
   },
+  availableCashRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    alignItems: "center",
+    marginTop: 4,
+  },
   availableCash: {
     fontSize: FONTS.sm,
     color: "rgba(255, 255, 255, 0.8)",
-    marginTop: 4,
   },
   todayPerformanceContainer: {
     marginTop: 6,

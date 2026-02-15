@@ -62,6 +62,8 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   onCategoryPress: _onCategoryPress,
   formatCategoryName,
   budgets = [],
+  orphanCategories = [],
+  onAddOrphanToBudget,
   totalBudget: providedTotalBudget,
   totalSpent: providedTotalSpent,
   budgetSummary,
@@ -714,12 +716,68 @@ const BudgetView: React.FC<BudgetViewProps> = ({
             })}
           </View>
         </View>
-      ) : (
+      ) : null}
+
+      {/* Not in budget - Plaid categories with spending but no budget entry */}
+      {orphanCategories.length > 0 && onAddOrphanToBudget && (
+        <View style={styles.orphanSection}>
+          <Text style={styles.orphanSectionTitle}>Not in budget</Text>
+          <Text style={styles.orphanSectionSubtitle}>
+            Add these to track spending
+          </Text>
+          <View style={styles.orphanList}>
+            {orphanCategories.map(({ category, amount, color }) => (
+              <TouchableOpacity
+                key={category}
+                style={styles.orphanItem}
+                onPress={() => {
+                  _onCategoryPress(category, {
+                    amount,
+                    percentage: 0,
+                    color,
+                    hasRecurringTransactions: false,
+                  });
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.orphanItemLeft}>
+                  <View
+                    style={[
+                      styles.orphanDot,
+                      { backgroundColor: color },
+                    ]}
+                  />
+                  <Text style={styles.orphanItemName} numberOfLines={1}>
+                    {formatCategoryName(category)}
+                  </Text>
+                </View>
+                <View style={styles.orphanItemRight}>
+                  <Text style={styles.orphanItemAmount}>
+                    ${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.addToBudgetButton}
+                    onPress={(e) => {
+                      e.stopPropagation();
+                      onAddOrphanToBudget(category);
+                    }}
+                  >
+                    <Ionicons name="add-circle-outline" size={18} color="#4A90E2" />
+                    <Text style={styles.addToBudgetButtonText}>Add</Text>
+                  </TouchableOpacity>
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+      )}
+
+      {sortedBudgets.length === 0 && orphanCategories.length === 0 ? (
         <View style={styles.emptyState}>
           <Ionicons name="wallet-outline" size={32} color="#666" />
           <Text style={styles.emptyText}>No budgets set</Text>
         </View>
-      )}
+      ) : null}
 
       <CategoryActionSheet
         visible={actionVisible}
@@ -2206,6 +2264,78 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#DDD",
     marginRight: 8,
+  },
+  // Orphan categories (not in budget)
+  orphanSection: {
+    marginTop: 24,
+    marginBottom: 24,
+  },
+  orphanSectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    color: "#ccc",
+    marginBottom: 4,
+  },
+  orphanSectionSubtitle: {
+    fontSize: 13,
+    color: "#888",
+    marginBottom: 12,
+  },
+  orphanList: {
+    backgroundColor: "#1f1f1f",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.1)",
+    overflow: "hidden",
+  },
+  orphanItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#2a2a2a",
+  },
+  orphanItemLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    flex: 1,
+  },
+  orphanDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    marginRight: 12,
+  },
+  orphanItemName: {
+    fontSize: 14,
+    fontWeight: "500",
+    color: "#fff",
+    flex: 1,
+  },
+  orphanItemRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  orphanItemAmount: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#fff",
+  },
+  addToBudgetButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "rgba(74, 144, 226, 0.15)",
+  },
+  addToBudgetButtonText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#4A90E2",
   },
   // Compact Empty State
   emptyState: {

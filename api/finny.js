@@ -1100,8 +1100,7 @@ function extractBasePacksSummary(packs) {
     netWorth: base.netWorth ?? base.net_worth ?? null,
     liquidAssets: base.liquidAssets ?? base.liquid_assets ?? null,
     investmentsTotal: base.investmentsTotal ?? base.investments_total ?? null,
-    totalLiabilities:
-      base.totalLiabilities ?? base.total_liabilities ?? null,
+    totalLiabilities: base.totalLiabilities ?? base.total_liabilities ?? null,
 
     // Account counts and types
     accountsCount: Array.isArray(base.accounts) ? base.accounts.length : 0,
@@ -1193,8 +1192,8 @@ async function logConversation(conversationData) {
         if (missingCols) {
           logWarn(
             `⚠️ [CONVERSATION_LOG] Insert failed (missing columns: ${error.message}). ` +
-            `Falling back to insert WITHOUT base_packs/prompt_used. ` +
-            `Ensure migrations add_base_packs_to_conversation_logs.sql and 20260212190000_add_prompt_used_to_conversation_logs.sql are applied.`,
+              `Falling back to insert WITHOUT base_packs/prompt_used. ` +
+              `Ensure migrations add_base_packs_to_conversation_logs.sql and 20260212190000_add_prompt_used_to_conversation_logs.sql are applied.`,
           );
           const {
             metrics,
@@ -1285,7 +1284,14 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: "Missing or invalid request body" });
   }
 
-  const { action, message, context, classification, chat_id: bodyChatId, ...otherParams } = body;
+  const {
+    action,
+    message,
+    context,
+    classification,
+    chat_id: bodyChatId,
+    ...otherParams
+  } = body;
 
   // For prebuild_context, we'll check if all contexts are cached after we have userId
   // and suppress logs if they are. For now, we'll log normally and check later.
@@ -1371,7 +1377,9 @@ export default async function handler(req, res) {
   const finalUserId = serverUserId || context?.user_id;
   const chatId = bodyChatId ?? body.chat_id ?? context?.chat_id ?? null;
   if (!chatId && !shouldSuppressLogs) {
-    logWarn("⚠️ [FINNY] chat_id missing from request body - conversation_logs.chat_id will be null");
+    logWarn(
+      "⚠️ [FINNY] chat_id missing from request body - conversation_logs.chat_id will be null",
+    );
   }
 
   // Re-check with finalUserId (more secure) - always use server-verified userId when available
@@ -3026,7 +3034,10 @@ async function handleAsk(
                 result: "success",
               },
             }).catch((err) =>
-              console.error("❌ [CONVERSATION_LOG] Background log failed:", err?.message),
+              console.error(
+                "❌ [CONVERSATION_LOG] Background log failed:",
+                err?.message,
+              ),
             ),
           );
 
@@ -3116,7 +3127,10 @@ async function handleAsk(
               },
               fallback_used: true,
             }).catch((err) =>
-              console.error("❌ [CONVERSATION_LOG] Background log failed:", err?.message),
+              console.error(
+                "❌ [CONVERSATION_LOG] Background log failed:",
+                err?.message,
+              ),
             ),
           );
 
@@ -3189,9 +3203,7 @@ async function handleAsk(
     console.log(
       `   └─ Emotional: ${
         userState.emotionalState
-      } (confidence: ${userState.confidence.emotional.toFixed(
-        2,
-      )}) | Financial: ${userState.financialState} | Urgency: ${
+      } (confidence: ${userState.confidence.emotional.toFixed(2)}) | Urgency: ${
         userState.urgency
       }`,
     );
@@ -3585,7 +3597,10 @@ async function handleAsk(
     // Log conversation in background - MUST NOT block or affect latency
     setImmediate(() => {
       logConversation(conversationData).catch((err) =>
-        console.error("❌ [CONVERSATION_LOG] Background log failed:", err?.message),
+        console.error(
+          "❌ [CONVERSATION_LOG] Background log failed:",
+          err?.message,
+        ),
       );
     });
 
@@ -6305,7 +6320,10 @@ async function handleClassify(message, context) {
     // Log in background (non-blocking)
     setImmediate(() =>
       logConversation(conversationData).catch((err) =>
-        console.error("❌ [CONVERSATION_LOG] Background log failed:", err?.message),
+        console.error(
+          "❌ [CONVERSATION_LOG] Background log failed:",
+          err?.message,
+        ),
       ),
     );
 
@@ -6676,7 +6694,10 @@ async function handleOffTopic(
         },
         prompt_used: promptUsed,
       }).catch((err) =>
-        console.error("❌ [CONVERSATION_LOG] Background log failed:", err?.message),
+        console.error(
+          "❌ [CONVERSATION_LOG] Background log failed:",
+          err?.message,
+        ),
       ),
     );
 

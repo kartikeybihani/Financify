@@ -182,7 +182,7 @@ function getDemoTransactionsForInsights() {
     demoAccounts.map((a) => [
       a.account_id,
       { name: a.name, type: a.type, subtype: a.subtype },
-    ])
+    ]),
   );
   return demoTransactions.map((tx) => ({
     ...tx,
@@ -204,11 +204,11 @@ export default function InsightsScreen() {
   const initialCache = loadInitialCache(initialUserId);
 
   const [transactions, setTransactions] = useState<Transaction[]>(
-    initialCache.transactions
+    initialCache.transactions,
   );
   const [realInsights, setRealInsights] = useState<Insight[]>([]);
   const [userId, setUserId] = useState<string | undefined>(
-    initialUserId || undefined
+    initialUserId || undefined,
   );
 
   // Get userId asynchronously (for validation and fallback)
@@ -283,7 +283,7 @@ export default function InsightsScreen() {
         percentage: number;
         color: string;
         hasRecurringTransactions: boolean;
-      }
+      },
     ][]
   >([]);
   // If we loaded cache synchronously, we're not in initial load state
@@ -301,15 +301,16 @@ export default function InsightsScreen() {
 
   // Month selection state
   const [selectedMonth, setSelectedMonth] = useState<number>(
-    new Date().getMonth()
+    new Date().getMonth(),
   );
   const [selectedYear, setSelectedYear] = useState<number>(
-    new Date().getFullYear()
+    new Date().getFullYear(),
   );
   const [availableMonths, setAvailableMonths] = useState<MonthOption[]>([]);
 
   const hasData = useRef(false);
   const hasCachedData = useRef(false); // Track if we have cached data to avoid skeleton
+  const fetchCancelledRef = useRef(false); // Guard against setState after tab blur
   const [refreshing, setRefreshing] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
 
@@ -318,7 +319,7 @@ export default function InsightsScreen() {
 
   // Recurring transactions state
   const [recurringData, setRecurringData] = useState<RecurringData | null>(
-    null
+    null,
   );
   const [recurringLoading, setRecurringLoading] = useState(false);
   const [refreshStatus, setRefreshStatus] = useState<RefreshStatus>({
@@ -365,14 +366,17 @@ export default function InsightsScreen() {
   }, []);
 
   // Handler for receiving the modal open function from child
-  const handleOpenAddCategoryModalRef = useCallback((openFn: (() => void) | null) => {
-    // Store in ref immediately (safe during render)
-    openAddCategoryModalRef.current = openFn;
-    // Update flag after render completes to trigger re-render for button visibility
-    setTimeout(() => {
-      setHasOpenAddCategoryModal(openFn !== null);
-    }, 0);
-  }, []);
+  const handleOpenAddCategoryModalRef = useCallback(
+    (openFn: (() => void) | null) => {
+      // Store in ref immediately (safe during render)
+      openAddCategoryModalRef.current = openFn;
+      // Update flag after render completes to trigger re-render for button visibility
+      setTimeout(() => {
+        setHasOpenAddCategoryModal(openFn !== null);
+      }, 0);
+    },
+    [],
+  );
 
   // Investment data state
   // Initialize investment data with cached data if available
@@ -405,7 +409,7 @@ export default function InsightsScreen() {
         }
       });
     },
-    []
+    [],
   );
 
   // Handle deep-link to a specific section (e.g. Home: ?section=investments)
@@ -416,7 +420,7 @@ export default function InsightsScreen() {
     useCallback(() => {
       if (!sectionParam) return;
       navigateToSection(sectionParam, { clearQueryParam: true });
-    }, [sectionParam, navigateToSection])
+    }, [sectionParam, navigateToSection]),
   );
 
   // Listen for navigate-to-section requests (e.g. from onboarding timeline)
@@ -425,7 +429,7 @@ export default function InsightsScreen() {
       "navigateToInsightsSection",
       (data: { section?: string }) => {
         navigateToSection(data.section);
-      }
+      },
     );
     return () => subscription.remove();
   }, [navigateToSection]);
@@ -495,7 +499,7 @@ export default function InsightsScreen() {
 
   // Use ref to store latest loadRecurringTransactions function to avoid re-subscription
   const loadRecurringTransactionsRef = useRef<(() => Promise<void>) | null>(
-    null
+    null,
   );
 
   // Listen for transaction category updates - clear cache and refresh smoothly
@@ -517,7 +521,7 @@ export default function InsightsScreen() {
               updatedTransactions = OptimisticUpdateManager.applyCategoryChange(
                 updatedTransactions,
                 affectedTx.transactionId,
-                data.newCategory
+                data.newCategory,
               );
             });
 
@@ -532,7 +536,7 @@ export default function InsightsScreen() {
               updatedTransactions = OptimisticUpdateManager.applyCategoryChange(
                 updatedTransactions,
                 affectedTx.transactionId,
-                data.newCategory
+                data.newCategory,
               );
             });
 
@@ -550,7 +554,7 @@ export default function InsightsScreen() {
           // Fallback: refresh all data if no specific transactions provided
           await loadData();
         }
-      }
+      },
     );
 
     return () => subscription.remove();
@@ -588,7 +592,7 @@ export default function InsightsScreen() {
       } else {
         // If not on recurring section, just clear cache - will load fresh when user navigates
         logger.info(
-          "📦 Cleared recurring cache (will load fresh when user navigates to recurring section)"
+          "📦 Cleared recurring cache (will load fresh when user navigates to recurring section)",
         );
       }
     };
@@ -598,17 +602,17 @@ export default function InsightsScreen() {
       async (data) => {
         logger.debug("🔄 Transaction recurring status updated:", data);
         await handleRecurringUpdate();
-      }
+      },
     );
 
     const bulkUpdateSubscription = DeviceEventEmitter.addListener(
       "recurringBulkUpdate",
       async (data) => {
         logger.debug(
-          `🔄 Bulk recurring update: ${data.count} transactions updated`
+          `🔄 Bulk recurring update: ${data.count} transactions updated`,
         );
         await handleRecurringUpdate();
-      }
+      },
     );
 
     return () => {
@@ -647,7 +651,7 @@ export default function InsightsScreen() {
         });
       } else {
         logger.debug(
-          "⏭️ [PRELOADER] Skipping transactions preload - cache exists"
+          "⏭️ [PRELOADER] Skipping transactions preload - cache exists",
         );
       }
 
@@ -661,7 +665,9 @@ export default function InsightsScreen() {
           },
         });
       } else {
-        logger.debug("⏭️ [PRELOADER] Skipping recurring preload - cache exists");
+        logger.debug(
+          "⏭️ [PRELOADER] Skipping recurring preload - cache exists",
+        );
       }
 
       if (!hasInvestmentCache) {
@@ -680,7 +686,7 @@ export default function InsightsScreen() {
         });
       } else {
         logger.debug(
-          "⏭️ [PRELOADER] Skipping investments preload - cache exists"
+          "⏭️ [PRELOADER] Skipping investments preload - cache exists",
         );
       }
 
@@ -717,7 +723,7 @@ export default function InsightsScreen() {
           institution_name: a.institution_name,
           type: a.type,
           subtype: a.subtype,
-        }))
+        })),
       );
       setFilteredTransactions(demoTx);
       setTotalFilteredCount(demoTx.length);
@@ -778,7 +784,7 @@ export default function InsightsScreen() {
         if (cachedTransactions && cachedTransactions.length > 0) {
           logger.info(
             "📦 Loading cached transactions on mount:",
-            cachedTransactions.length
+            cachedTransactions.length,
           );
           setTransactions(cachedTransactions);
           hasData.current = true;
@@ -834,7 +840,7 @@ export default function InsightsScreen() {
             logger.error("Prefetch failed silently:", error);
           }
         }
-      }
+      },
     );
 
     return () => {
@@ -846,6 +852,7 @@ export default function InsightsScreen() {
   useFocusEffect(
     useCallback(() => {
       let isCancelled = false;
+      fetchCancelledRef.current = false;
 
       const initializeScreen = async () => {
         if (isDemoMode) {
@@ -921,11 +928,12 @@ export default function InsightsScreen() {
 
       return () => {
         isCancelled = true;
+        fetchCancelledRef.current = true;
         if (timer) {
           clearTimeout(timer);
         }
       };
-    }, [getUserId, isDemoMode])
+    }, [getUserId, isDemoMode]),
   );
 
   // Auto-refresh stale investment data (>24 hours old)
@@ -1017,7 +1025,7 @@ export default function InsightsScreen() {
       setFilteredTransactions(cachedSearch.transactions);
       setTotalFilteredCount(cachedSearch.count);
       setHasMoreTransactions(
-        cachedSearch.transactions.length < cachedSearch.count
+        cachedSearch.transactions.length < cachedSearch.count,
       );
       setIsSearching(false);
       return;
@@ -1099,7 +1107,7 @@ export default function InsightsScreen() {
           setMightHaveTransactions(hasCache);
           if (hasCache) {
             logger.info(
-              "📦 Cache exists, showing loading state instead of empty state"
+              "📦 Cache exists, showing loading state instead of empty state",
             );
           }
         }
@@ -1178,7 +1186,7 @@ export default function InsightsScreen() {
       if (cachedTransactions && cachedTransactions.length > 0) {
         logger.info(
           "Insights: Using cached transactions:",
-          cachedTransactions.length
+          cachedTransactions.length,
         );
         setTransactions(cachedTransactions);
         processTransactionsData(cachedTransactions);
@@ -1194,7 +1202,7 @@ export default function InsightsScreen() {
 
       if (transactions && transactions.length > 0) {
         logger.info(
-          `Insights: Loaded ${transactions.length} transactions from Supabase`
+          `Insights: Loaded ${transactions.length} transactions from Supabase`,
         );
 
         setTransactions(transactions);
@@ -1235,13 +1243,20 @@ export default function InsightsScreen() {
         return;
       }
 
-      // Fetch latest transactions using the new plaid utils
-      // Fetch more transactions to support 2 years of month history (estimate ~1000 transactions)
-      const transactions = await getRecentTransactions(userId, 1000);
+      // Fetch transactions and investment data in parallel for background refresh
+      const [transactions] = await Promise.all([
+        getRecentTransactions(userId, 1000),
+        loadInvestmentDataFromDB().catch((err) => {
+          logger.error("Background investment refresh failed:", err);
+          return false;
+        }),
+      ]);
+
+      if (fetchCancelledRef.current) return;
 
       if (transactions && transactions.length > 0) {
         logger.info(
-          `Insights: Loaded ${transactions.length} fresh transactions`
+          `Insights: Loaded ${transactions.length} fresh transactions`,
         );
         setTransactions(transactions);
         processTransactionsData(transactions);
@@ -1253,9 +1268,13 @@ export default function InsightsScreen() {
         logger.info("Insights: No transactions found");
       }
     } catch (error) {
-      logger.error("Insights: Error fetching fresh data:", error);
+      if (!fetchCancelledRef.current) {
+        logger.error("Insights: Error fetching fresh data:", error);
+      }
     } finally {
-      setIsLoading(false);
+      if (!fetchCancelledRef.current) {
+        setIsLoading(false);
+      }
     }
   };
 
@@ -1308,13 +1327,13 @@ export default function InsightsScreen() {
 
       if (debug) {
         logger.debug(
-          `Loaded ${userAccounts.length} user accounts for filtering:`
+          `Loaded ${userAccounts.length} user accounts for filtering:`,
         );
         userAccounts.forEach((acc, idx) => {
           logger.debug(
             `  ${idx + 1}. ${acc.institution_name} - ${acc.name} (${
               acc.subtype
-            }) [Account ID: ${acc.account_id}]`
+            }) [Account ID: ${acc.account_id}]`,
           );
         });
 
@@ -1326,7 +1345,7 @@ export default function InsightsScreen() {
         // Check which accounts belong to which institution
         uniqueInstitutions.forEach((institution) => {
           const accountsForInstitution = userAccounts.filter(
-            (acc) => acc.institution_name === institution
+            (acc) => acc.institution_name === institution,
           );
           accountsForInstitution.forEach((acc) => {
             logger.debug(`    - ${acc.name} (${acc.subtype})`);
@@ -1362,7 +1381,7 @@ export default function InsightsScreen() {
   const setCachedData = (
     cacheKey: string,
     transactions: Transaction[],
-    count: number
+    count: number,
   ) => {
     filterCache.current.set(cacheKey, {
       transactions,
@@ -1380,7 +1399,7 @@ export default function InsightsScreen() {
   const loadFilteredTransactions = async (
     filters: FilterOptions,
     reset: boolean = false,
-    search: string = ""
+    search: string = "",
   ) => {
     try {
       const userId = await getUserId();
@@ -1395,7 +1414,7 @@ export default function InsightsScreen() {
       // Check search cache first for instant results
       if (reset && search.trim()) {
         const searchCacheKey = `${search.trim().toLowerCase()}_${JSON.stringify(
-          filters
+          filters,
         )}`;
         const cachedSearch = searchCache.current.get(searchCacheKey);
         if (
@@ -1406,7 +1425,7 @@ export default function InsightsScreen() {
           setFilteredTransactions(cachedSearch.transactions);
           setTotalFilteredCount(cachedSearch.count);
           setHasMoreTransactions(
-            cachedSearch.transactions.length < cachedSearch.count
+            cachedSearch.transactions.length < cachedSearch.count,
           );
           setIsSearching(false);
           return;
@@ -1447,7 +1466,7 @@ export default function InsightsScreen() {
       const timePeriodToUse = filters.timePeriod || "all";
 
       logger.info(
-        `🔍 Loading filtered transactions with timePeriod: "${timePeriodToUse}" (original: "${filters.timePeriod}")`
+        `🔍 Loading filtered transactions with timePeriod: "${timePeriodToUse}" (original: "${filters.timePeriod}")`,
       );
 
       const newTransactions = await getFilteredTransactions(userId, {
@@ -1528,7 +1547,7 @@ export default function InsightsScreen() {
           setCachedData(
             getCacheKey(filters, 0),
             updatedTransactions,
-            totalCount
+            totalCount,
           );
         } else {
           // Cache search results for instant repeat searches
@@ -1572,7 +1591,7 @@ export default function InsightsScreen() {
       logger.info(
         `📊 Loaded ${newTransactions.length} filtered transactions (${
           updatedTransactions.length
-        }/${totalCount})${search.trim() ? ` for search: "${search}"` : ""}`
+        }/${totalCount})${search.trim() ? ` for search: "${search}"` : ""}`,
       );
     } catch (error) {
       logger.error("❌ Error loading filtered transactions:", error);
@@ -1609,10 +1628,10 @@ export default function InsightsScreen() {
           const currentAccountIds = filterOptions.accountIds || [];
           if (currentAccountIds.includes(deletedAccountId)) {
             const updatedAccountIds = currentAccountIds.filter(
-              (id) => id !== deletedAccountId
+              (id) => id !== deletedAccountId,
             );
             logger.info(
-              `🧹 Removed deleted account from filter options. Remaining: ${updatedAccountIds.length}`
+              `🧹 Removed deleted account from filter options. Remaining: ${updatedAccountIds.length}`,
             );
             updatedFilterOptions = {
               ...filterOptions,
@@ -1650,7 +1669,7 @@ export default function InsightsScreen() {
           // Also reload investment data if financial data changes
           await loadInvestmentData();
         }
-      }
+      },
     );
 
     return () => {
@@ -1673,7 +1692,7 @@ export default function InsightsScreen() {
     (
       transactionsData: Transaction[],
       targetMonth?: number,
-      targetYear?: number
+      targetYear?: number,
     ) => {
       // Use selected month/year or default to current month
       const monthToUse =
@@ -1682,14 +1701,14 @@ export default function InsightsScreen() {
 
       // Filter out INTERNAL_TRANSFER transactions - they should not be counted in spending
       const expenses = transactionsData.filter(
-        (tx) => tx.amount > 0 && tx.new_category !== "INTERNAL_TRANSFER"
+        (tx) => tx.amount > 0 && tx.new_category !== "INTERNAL_TRANSFER",
       );
 
       // Filter for selected month
       let currentMonthExpenses = filterTransactionsByMonth(
         expenses,
         monthToUse,
-        yearToUse
+        yearToUse,
       );
 
       // If no data for selected month, try to find the most recent month with data
@@ -1707,7 +1726,7 @@ export default function InsightsScreen() {
         currentMonthExpenses = filterTransactionsByMonth(
           expenses,
           mostRecentMonth,
-          mostRecentYear
+          mostRecentYear,
         );
 
         // Update selected month/year to match most recent month with data
@@ -1719,7 +1738,7 @@ export default function InsightsScreen() {
 
       const totalSpent = currentMonthExpenses.reduce(
         (acc, tx) => acc + tx.amount,
-        0
+        0,
       );
 
       const categoriesObj: CategoryBreakdown = {};
@@ -1752,12 +1771,12 @@ export default function InsightsScreen() {
       });
 
       const sortedCategories = Object.entries(categoriesObj).sort(
-        (a, b) => b[1].amount - a[1].amount
+        (a, b) => b[1].amount - a[1].amount,
       );
 
       // Filter out Internal Transfer categories
       const filteredCategories = sortedCategories.filter(
-        ([category]) => category !== "INTERNAL_TRANSFER"
+        ([category]) => category !== "INTERNAL_TRANSFER",
       );
 
       setCategoryBreakdown(filteredCategories);
@@ -1769,7 +1788,7 @@ export default function InsightsScreen() {
         "All Categories",
         ...new Set(currentMonthExpenses.map((tx) => getDisplayCategory(tx))),
       ].map((cat) =>
-        cat === "All Categories" ? cat : formatCategoryFromHook(cat)
+        cat === "All Categories" ? cat : formatCategoryFromHook(cat),
       );
 
       setCategories(uniqueCategories);
@@ -1793,7 +1812,7 @@ export default function InsightsScreen() {
             : "Building your spending insights...",
           details: topCategory
             ? `You've spent the most on ${formatCategoryFromHook(
-                topCategory[0]
+                topCategory[0],
               )} — $${topCategory[1].amount.toLocaleString("en-US", {
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2,
@@ -1817,7 +1836,7 @@ export default function InsightsScreen() {
         });
       }
     },
-    [selectedMonth, selectedYear, getCategoryColor, formatCategoryFromHook]
+    [selectedMonth, selectedYear, getCategoryColor, formatCategoryFromHook],
   );
 
   // Keep ref updated with latest processTransactionsData function
@@ -1835,7 +1854,7 @@ export default function InsightsScreen() {
       // If current selected month is not in available months, default to most recent month
       if (months.length > 0) {
         const currentSelectedExists = months.some(
-          (m) => m.month === selectedMonth && m.year === selectedYear
+          (m) => m.month === selectedMonth && m.year === selectedYear,
         );
         if (!currentSelectedExists) {
           // Default to most recent month (first in array)
@@ -1885,7 +1904,7 @@ export default function InsightsScreen() {
         refreshBudgetRef
           .current()
           .catch((err) =>
-            logger.error("Background budget refresh failed:", err)
+            logger.error("Background budget refresh failed:", err),
           );
       }
 
@@ -1902,7 +1921,7 @@ export default function InsightsScreen() {
 
   const handleCategoryPress = (
     category: string,
-    data: { amount: number; percentage: number; color: string }
+    data: { amount: number; percentage: number; color: string },
   ) => {
     setSelectedCategoryDetail({
       category,
@@ -1942,7 +1961,7 @@ export default function InsightsScreen() {
       // Light haptic feedback
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     },
-    [activeIndex]
+    [activeIndex],
   );
 
   // Load investment data with AsyncStorage cache
@@ -1968,7 +1987,7 @@ export default function InsightsScreen() {
         // Load fresh data in background and update cache (no loading state)
         // But don't await it - let it update the state when it completes
         loadInvestmentDataFromDB().catch((err) =>
-          logger.error("Background investment data refresh failed:", err)
+          logger.error("Background investment data refresh failed:", err),
         );
         return true;
       }
@@ -2035,7 +2054,7 @@ export default function InsightsScreen() {
             holdings?.length || 0
           }, Options: ${options?.length || 0}, Balances: ${
             balances?.length || 0
-          }, Connections: ${connections?.length || 0}`
+          }, Connections: ${connections?.length || 0}`,
         );
         setInvestmentHoldings(investmentData.holdings);
         setInvestmentOptions(investmentData.options);
@@ -2102,7 +2121,7 @@ export default function InsightsScreen() {
         if (accountsError) {
           logger.error(
             `❌ Error fetching accounts for ${item.institution_name}:`,
-            accountsError
+            accountsError,
           );
           continue;
         }
@@ -2171,12 +2190,12 @@ export default function InsightsScreen() {
 
       logger.info(
         "✅ Recurring transactions loaded from database:",
-        data.summary
+        data.summary,
       );
     } catch (error) {
       logger.error(
         "❌ Error loading recurring transactions from database:",
-        error
+        error,
       );
     }
   };
@@ -2209,7 +2228,7 @@ export default function InsightsScreen() {
       loadRecurringTransactions,
       loadInvestmentData,
       setReAuthItems,
-    ]
+    ],
   );
 
   // Dismiss re-auth banner
@@ -2217,7 +2236,7 @@ export default function InsightsScreen() {
     (item_id: string) => {
       dismissReAuthBanner(item_id, setReAuthItems);
     },
-    [setReAuthItems]
+    [setReAuthItems],
   );
 
   // Cloud refresh handler
@@ -2236,7 +2255,7 @@ export default function InsightsScreen() {
           await loadInvestmentData();
         },
         searchQuery,
-      }
+      },
     );
   }, [
     isSyncing,
@@ -2273,7 +2292,7 @@ export default function InsightsScreen() {
       onRefresh,
       refreshing,
       loadRecurringTransactions,
-    ]
+    ],
   );
 
   const transactionsPageProps = useMemo(
@@ -2329,7 +2348,7 @@ export default function InsightsScreen() {
       dismissReAuthBannerWrapper,
       onRefresh,
       refreshing,
-    ]
+    ],
   );
 
   const spendingPageProps = useMemo(
@@ -2364,7 +2383,7 @@ export default function InsightsScreen() {
       dismissReAuthBannerWrapper,
       onRefresh,
       refreshing,
-    ]
+    ],
   );
 
   const budgetPageProps = useMemo(
@@ -2396,7 +2415,7 @@ export default function InsightsScreen() {
       dismissReAuthBannerWrapper,
       onRefresh,
       refreshing,
-    ]
+    ],
   );
 
   const investmentsPageProps = useMemo(
@@ -2425,7 +2444,7 @@ export default function InsightsScreen() {
       dismissReAuthBannerWrapper,
       onRefresh,
       refreshing,
-    ]
+    ],
   );
 
   const cashFlowPageProps = useMemo(
@@ -2444,7 +2463,7 @@ export default function InsightsScreen() {
       dismissReAuthBannerWrapper,
       onRefresh,
       refreshing,
-    ]
+    ],
   );
 
   // Render page component based on section key
@@ -2580,12 +2599,12 @@ export default function InsightsScreen() {
                 await loadFilteredTransactions(
                   filterOptions,
                   true,
-                  searchQuery
+                  searchQuery,
                 );
               },
               (error) => {
                 logger.error("Failed to add new cash account:", error);
-              }
+              },
             );
           } catch (error) {
             logger.error("Error adding cash account:", error);
@@ -2604,18 +2623,18 @@ export default function InsightsScreen() {
               async (itemId) => {
                 logger.info(
                   "Successfully added new credit card account:",
-                  itemId
+                  itemId,
                 );
                 await fetchFreshData();
                 await loadFilteredTransactions(
                   filterOptions,
                   true,
-                  searchQuery
+                  searchQuery,
                 );
               },
               (error) => {
                 logger.error("Failed to add new credit card account:", error);
-              }
+              },
             );
           } catch (error) {
             logger.error("Error adding credit card account:", error);

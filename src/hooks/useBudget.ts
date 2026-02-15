@@ -21,6 +21,7 @@ import {
   CategoryRecord,
   CategoryGrouping,
   BudgetData,
+  OrphanCategory,
 } from "@/src/types/budget";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import logger from "@/src/utils/core/logger";
@@ -41,6 +42,7 @@ export interface UseBudgetReturn {
   // Data
   budgetSummary: BudgetSummary | null;
   budgetData: BudgetData[];
+  orphanCategories: OrphanCategory[];
   totalBudget: number;
   totalSpent: number;
   totalRemaining: number;
@@ -950,6 +952,27 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
   // NOTE: categoryBreakdown is now the primary source for spent amounts (same as SpendingBreakdown)
   // This ensures budget view stays in sync with spending breakdown view
 
+  // Orphan categories: spending from Plaid (top_category) that has no matching user category
+  // e.g. Loans, Education, Travel when Finny didn't include them in the budget
+  const orphanCategories: OrphanCategory[] = useMemo(() => {
+    if (!categoryBreakdown || categoryBreakdown.length === 0) return [];
+    const categoryKeys = new Set(
+      allCategories.map((c) => toKey(c.name)).concat(allCategories.map((c) => toKey(c.slug || "")))
+    );
+    return categoryBreakdown
+      .filter(([name]) => {
+        const key = toKey(name);
+        if (key === "internal_transfer" || key === "income") return false;
+        return !categoryKeys.has(key);
+      })
+      .map(([category, data]) => ({
+        category,
+        amount: data.amount,
+        color: data.color,
+      }))
+      .sort((a, b) => b.amount - a.amount);
+  }, [categoryBreakdown, allCategories]);
+
   // Use cached budgetData immediately, fallback to computed when ready
   // This ensures instant UI like spending/investment sections
   // Track if we have fresh computed data ready
@@ -1323,6 +1346,7 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
   return {
     budgetSummary,
     budgetData,
+    orphanCategories,
     totalBudget,
     totalSpent,
     totalRemaining,
