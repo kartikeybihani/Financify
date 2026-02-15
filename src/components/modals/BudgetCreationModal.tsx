@@ -49,6 +49,7 @@ export default function BudgetCreationModal({
   const [generatedCategories, setGeneratedCategories] = useState<
     BudgetCategory[]
   >([]);
+  const [slackAdded, setSlackAdded] = useState<number>(0);
   const [headerHeight, setHeaderHeight] = useState(0);
   const [scrollContentHeight, setScrollContentHeight] = useState(0);
   const [showMappingModal, setShowMappingModal] = useState(false);
@@ -60,6 +61,29 @@ export default function BudgetCreationModal({
   const step2RotationAnim = useRef(new Animated.Value(0)).current;
   const step2ScaleAnim = useRef(new Animated.Value(1)).current;
   const categoryAnimations = useRef<Animated.Value[]>([]).current;
+  const [finnyMessage, setFinnyMessage] = useState("");
+
+  const FINNY_BUDGET_MESSAGE =
+    "I made this budget by analyzing your spending history and an ideal budget for your income, but also keeping in mind your expenses and how you spend.";
+
+  // Typing animation for Finny's message when step 3 appears
+  useEffect(() => {
+    if (step !== 3 || generatedCategories.length === 0) {
+      setFinnyMessage("");
+      return;
+    }
+    setFinnyMessage("");
+    let i = 0;
+    const interval = setInterval(() => {
+      if (i < FINNY_BUDGET_MESSAGE.length) {
+        setFinnyMessage(FINNY_BUDGET_MESSAGE.slice(0, i + 1));
+        i++;
+      } else {
+        clearInterval(interval);
+      }
+    }, 25);
+    return () => clearInterval(interval);
+  }, [step, generatedCategories.length]);
 
   // Initialize category animations when categories are set
   useEffect(() => {
@@ -188,6 +212,7 @@ export default function BudgetCreationModal({
       const data = await response.json();
       if (data.categories && Array.isArray(data.categories)) {
         setGeneratedCategories(data.categories);
+        setSlackAdded(data.slackAdded ?? 0);
         setStep(3);
       } else {
         throw new Error("Invalid response format from API");
@@ -325,6 +350,7 @@ export default function BudgetCreationModal({
     setSavings("");
     setError(null);
     setGeneratedCategories([]);
+    setSlackAdded(0);
     // Delete draft budget
     deleteDraftBudget();
   };
@@ -390,6 +416,7 @@ export default function BudgetCreationModal({
     setSavings("");
     setError(null);
     setGeneratedCategories([]);
+    setSlackAdded(0);
     setLoading(false);
     onClose();
   };
@@ -730,6 +757,15 @@ export default function BudgetCreationModal({
                     <Text style={styles.reviewSubtitle}>
                       You can always adjust your budget later.
                     </Text>
+                    {finnyMessage.length > 0 && (
+                      <Text style={styles.finnyMessage}>{finnyMessage}</Text>
+                    )}
+                    {slackAdded > 50 && (
+                      <Text style={styles.savingsTip}>
+                        I noticed you had some room in your budget—consider
+                        increasing your savings next time!
+                      </Text>
+                    )}
                   </View>
 
                   <View style={styles.totalRow}>
@@ -1155,6 +1191,23 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     alignSelf: "stretch",
     textAlign: "left",
+    paddingLeft: 4,
+  },
+  finnyMessage: {
+    fontSize: 13,
+    color: "rgba(74, 144, 226, 0.95)",
+    fontFamily: "Manrope",
+    lineHeight: 19,
+    marginTop: 10,
+    paddingLeft: 4,
+  },
+  savingsTip: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.7)",
+    fontFamily: "Manrope",
+    fontStyle: "italic",
+    lineHeight: 17,
+    marginTop: 8,
     paddingLeft: 4,
   },
   categoriesList: {

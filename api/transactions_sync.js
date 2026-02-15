@@ -971,6 +971,7 @@ async function handleBudgetCreation(req, res, userId) {
       );
       const expectedTotal = Math.round(incomeVal);
       const difference = expectedTotal - totalBudget;
+      let normalizationAdded = 0; // Amount we had to add when LLM under-allocated
 
       if (Math.abs(difference) > 1) {
         console.warn(
@@ -995,6 +996,7 @@ async function handleBudgetCreation(req, res, userId) {
         );
 
         if (difference > 0) {
+          normalizationAdded = Math.round(difference);
           // Under budget: add difference to Other, or largest non-Savings
           const adjustIdx =
             otherIdx >= 0
@@ -1242,6 +1244,7 @@ async function handleBudgetCreation(req, res, userId) {
       return res.status(200).json({
         success: true,
         categories: llmResponse.categories,
+        ...(normalizationAdded > 0 && { slackAdded: normalizationAdded }),
       });
     } catch (error) {
       console.error("Error generating budget:", error);
