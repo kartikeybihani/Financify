@@ -64,7 +64,7 @@ export default function BudgetCreationModal({
   const [finnyMessage, setFinnyMessage] = useState("");
 
   const FINNY_BUDGET_MESSAGE =
-    "I made this budget by analyzing your spending history and an ideal budget for your income, but also keeping in mind your expenses and how you spend.";
+    "I made this budget by learning from your spending history and an ideal budget for your income, but also keeping in mind your expenses and how you spend.";
 
   // Typing animation for Finny's message when step 3 appears
   useEffect(() => {

@@ -846,13 +846,16 @@ async function handleBudgetCreation(req, res, userId) {
         // Ensure "Other" category exists and is added to budget entries
         await ensureOtherCategoryExists(userId, period.id);
 
-        // Start category mapping in background (fire-and-forget)
-        remapTransactionsToBudgetCategories(userId).catch((error) => {
+        // Run category mapping (must await—serverless terminates after response)
+        try {
+          await remapTransactionsToBudgetCategories(userId);
+        } catch (mapError) {
           console.error(
-            "[BUDGET_CREATION] Error in background category mapping:",
-            error,
+            "[BUDGET_CREATION] Error in category mapping:",
+            mapError,
           );
-        });
+          // Non-blocking: budget is saved, mapping can be retried later
+        }
 
         // Update onboarding progress - mark budget_setup as complete
         const { error: onboardingError } = await supabase
