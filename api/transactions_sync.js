@@ -208,14 +208,22 @@ async function ensureOtherCategoryExists(userId, budgetPeriodId) {
       console.log("✅ Created 'Other' category for user:", userId);
     }
 
-    // Ensure "Other" has a budget entry (set limit_amount to 0 to represent unlimited)
-    // Database constraint requires NOT NULL, so we use 0 which UI can interpret as "unlimited"
-    await upsertBudgetEntry(budgetPeriodId, {
-      scope_type: "category",
-      category_id: otherCategoryId,
-      label: "Other",
-      limit_amount: 0, // 0 represents unlimited/no limit - user can set limit later
-    });
+    // Add Other budget entry only if it doesn't exist yet (don't overwrite—draft/LLM may have set a limit)
+    const { data: existingEntry } = await supabase
+      .from("budget_entries")
+      .select("id")
+      .eq("budget_period_id", budgetPeriodId)
+      .eq("category_id", otherCategoryId)
+      .maybeSingle();
+
+    if (!existingEntry) {
+      await upsertBudgetEntry(budgetPeriodId, {
+        scope_type: "category",
+        category_id: otherCategoryId,
+        label: "Other",
+        limit_amount: 0,
+      });
+    }
 
     return otherCategoryId;
   } catch (error) {
@@ -990,7 +998,7 @@ async function handleBudgetCreation(req, res, userId) {
           (c) => c.name.toLowerCase() === "savings",
         );
         const savingsLimit =
-          savingsIdx >= 0 ? (categories[savingsIdx].limit || 0) : 0;
+          savingsIdx >= 0 ? categories[savingsIdx].limit || 0 : 0;
         const otherIdx = categories.findIndex(
           (c) => c.name.toLowerCase() === "other",
         );
@@ -1044,7 +1052,9 @@ async function handleBudgetCreation(req, res, userId) {
             // Absorb rounding in Other, or last adjustable if no Other
             if (Math.abs(roundingDiff) > 0) {
               const absorbIdx =
-                otherIdx >= 0 ? otherIdx : adjustableIndices[adjustableIndices.length - 1];
+                otherIdx >= 0
+                  ? otherIdx
+                  : adjustableIndices[adjustableIndices.length - 1];
               if (absorbIdx >= 0) {
                 categories[absorbIdx].limit = Math.max(
                   0,
@@ -1345,13 +1355,22 @@ export default async function handler(req, res) {
         });
       }
 
-      // Format categories for response
-      const categories =
+      // Format categories for response; sort Savings first, Other last
+      const formatted =
         draftEntries?.map((entry) => ({
           name: entry.categories?.name || entry.label,
           icon: entry.categories?.icon || "📦",
           limit: entry.limit_amount,
         })) || [];
+      const categories = [...formatted].sort((a, b) => {
+        const an = (a.name || "").toLowerCase();
+        const bn = (b.name || "").toLowerCase();
+        if (an === "savings") return -1;
+        if (bn === "savings") return 1;
+        if (an === "other") return 1;
+        if (bn === "other") return -1;
+        return an.localeCompare(bn);
+      });
 
       return res.status(200).json({
         success: true,

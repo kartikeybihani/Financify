@@ -332,8 +332,8 @@ export default function BudgetCreationModal({
 
       const data = await response.json();
       if (data.hasDraft && data.categories && data.categories.length > 0) {
-        // Load draft and go to step 3
         setGeneratedCategories(data.categories);
+        setSlackAdded(0); // Draft doesn't have slack info
         setStep(3);
       }
     } catch (err) {
@@ -1196,7 +1196,7 @@ const styles = StyleSheet.create({
   finnyMessage: {
     fontSize: 13,
     color: "rgba(74, 144, 226, 0.95)",
-    fontFamily: "Manrope",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     lineHeight: 19,
     marginTop: 10,
     paddingLeft: 4,
@@ -1204,7 +1204,7 @@ const styles = StyleSheet.create({
   savingsTip: {
     fontSize: 12,
     color: "rgba(255, 255, 255, 0.7)",
-    fontFamily: "Manrope",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     fontStyle: "italic",
     lineHeight: 17,
     marginTop: 8,
