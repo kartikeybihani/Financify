@@ -433,10 +433,14 @@ async function remapTransactionsToBudgetCategories(userId) {
 
     if (!activePeriod) {
       console.log(
-        "[CATEGORY_MAPPING] No active budget period found, skipping remapping",
+        `[CATEGORY_MAPPING] No active budget period found (period ${periodStartStr}–${periodEndStr}), skipping`,
       );
       return;
     }
+
+    console.log(
+      `[CATEGORY_MAPPING] Found active period ${activePeriod.id}, fetching unmapped transactions...`,
+    );
 
     // Update status to indicate mapping is in progress
     await supabase
@@ -470,8 +474,15 @@ async function remapTransactionsToBudgetCategories(userId) {
     }
 
     if (!transactions || transactions.length === 0) {
+      // Fetch count of total transactions in range for context
+      const { count } = await supabase
+        .from("transactions")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId)
+        .gte("date", startDate)
+        .gt("amount", 0);
       console.log(
-        "[CATEGORY_MAPPING] No unmapped transactions found, skipping",
+        `[CATEGORY_MAPPING] No unmapped transactions (category_id=null) in range ${startDate}–now. Total expenses in range: ${count ?? "?"}. LLM not called.`,
       );
       await supabase
         .from("budget_periods")
@@ -493,7 +504,7 @@ async function remapTransactionsToBudgetCategories(userId) {
     });
 
     console.log(
-      `[CATEGORY_MAPPING] Found ${transactionCategories.length} unique transaction categories`,
+      `[CATEGORY_MAPPING] Found ${transactions.length} unmapped transactions → ${transactionCategories.length} unique categories to map`,
     );
 
     // 2. Collect budget categories
@@ -521,7 +532,9 @@ async function remapTransactionsToBudgetCategories(userId) {
       .filter(Boolean);
 
     if (categoryIds.length === 0) {
-      console.log("[CATEGORY_MAPPING] No budget categories found, skipping");
+      console.log(
+        "[CATEGORY_MAPPING] No budget entries with category_id found, skipping. LLM not called.",
+      );
       await supabase
         .from("budget_periods")
         .update({ category_mapping_status: "completed" })
@@ -549,7 +562,9 @@ async function remapTransactionsToBudgetCategories(userId) {
     }
 
     if (!budgetCategories || budgetCategories.length === 0) {
-      console.log("[CATEGORY_MAPPING] No budget categories found, skipping");
+      console.log(
+        "[CATEGORY_MAPPING] No active categories found for budget entries, skipping. LLM not called.",
+      );
       await supabase
         .from("budget_periods")
         .update({ category_mapping_status: "completed" })
@@ -568,8 +583,13 @@ async function remapTransactionsToBudgetCategories(userId) {
     );
 
     // 4. Call AI for mapping
-    console.log("[CATEGORY_MAPPING] Calling LLM for category mapping...");
+    console.log(
+      `[CATEGORY_MAPPING] Calling LLM (${transactionCategories.length} tx categories → ${budgetCategories.length} budget categories)...`,
+    );
     const llmResponse = await callLLMForMapping(prompt);
+    console.log(
+      "[CATEGORY_MAPPING] LLM returned successfully, applying mappings...",
+    );
 
     if (!llmResponse.mappings || typeof llmResponse.mappings !== "object") {
       console.error(
@@ -671,7 +691,7 @@ async function remapTransactionsToBudgetCategories(userId) {
     }
 
     console.log(
-      `[CATEGORY_MAPPING] Successfully updated ${updatedCount} transaction category groups`,
+      `[CATEGORY_MAPPING] DB updates: ${updatedCount} transaction groups assigned to budget categories`,
     );
 
     // 8. Store LLM result in budget_periods and update status to completed
@@ -690,10 +710,7 @@ async function remapTransactionsToBudgetCategories(userId) {
       .eq("id", activePeriod.id);
 
     console.log(
-      `[CATEGORY_MAPPING] Remapping completed for user: ${userId.substring(
-        0,
-        8,
-      )}`,
+      `[CATEGORY_MAPPING] Remapping completed for user ${userId.substring(0, 8)}. Status=completed.`,
     );
   } catch (error) {
     console.error("[CATEGORY_MAPPING] Error during remapping:", error);
@@ -830,6 +847,12 @@ async function handleBudgetCreation(req, res, userId) {
             }
 
             categoryId = newCategoryId;
+          } else if (cat.icon) {
+            // Update icon on existing category to match Finny's choice
+            await supabase
+              .from("categories")
+              .update({ icon: cat.icon })
+              .eq("id", categoryId);
           }
 
           // Create budget entry
@@ -1231,6 +1254,11 @@ async function handleBudgetCreation(req, res, userId) {
               if (!categoryError) {
                 categoryId = newCategoryId;
               }
+            } else if (cat.icon) {
+              await supabase
+                .from("categories")
+                .update({ icon: cat.icon })
+                .eq("id", categoryId);
             }
 
             // Create draft budget entry
