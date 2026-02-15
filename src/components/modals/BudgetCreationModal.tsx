@@ -10,6 +10,7 @@ import {
   ScrollView,
   Dimensions,
   Animated,
+  Platform,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,6 +20,7 @@ import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 import logger from "@/src/utils/core/logger";
 import CategoryMappingModal from "./CategoryMappingModal";
+import IconButton from "../shared/IconButton";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -141,8 +143,12 @@ export default function BudgetCreationModal({
 
   const handleStart = async () => {
     const incomeValue = parseFloat(income.trim());
-    if (isNaN(incomeValue) || incomeValue <= 0) {
-      setError("Please enter a valid income amount");
+    if (isNaN(incomeValue) || incomeValue < 100) {
+      setError(
+        incomeValue > 0 && incomeValue < 100
+          ? "Monthly income must be at least $100"
+          : "Please enter a valid income amount",
+      );
       return;
     }
 
@@ -422,7 +428,7 @@ export default function BudgetCreationModal({
   }, [visible, headerHeight, insets.top, sheetHeightAnim]);
 
   const incomeValue = parseFloat(income.trim());
-  const isValidIncome = !isNaN(incomeValue) && incomeValue > 0;
+  const isValidIncome = !isNaN(incomeValue) && incomeValue >= 100;
 
   const maxSheetHeight = Math.max(
     320,
@@ -489,7 +495,12 @@ export default function BudgetCreationModal({
                     style={styles.closeButton}
                     hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                   >
-                    <Ionicons name="close" size={20} color="#fff" />
+                    <IconButton
+                      onPress={handleClose}
+                      icon="close"
+                      size={20}
+                      style={styles.closeButton}
+                    />
                   </TouchableOpacity>
                 )}
               </View>
@@ -702,15 +713,20 @@ export default function BudgetCreationModal({
                       </Text>
                       <TouchableOpacity
                         onPress={handleClose}
-                        style={styles.closeButton}
+                        // style={styles.closeButton}
                         hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                       >
-                        <Ionicons name="close" size={20} color="#fff" />
+                        <IconButton
+                          onPress={handleClose}
+                          icon="close"
+                          size={20}
+                          style={styles.closeButton}
+                        />
                       </TouchableOpacity>
                     </View>
-                    <Text style={styles.reviewSubtitle}>
-                      Review and adjust if needed, then create your budget
-                    </Text>
+                    {/* <Text style={styles.reviewSubtitle}>
+                      Review and adjust later if needed, then create your budget
+                    </Text> */}
                     <Text style={styles.reviewSubtitle}>
                       You can always adjust your budget later.
                     </Text>
@@ -928,7 +944,7 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    // backgroundColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
     marginLeft: 12,
@@ -1128,7 +1144,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     color: "#fff",
-    fontFamily: "Manrope",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: -0.3,
     paddingRight: 8,
   },
@@ -1211,7 +1227,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     color: "#fff",
-    fontFamily: "Manrope",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
     letterSpacing: -0.2,
   },
   categoryRight: {

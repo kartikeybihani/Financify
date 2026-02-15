@@ -34,6 +34,7 @@ import logger from "@/src/utils/core/logger";
 import { HomeHeader } from "@/src/components/home/HomeHeader";
 import { QuickStats } from "@/src/components/home/QuickStats";
 import { FinancialCards } from "@/src/components/home/FinancialCards";
+import { AddNewAccountsButton } from "@/src/components/home/AddNewAccountsButton";
 import { GoalsSection } from "@/src/components/home/GoalsSection";
 import { ActionButtons } from "@/src/components/home/ActionButtons";
 import { FinnyMessage } from "@/src/components/home/FinnyMessage";
@@ -76,7 +77,10 @@ import {
   resetOnboardingDismissal,
   OnboardingStatus,
 } from "@/src/utils/onboarding/onboardingProgress";
-import { getUserIdSync, saveCurrentUserId } from "@/src/utils/insights/cacheUtils";
+import {
+  getUserIdSync,
+  saveCurrentUserId,
+} from "@/src/utils/insights/cacheUtils";
 import { loadOnboardingFromCache } from "@/src/shared/utils/onboardingCache";
 import {
   loadFirstNameFromCache,
@@ -97,7 +101,7 @@ const checkUnifiedCacheSync = (): boolean => {
   try {
     const cacheString = AppStorage.getItemSync("unified_financial_data");
     const timestampString = AppStorage.getItemSync(
-      "unified_financial_data_timestamp"
+      "unified_financial_data_timestamp",
     );
 
     if (!cacheString || !timestampString) {
@@ -151,7 +155,10 @@ const INITIAL_CACHE_STATE = {
 };
 
 // Helper to get cached budget lazily (for when userId wasn't available at module load)
-const getCachedBudgetLazy = (): { budgetProgress: BudgetProgressData | null; hasBudget: boolean } | null => {
+const getCachedBudgetLazy = (): {
+  budgetProgress: BudgetProgressData | null;
+  hasBudget: boolean;
+} | null => {
   // If module-level cache already has it, return that
   if (INITIAL_CACHE_STATE.cachedBudgetProgress) {
     return INITIAL_CACHE_STATE.cachedBudgetProgress;
@@ -174,19 +181,20 @@ export default function HomeScreen() {
   // This prevents re-running cache checks on every render
   const hasInitialCache = INITIAL_CACHE_STATE.hasUnifiedCache;
   const cachedFirstName = INITIAL_CACHE_STATE.cachedFirstName;
-  
+
   // Load cached budget - use ref to ensure we only compute once per mount
-  const cachedBudgetRef = useRef<{ budgetProgress: BudgetProgressData | null; hasBudget: boolean } | null>(
-    getCachedBudgetLazy()
-  );
+  const cachedBudgetRef = useRef<{
+    budgetProgress: BudgetProgressData | null;
+    hasBudget: boolean;
+  } | null>(getCachedBudgetLazy());
   const cachedBudgetProgress = cachedBudgetRef.current;
-  
+
   // Only log once per mount, not on every render
   const hasLoggedCacheRef = useRef(false);
   if (!hasLoggedCacheRef.current) {
     hasLoggedCacheRef.current = true;
     logger.info(
-      `🏠 [HOME] Initial cache check: ${hasInitialCache ? "HIT" : "MISS"}, budget: ${cachedBudgetProgress?.hasBudget ? "HIT" : "MISS"}`
+      `🏠 [HOME] Initial cache check: ${hasInitialCache ? "HIT" : "MISS"}, budget: ${cachedBudgetProgress?.hasBudget ? "HIT" : "MISS"}`,
     );
   }
 
@@ -223,21 +231,22 @@ export default function HomeScreen() {
   const checkingsSavingsTotal = useMemo(() => {
     return categorizedDeposits.reduce(
       (sum, account) => sum + getAccountBalance(account),
-      0
+      0,
     );
   }, [categorizedDeposits]);
 
   const investmentsCategoryTotal = useMemo(() => {
     return categorizedInvestments.reduce(
       (sum, account) => sum + getAccountBalance(account),
-      0
+      0,
     );
   }, [categorizedInvestments]);
 
   const creditCardsTotal = useMemo(() => {
     return categorizedLiabilities
       .filter(
-        (acc) => acc.type === "credit" || (acc as any).subtype === "credit card"
+        (acc) =>
+          acc.type === "credit" || (acc as any).subtype === "credit card",
       )
       .reduce((sum, account) => sum + getAccountBalance(account), 0);
   }, [categorizedLiabilities]);
@@ -245,7 +254,7 @@ export default function HomeScreen() {
   const loansTotal = useMemo(() => {
     return categorizedLiabilities
       .filter(
-        (acc) => acc.type === "loan" || (acc as any).subtype?.includes("loan")
+        (acc) => acc.type === "loan" || (acc as any).subtype?.includes("loan"),
       )
       .reduce((sum, account) => sum + getAccountBalance(account), 0);
   }, [categorizedLiabilities]);
@@ -268,7 +277,7 @@ export default function HomeScreen() {
       cashTotal,
       creditCardsTotal,
       loansTotal,
-    ]
+    ],
   );
 
   // Removed verbose logging - only log on significant state changes
@@ -313,7 +322,7 @@ export default function HomeScreen() {
 
   // Account Detail Modal state
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(
-    null
+    null,
   );
   const [selectedAccountData, setSelectedAccountData] = useState<any>(null);
   const [selectedAccountPerformance, setSelectedAccountPerformance] =
@@ -322,7 +331,7 @@ export default function HomeScreen() {
   // Accounts expansion state and animation
   const [isAccountsExpanded, setIsAccountsExpanded] = useState(false);
   const accountsAnimationHeight = useRef(new Animated.Value(0)).current;
-  const financialCardsHeight = useRef(150); // Approximate height of FinancialCards component
+  const EXPANDED_HEIGHT = 280; // Button + 3 financial cards
 
   // Real spending data from transactions
   const {
@@ -361,7 +370,7 @@ export default function HomeScreen() {
   const formatCurrency = (
     amount: number,
     currency = "USD",
-    options = { decimals: 1, useKM: true }
+    options = { decimals: 1, useKM: true },
   ) => {
     const cacheKey = `${currency}-${options.decimals}-${options.useKM}`;
 
@@ -391,7 +400,7 @@ export default function HomeScreen() {
   // Cash entry management functions
   const addCashEntry = async (
     amount: number,
-    description?: string
+    description?: string,
   ): Promise<void> => {
     try {
       const {
@@ -493,7 +502,7 @@ export default function HomeScreen() {
       if (connectionError || !connection) {
         logger.debug(
           "No Snaptrade connection found for account:",
-          account.account_id
+          account.account_id,
         );
         return null;
       }
@@ -502,7 +511,7 @@ export default function HomeScreen() {
       const { data: balanceData, error: balanceError } = await supabase
         .from("investment_balances")
         .select(
-          "day_change, day_change_percent, total_change, total_change_percent, total_value"
+          "day_change, day_change_percent, total_change, total_change_percent, total_value",
         )
         .eq("user_id", userData?.id)
         .eq("snaptrade_user_id", connection.snaptrade_user_id)
@@ -513,7 +522,7 @@ export default function HomeScreen() {
       if (balanceError || !balanceData) {
         logger.debug(
           "No investment balance data found for account:",
-          account.account_id
+          account.account_id,
         );
         return null;
       }
@@ -698,7 +707,7 @@ export default function HomeScreen() {
         } catch (error) {
           logger.error(
             "Error refreshing onboarding status in background:",
-            error
+            error,
           );
         }
       });
@@ -722,7 +731,7 @@ export default function HomeScreen() {
           DeviceEventEmitter.emit("navigateToInsightsSection", {
             section: "budget",
           }),
-        200
+        200,
       );
     } else if (step === 3) {
       // Navigate to chat tab
@@ -797,7 +806,7 @@ export default function HomeScreen() {
         }
       };
       refreshOnboarding();
-    }, [])
+    }, []),
   );
 
   // Listen for events that should invalidate onboarding cache
@@ -810,13 +819,12 @@ export default function HomeScreen() {
           data: { user },
         } = await supabase.auth.getUser();
         if (user?.id) {
-          const { invalidateOnboardingCache } = await import(
-            "@/src/shared/utils/cacheInvalidation"
-          );
+          const { invalidateOnboardingCache } =
+            await import("@/src/shared/utils/cacheInvalidation");
           await invalidateOnboardingCache(user.id);
           await loadOnboardingStatus(user.id);
         }
-      }
+      },
     );
 
     const goalsSubscription = DeviceEventEmitter.addListener(
@@ -827,13 +835,12 @@ export default function HomeScreen() {
           data: { user },
         } = await supabase.auth.getUser();
         if (user?.id) {
-          const { invalidateOnboardingCache } = await import(
-            "@/src/shared/utils/cacheInvalidation"
-          );
+          const { invalidateOnboardingCache } =
+            await import("@/src/shared/utils/cacheInvalidation");
           await invalidateOnboardingCache(user.id);
           await loadOnboardingStatus(user.id);
         }
-      }
+      },
     );
 
     return () => {
@@ -875,7 +882,7 @@ export default function HomeScreen() {
       (data) => {
         // Accounts are now managed by useUnifiedFinancialData hook
         logger.info("Financial data refreshed event received");
-      }
+      },
     );
 
     // Set up event listener for goals updates
@@ -891,7 +898,7 @@ export default function HomeScreen() {
           logger.info("Goals updated event received:", data.action);
           // Unified hook automatically refreshes on goalsUpdated event
         }
-      }
+      },
     );
 
     // Set up event listener for auth state changes (token refresh)
@@ -900,14 +907,14 @@ export default function HomeScreen() {
       async (data) => {
         if (data && data.event === "TOKEN_REFRESHED" && data.validated) {
           logger.info(
-            "🔄 [HOME] Token refreshed and validated, reinitializing app..."
+            "🔄 [HOME] Token refreshed and validated, reinitializing app...",
           );
           // Add small delay to ensure session is fully propagated
           setTimeout(async () => {
             await initializeApp();
           }, 200);
         }
-      }
+      },
     );
 
     return () => {
@@ -933,25 +940,28 @@ export default function HomeScreen() {
 
     const now = new Date();
 
-    return activeGoals.reduce((closest, goal) => {
-      const goalDate = new Date(goal.target_date);
-      const closestDate = closest ? new Date(closest.target_date) : null;
+    return activeGoals.reduce(
+      (closest, goal) => {
+        const goalDate = new Date(goal.target_date);
+        const closestDate = closest ? new Date(closest.target_date) : null;
 
-      // If the goal is in the past, ignore it
-      if (goalDate < now) return closest;
+        // If the goal is in the past, ignore it
+        if (goalDate < now) return closest;
 
-      // If we don't have a closest yet, use this goal
-      if (!closest) return goal;
+        // If we don't have a closest yet, use this goal
+        if (!closest) return goal;
 
-      // If the current closest is in the past, use this goal
-      if (closestDate && closestDate < now) return goal;
+        // If the current closest is in the past, use this goal
+        if (closestDate && closestDate < now) return goal;
 
-      // Compare the time difference
-      const goalDiff = Math.abs(goalDate.getTime() - now.getTime());
-      const closestDiff = Math.abs(closestDate!.getTime() - now.getTime());
+        // Compare the time difference
+        const goalDiff = Math.abs(goalDate.getTime() - now.getTime());
+        const closestDiff = Math.abs(closestDate!.getTime() - now.getTime());
 
-      return goalDiff < closestDiff ? goal : closest;
-    }, null as Goal | null);
+        return goalDiff < closestDiff ? goal : closest;
+      },
+      null as Goal | null,
+    );
   };
 
   // Memoized closest goal calculation - use unified goals data
@@ -1052,7 +1062,7 @@ export default function HomeScreen() {
                   if (recurringBannerUserId) {
                     AppStorage.setItemSync(
                       `${RECURRING_BANNER_DISMISSED_KEY}_${recurringBannerUserId}`,
-                      "1"
+                      "1",
                     );
                     setRecurringBannerUserId(null);
                   }
@@ -1098,11 +1108,7 @@ export default function HomeScreen() {
                     justifyContent: "center",
                   }}
                 >
-                  <Ionicons
-                    name="arrow-forward"
-                    size={18}
-                    color="#4A90E2"
-                  />
+                  <Ionicons name="arrow-forward" size={18} color="#4A90E2" />
                 </View>
               </TouchableOpacity>
             </View>
@@ -1180,7 +1186,7 @@ export default function HomeScreen() {
             style={{
               maxHeight: accountsAnimationHeight.interpolate({
                 inputRange: [0, 1],
-                outputRange: [0, financialCardsHeight.current],
+                outputRange: [0, EXPANDED_HEIGHT],
               }),
               overflow: "hidden",
               opacity: accountsAnimationHeight.interpolate({
@@ -1193,6 +1199,7 @@ export default function HomeScreen() {
               }),
             }}
           >
+            <AddNewAccountsButton onPress={() => setShowCategoryModal(true)} />
             <FinancialCards
               accountsTotal={checkingsSavingsTotal + cashTotal}
               investmentsTotal={investmentsCategoryTotal}
@@ -1200,27 +1207,12 @@ export default function HomeScreen() {
               formatCurrency={formatCurrency}
               isLoading={financialLoading || financialInitialLoad}
               isInitialLoad={financialInitialLoad}
-              onAddAccounts={() => {
-                openModal("accounts", {
-                  initialExpandedCategory: "accounts",
-                  onAccountAdded: async () => {
-                    logger.info(
-                      "New account added, refreshing financial data..."
-                    );
-                    await fetchFreshData();
-                    logger.info("Financial data refreshed after new account");
-                  },
-                  onCashAdded: () => {
-                    openModal("cashInput");
-                  },
-                });
-              }}
               onCardPress={(cardType) => {
                 openModal("accounts", {
                   initialExpandedCategory: cardType,
                   onAccountAdded: async () => {
                     logger.info(
-                      "New account added, refreshing financial data..."
+                      "New account added, refreshing financial data...",
                     );
                     await fetchFreshData();
                     logger.info("Financial data refreshed after new account");
@@ -1385,7 +1377,7 @@ export default function HomeScreen() {
                   .filter(
                     (acc) =>
                       acc.type === "credit" ||
-                      (acc as any).subtype === "credit card"
+                      (acc as any).subtype === "credit card",
                   )
                   .map((account, index) => (
                     <AccountItem
@@ -1395,7 +1387,7 @@ export default function HomeScreen() {
                       balance={formatCurrency(
                         getAccountBalance(account),
                         "USD",
-                        { decimals: 0, useKM: false }
+                        { decimals: 0, useKM: false },
                       )}
                       icon="card-outline"
                       bankName={account.institution_name || "Unknown Bank"}
@@ -1414,7 +1406,7 @@ export default function HomeScreen() {
                   .filter(
                     (acc) =>
                       acc.type === "loan" ||
-                      (acc as any).subtype?.includes("loan")
+                      (acc as any).subtype?.includes("loan"),
                   )
                   .map((account, index) => (
                     <AccountItem
@@ -1424,7 +1416,7 @@ export default function HomeScreen() {
                       balance={formatCurrency(
                         getAccountBalance(account),
                         "USD",
-                        { decimals: 0, useKM: false }
+                        { decimals: 0, useKM: false },
                       )}
                       icon="receipt-outline"
                       bankName={account.institution_name || "Unknown Bank"}
@@ -1474,28 +1466,28 @@ export default function HomeScreen() {
                                 await deleteCashEntry(entry.id);
                                 logger.info(
                                   "✅ Cash entry deleted successfully:",
-                                  entry.id
+                                  entry.id,
                                 );
 
                                 // Refresh all financial data to update UI and net worth
                                 await fetchFreshData();
                                 logger.info(
-                                  "🔄 Financial data refreshed after cash deletion"
+                                  "🔄 Financial data refreshed after cash deletion",
                                 );
                               } catch (error) {
                                 logger.error(
                                   "❌ Failed to delete cash entry:",
-                                  error
+                                  error,
                                 );
                                 Alert.alert(
                                   "Error",
                                   "Failed to delete cash entry. Please try again.",
-                                  [{ text: "OK" }]
+                                  [{ text: "OK" }],
                                 );
                               }
                             },
                           },
-                        ]
+                        ],
                       );
                     }}
                   />
@@ -1521,7 +1513,10 @@ export default function HomeScreen() {
                 setShowCashModal(true);
               } else if (category === "liabilities") {
                 setShowCreditModal(true);
-              } else if (category === "investments" || category === "retirement") {
+              } else if (
+                category === "investments" ||
+                category === "retirement"
+              ) {
                 if (isPremium) {
                   setShowInvestmentModal(true);
                 } else {
@@ -1603,13 +1598,21 @@ export default function HomeScreen() {
               if (!user?.id) return { recurringCount: 0 };
 
               if (connectionSource === "snaptrade") {
-                const credentials =
-                  await getSnaptradeCredentialsWithFallback();
+                const credentials = await getSnaptradeCredentialsWithFallback();
                 if (credentials?.accountId) {
-                  await refreshSnaptradeInvestments(user.id, credentials.accountId);
+                  await refreshSnaptradeInvestments(
+                    user.id,
+                    credentials.accountId,
+                  );
                   await new Promise((r) => setTimeout(r, 5000));
-                  await syncSnaptradeInvestments(user.id, credentials.accountId);
-                  await recalculateInvestmentBalances(user.id, credentials.accountId);
+                  await syncSnaptradeInvestments(
+                    user.id,
+                    credentials.accountId,
+                  );
+                  await recalculateInvestmentBalances(
+                    user.id,
+                    credentials.accountId,
+                  );
                   await populateInvestmentAccountsInDB();
                 }
               } else {
@@ -1623,7 +1626,7 @@ export default function HomeScreen() {
                 if (
                   count > 0 &&
                   AppStorage.getItemSync(
-                    `${RECURRING_BANNER_DISMISSED_KEY}_${user.id}`
+                    `${RECURRING_BANNER_DISMISSED_KEY}_${user.id}`,
                   ) !== "1"
                 ) {
                   setShowRecurringBanner(true);

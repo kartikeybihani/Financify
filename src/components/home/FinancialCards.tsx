@@ -1,7 +1,7 @@
 // components/home/FinancialCards.tsx
 
 import React from "react";
-import { View, TouchableOpacity, Text } from "react-native";
+import { View } from "react-native";
 import FinancialCard from "@/src/components/shared/FinancialCard";
 import { FinancialCardsSkeleton } from "@/src/components/home/LoadingSkeletons";
 import { styles } from "@/src/styles/homeStyles";
@@ -13,7 +13,6 @@ interface FinancialCardsProps {
   liabilitiesTotal: number;
   formatCurrency: (amount: number, currency?: string, options?: any) => string;
   onCardPress: (cardType: "accounts" | "investments" | "liabilities") => void;
-  onAddAccounts?: () => void;
   isLoading?: boolean; // Show skeleton when loading and no cached data
   isInitialLoad?: boolean; // Prevent skeleton flash during initial load
 }
@@ -25,7 +24,6 @@ export const FinancialCards: React.FC<FinancialCardsProps> = React.memo(
     liabilitiesTotal,
     formatCurrency,
     onCardPress,
-    onAddAccounts,
     isLoading = false,
     isInitialLoad = false,
   }) => {
@@ -40,18 +38,8 @@ export const FinancialCards: React.FC<FinancialCardsProps> = React.memo(
     }
 
     return (
-      <View>
-        {onAddAccounts && (
-          <TouchableOpacity
-            onPress={onAddAccounts}
-            style={styles.addNewAccountsButton}
-            activeOpacity={0.7}
-          >
-            <Text style={styles.addNewAccountsButtonText}>Add new accounts</Text>
-          </TouchableOpacity>
-        )}
-        <View style={styles.summaryRow}>
-          <FinancialCard
+      <View style={styles.summaryRow}>
+        <FinancialCard
           title="CASH"
           amount={formatCurrency(accountsTotal, "USD", {
             decimals: 1,
@@ -81,7 +69,6 @@ export const FinancialCards: React.FC<FinancialCardsProps> = React.memo(
           onPress={() => onCardPress("liabilities")}
           iconColor="#FF6B6B"
         />
-        </View>
       </View>
     );
   },
