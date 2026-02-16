@@ -137,6 +137,7 @@ export interface BudgetViewProps {
   onDeleteCategory?: (categoryId: string, entryId?: string | null) => Promise<boolean>;
   refreshBudget?: () => Promise<void>;
   refreshCategories?: () => void; // Refresh categories hook when category name changes
+  onEditMonthlyBudget?: () => void;
 }
 
 export interface CategoryBudgetCardProps {

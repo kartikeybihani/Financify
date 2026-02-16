@@ -414,16 +414,20 @@ export function useHomeInsights(): HomeInsightsData {
 
   // Listen for data refresh events to invalidate cache
   useEffect(() => {
-    const subscription = DeviceEventEmitter.addListener(
+    const financialSub = DeviceEventEmitter.addListener(
       "financialDataRefreshed",
       () => {
-        // Transaction sync completed - refresh insights in background
         calculateInsight(true);
       }
     );
+    const budgetSub = DeviceEventEmitter.addListener("budgetUpdated", () => {
+      // Budget total/category updated - refetch for QuickStats
+      calculateInsight(true);
+    });
 
     return () => {
-      subscription.remove();
+      financialSub.remove();
+      budgetSub.remove();
     };
   }, [calculateInsight]);
 

@@ -9,6 +9,7 @@ import {
   ScrollView,
   Dimensions,
   DeviceEventEmitter,
+  StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -17,7 +18,10 @@ import { styles } from "@/src/styles/homeStyles";
 import { useHomeInsights } from "@/src/hooks/useHomeInsights";
 import { AppStorage } from "@/src/utils/storage/storage";
 import { AnimatedNumber } from "@/src/components/shared/AnimatedNumber";
-import { BudgetProgressData, loadBudgetProgressFromCache } from "@/src/shared/utils/homeScreenCache";
+import {
+  BudgetProgressData,
+  loadBudgetProgressFromCache,
+} from "@/src/shared/utils/homeScreenCache";
 import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
 
 const QUICK_STATS_CAROUSEL_SLIDE_KEY = "quickStats_activeCarouselSlide";
@@ -61,16 +65,21 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
 
     // FAILSAFE: Try to load budget from cache directly if prop is null
     // This handles the case where userId wasn't available at parent's module load
-    const fallbackBudgetRef = useRef<{ budgetProgress: BudgetProgressData | null; hasBudget: boolean } | null>(
-      !initialBudgetProgress ? (() => {
-        try {
-          const userId = getUserIdSync();
-          if (!userId) return null;
-          return loadBudgetProgressFromCache(userId);
-        } catch {
-          return null;
-        }
-      })() : null
+    const fallbackBudgetRef = useRef<{
+      budgetProgress: BudgetProgressData | null;
+      hasBudget: boolean;
+    } | null>(
+      !initialBudgetProgress
+        ? (() => {
+            try {
+              const userId = getUserIdSync();
+              if (!userId) return null;
+              return loadBudgetProgressFromCache(userId);
+            } catch {
+              return null;
+            }
+          })()
+        : null,
     );
 
     // OPTIMIZED: Use initial cached budget immediately, then switch to hook data when available
@@ -81,11 +90,17 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
         return insight.budgetProgress;
       }
       // Use cached data from prop (passed from parent)
-      if (initialBudgetProgress?.hasBudget && initialBudgetProgress.budgetProgress) {
+      if (
+        initialBudgetProgress?.hasBudget &&
+        initialBudgetProgress.budgetProgress
+      ) {
         return initialBudgetProgress.budgetProgress;
       }
       // Use failsafe cache (loaded directly in this component)
-      if (fallbackBudgetRef.current?.hasBudget && fallbackBudgetRef.current.budgetProgress) {
+      if (
+        fallbackBudgetRef.current?.hasBudget &&
+        fallbackBudgetRef.current.budgetProgress
+      ) {
         return fallbackBudgetRef.current.budgetProgress;
       }
       return null;
@@ -117,13 +132,13 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
 
     const handleScroll = (event: any) => {
       const slideIndex = Math.round(
-        event.nativeEvent.contentOffset.x / slideWidth
+        event.nativeEvent.contentOffset.x / slideWidth,
       );
       setActiveSlide(slideIndex);
       if (totalSlides > 1) {
         AppStorage.setItemSync(
           QUICK_STATS_CAROUSEL_SLIDE_KEY,
-          String(slideIndex)
+          String(slideIndex),
         );
       }
     };
@@ -135,7 +150,7 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
       const savedIndex = saved ? parseInt(saved, 10) : 0;
       const clampedIndex = Math.min(
         Math.max(0, isNaN(savedIndex) ? 0 : savedIndex),
-        totalSlides - 1
+        totalSlides - 1,
       );
       if (clampedIndex > 0) {
         setActiveSlide(clampedIndex);
@@ -170,8 +185,8 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
       const statusColor = isOverBudget
         ? "#FF6B6B"
         : isWarning
-        ? "#FFB84D"
-        : "#4ECDC4";
+          ? "#FFB84D"
+          : "#4ECDC4";
 
       return (
         <TouchableOpacity
@@ -215,8 +230,21 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                   marginLeft: 6,
                 }}
               >
-                / {formatCurrency(total, "USD", { decimals: 0, useKM: false })}
+                {" / "}
               </Text>
+              {/* ANIMATED: Total budget - animates when user edits monthly budget */}
+              <AnimatedNumber
+                value={total}
+                prefix="$"
+                decimals={0}
+                duration={300}
+                style={{
+                  fontSize: 18,
+                  // fontWeight: "700",
+                  color: "#fff",
+                  // letterSpacing: -0.5,
+                }}
+              />
             </View>
             <View
               style={{ flexDirection: "row", alignItems: "center", gap: 8 }}
@@ -313,8 +341,8 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                 const statusColor = isOverBudget
                   ? "#FF6B6B"
                   : isWarning
-                  ? "#FFB84D"
-                  : "#4ECDC4";
+                    ? "#FFB84D"
+                    : "#4ECDC4";
                 const safeToSpend = Math.max(0, remaining);
 
                 return (
@@ -348,10 +376,10 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                         prefix="$"
                         decimals={2}
                         duration={300}
-                        style={[
+                        style={StyleSheet.flatten([
                           styles.netWorthText,
                           { textAlign: "center", flex: 0 },
-                        ]}
+                        ])}
                       />
                     </View>
 
@@ -387,8 +415,8 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                             isOverBudget
                               ? "alert-circle-outline"
                               : isWarning
-                              ? "warning-outline"
-                              : "wallet-outline"
+                                ? "warning-outline"
+                                : "wallet-outline"
                           }
                           size={14}
                           color={statusColor}
@@ -503,7 +531,7 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
         )}
       </View>
     );
-  }
+  },
 );
 
 QuickStats.displayName = "QuickStats";

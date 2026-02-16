@@ -1186,6 +1186,19 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
 
         if (updated) {
           await refreshBudget();
+
+          // Invalidate caches and notify Home to refetch
+          const authResult = await getAuthenticatedUser();
+          if (authResult?.user?.id) {
+            const {
+              invalidateBudgetCache,
+              invalidateHomeScreenCache,
+            } = await import("@/src/shared/utils/cacheInvalidation");
+            await invalidateBudgetCache(authResult.user.id);
+            await invalidateHomeScreenCache(authResult.user.id);
+            DeviceEventEmitter.emit("budgetUpdated");
+          }
+
           return true;
         }
         return false;

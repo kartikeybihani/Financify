@@ -14,7 +14,7 @@ import {
   Platform,
   UIManager,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { supabase } from "@/src/lib/supabase/supabase";
 import {
@@ -74,6 +74,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   onDeleteCategory,
   refreshBudget,
   refreshCategories,
+  onEditMonthlyBudget,
 }) => {
   // Optimistic updates: track local budget changes before DB sync
   const [optimisticBudgets, setOptimisticBudgets] = useState<
@@ -545,7 +546,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
     setEditParentLabel(null);
   };
 
-
   return (
     <View>
       {/* Glassy Summary Header Box */}
@@ -557,6 +557,17 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               ${displayedTotalBudget.toLocaleString()}
             </Text>
           </View>
+          {onEditMonthlyBudget && (
+            <TouchableOpacity
+              onPress={onEditMonthlyBudget}
+              style={styles.editPill}
+              activeOpacity={0.7}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Feather name="edit" size={18} color="rgba(255, 255, 255, 0.9)" />
+              {/* <Text style={styles.editPillText}>Edit</Text> */}
+            </TouchableOpacity>
+          )}
           <Animated.View
             style={[
               styles.statusBadge,
@@ -742,10 +753,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               >
                 <View style={styles.orphanItemLeft}>
                   <View
-                    style={[
-                      styles.orphanDot,
-                      { backgroundColor: color },
-                    ]}
+                    style={[styles.orphanDot, { backgroundColor: color }]}
                   />
                   <Text style={styles.orphanItemName} numberOfLines={1}>
                     {formatCategoryName(category)}
@@ -753,7 +761,10 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                 </View>
                 <View style={styles.orphanItemRight}>
                   <Text style={styles.orphanItemAmount}>
-                    ${amount.toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    $
+                    {amount.toLocaleString(undefined, {
+                      maximumFractionDigits: 0,
+                    })}
                   </Text>
                   <TouchableOpacity
                     style={styles.addToBudgetButton}
@@ -762,7 +773,11 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                       onAddOrphanToBudget(category);
                     }}
                   >
-                    <Ionicons name="add-circle-outline" size={18} color="#4A90E2" />
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={18}
+                      color="#4A90E2"
+                    />
                     <Text style={styles.addToBudgetButtonText}>Add</Text>
                   </TouchableOpacity>
                 </View>
@@ -1321,10 +1336,7 @@ const SubcategoryRow: React.FC<SubcategoryRowProps> = ({
 
   return (
     <View style={styles.subcategoryCard}>
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={onOpenActions}
-      >
+      <TouchableOpacity activeOpacity={0.85} onPress={onOpenActions}>
         <View style={styles.subcategoryRow}>
           <View style={styles.subcategorySpacer}>
             <View
@@ -1838,10 +1850,7 @@ const CategoryBudgetCard: React.FC<CategoryBudgetCardProps> = ({
         },
       ]}
     >
-      <TouchableOpacity
-        activeOpacity={0.85}
-        onPress={onOpenActions}
-      >
+      <TouchableOpacity activeOpacity={0.85} onPress={onOpenActions}>
         <View style={styles.categoryCardContent}>
           {/* Compact Row Layout */}
           <View style={styles.categoryRow}>
@@ -1968,6 +1977,24 @@ const styles = StyleSheet.create({
   },
   summaryLeft: {
     flex: 1,
+  },
+  editPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+    marginRight: 8,
+  },
+  editPillText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.9)",
+    fontFamily: "Manrope",
   },
   summaryLabel: {
     fontSize: 11,

@@ -5,6 +5,7 @@ import AddCategoryModal from "./AddCategoryModal";
 import BudgetEmptyState from "./BudgetEmptyState";
 import ManualBudgetCreationModal from "@/src/components/modals/ManualBudgetCreationModal";
 import BudgetCreationModal from "@/src/components/modals/BudgetCreationModal";
+import MonthlyBudgetEditModal from "@/src/components/modals/MonthlyBudgetEditModal";
 import { useBudget } from "@/src/hooks/useBudget";
 import { LoadingIndicator } from "@/src/shared/components/LoadingStates";
 import logger from "@/src/utils/core/logger";
@@ -25,7 +26,7 @@ interface Props {
       percentage: number;
       color: string;
       hasRecurringTransactions: boolean;
-    }
+    },
   ][];
   onCategoryPress: (
     category: string,
@@ -34,7 +35,7 @@ interface Props {
       percentage: number;
       color: string;
       hasRecurringTransactions: boolean;
-    }
+    },
   ) => void;
   formatCategoryName: (cat: string) => string;
   onOpenAddCategoryModalRef?: (openFn: () => void) => void;
@@ -53,9 +54,12 @@ export default function BudgetSection({
 }: Props) {
   const { isDemoMode } = useDemoMode();
   const [addCategoryModalVisible, setAddCategoryModalVisible] = useState(false);
-  const [addCategoryInitialName, setAddCategoryInitialName] = useState<string | null>(null);
+  const [addCategoryInitialName, setAddCategoryInitialName] = useState<
+    string | null
+  >(null);
   const [showManualBudgetModal, setShowManualBudgetModal] = useState(false);
   const [showFinnyBudgetModal, setShowFinnyBudgetModal] = useState(false);
+  const [showMonthlyBudgetModal, setShowMonthlyBudgetModal] = useState(false);
 
   // Use budget hook to get real budget data
   // Pass categoryBreakdown so spent amounts use accurate data from spending breakdown
@@ -69,6 +73,7 @@ export default function BudgetSection({
     refreshBudget,
     updateCategoryBudget,
     deleteCategoryBudget,
+    updateTotalLimit,
     budgetSummary,
     groupCategory,
     ungroupCategory,
@@ -79,13 +84,13 @@ export default function BudgetSection({
   const hasActiveBudget =
     isDemoMode ||
     (budgetSummary?.period?.status === "active" &&
-    budgetData.length > 0 &&
-    !budgetLoading);
+      budgetData.length > 0 &&
+      !budgetLoading);
 
   // Calculate total spent from category breakdown (fallback)
   const totalSpent = categoryBreakdown.reduce(
     (sum, [_, data]) => sum + data.amount,
-    0
+    0,
   );
 
   // Use budget total spent if available, otherwise use category breakdown total
@@ -182,6 +187,7 @@ export default function BudgetSection({
           onDeleteCategory={deleteCategory}
           refreshBudget={refreshBudget}
           refreshCategories={refreshCategories}
+          onEditMonthlyBudget={() => setShowMonthlyBudgetModal(true)}
         />
       )}
 
@@ -214,6 +220,14 @@ export default function BudgetSection({
         visible={showFinnyBudgetModal}
         onClose={() => setShowFinnyBudgetModal(false)}
         onBudgetCreated={handleBudgetCreated}
+      />
+
+      {/* Monthly Budget Edit Modal */}
+      <MonthlyBudgetEditModal
+        visible={showMonthlyBudgetModal}
+        currentAmount={totalBudget}
+        onClose={() => setShowMonthlyBudgetModal(false)}
+        onSave={async (amount) => updateTotalLimit(amount)}
       />
     </View>
   );
