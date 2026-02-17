@@ -110,8 +110,10 @@ function ChatScreenContent() {
 
   // Handle keyboard state - use keyboardWill* on iOS so layout animates in sync with keyboard
   useEffect(() => {
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+    const showEvent =
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent =
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
     const handleShow = (e: any) => {
       if (Platform.OS === "ios") Keyboard.scheduleLayoutAnimation(e);
@@ -435,6 +437,11 @@ function ChatScreenContent() {
     const messageText = nudgeText || userInput;
 
     if (!messageText.trim()) {
+      return;
+    }
+
+    // Demo mode: send button does nothing
+    if (isDemoMode) {
       return;
     }
 

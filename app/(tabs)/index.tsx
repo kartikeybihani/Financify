@@ -88,6 +88,7 @@ import {
   loadBudgetProgressFromCache,
   BudgetProgressData,
 } from "@/src/shared/utils/homeScreenCache";
+import { demoBudgetProgress } from "@/src/data/demo/demoData";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -1144,7 +1145,11 @@ export default function HomeScreen() {
             }
             onToggleAccounts={toggleAccountsExpansion}
             isAccountsExpanded={isAccountsExpanded}
-            initialBudgetProgress={cachedBudgetProgress}
+            initialBudgetProgress={
+              isDemoMode
+                ? { budgetProgress: demoBudgetProgress, hasBudget: true }
+                : cachedBudgetProgress
+            }
           />
 
           {/* Demo: Spent so far — tap to open Spending in Insights */}
@@ -1167,8 +1172,8 @@ export default function HomeScreen() {
                     Spent this period
                   </Text>
                   <Text style={styles.demoSpendingAmount}>
-                    {formatCurrency(8560.65, "USD", {
-                      decimals: 2,
+                    {formatCurrency(2397, "USD", {
+                      decimals: 0,
                       useKM: false,
                     })}
                   </Text>

@@ -312,10 +312,11 @@ export default StyleSheet.create({
   nudgeHeaderText: {
     color: "#888",
     fontSize: responsiveFontSize(13),
-    marginBottom: responsivePadding(8),
+    marginBottom: responsivePadding(9),
     marginLeft: responsivePadding(2),
     fontWeight: "500",
     textAlign: "center",
+    fontFamily: "Manrope",
   },
   nudgeGrid: {
     flexDirection: "row",

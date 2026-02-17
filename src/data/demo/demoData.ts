@@ -755,6 +755,18 @@ export const demoBudgetData = [
 export const demoBudgetTotalBudget = 3760;
 export const demoBudgetTotalSpent = 2397;
 
+// Budget progress for QuickStats carousel (matches BudgetProgressData from homeScreenCache)
+const _now = new Date();
+const _daysInMonth = new Date(_now.getFullYear(), _now.getMonth() + 1, 0).getDate();
+const _daysLeft = _daysInMonth - _now.getDate();
+export const demoBudgetProgress = {
+  spent: demoBudgetTotalSpent,
+  total: demoBudgetTotalBudget,
+  percentage: demoBudgetTotalSpent > 0 ? (demoBudgetTotalSpent / demoBudgetTotalBudget) * 100 : 0,
+  remaining: demoBudgetTotalBudget - demoBudgetTotalSpent,
+  daysLeft: Math.max(0, _daysLeft),
+};
+
 // Category breakdown that matches the budget data above (BudgetView calculates totalSpent from this)
 export const demoBudgetCategoryBreakdown: [string, { amount: number; percentage: number; color: string; hasRecurringTransactions: boolean }][] = [
   ["Food", { amount: 340, percentage: 14.2, color: "#FF6B6B", hasRecurringTransactions: false }],

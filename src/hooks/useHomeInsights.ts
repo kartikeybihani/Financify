@@ -19,6 +19,7 @@ import {
   BudgetProgressData,
 } from "@/src/shared/utils/homeScreenCache";
 import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 
 // Cache keys - user-specific
 const INSIGHTS_CACHE_KEY = "home_insights";
@@ -133,12 +134,13 @@ const loadCachedInsight = (userId: string | null): HomeInsight | null => {
  * - Listens to financialDataRefreshed events for invalidation
  */
 export function useHomeInsights(): HomeInsightsData {
+  const { isDemoMode } = useDemoMode();
   // Get userId synchronously for cache loading
   const userIdRef = useRef<string | null>(getUserIdSync());
   
   // Load cache synchronously before first render (MMKV advantage)
-  // CHANGED: Always show stale data for instant UI
-  const initialCache = loadCachedInsight(userIdRef.current);
+  // CHANGED: Always show stale data for instant UI (skip in demo - parent passes demo budget)
+  const initialCache = isDemoMode ? null : loadCachedInsight(userIdRef.current);
 
   // Initialize state with cached data if available (instant UI)
   const [insight, setInsight] = useState<HomeInsight | null>(initialCache);
@@ -273,6 +275,13 @@ export function useHomeInsights(): HomeInsightsData {
     try {
       isRefreshingRef.current = true;
       
+      // Skip fetching in demo mode - QuickStats uses initialBudgetProgress from parent
+      if (isDemoMode) {
+        setInsight(null);
+        setLoading(false);
+        return;
+      }
+      
       // CHANGED: Only show loading if we have NO cached data at all
       if (!hasCache) {
         setLoading(true);
@@ -391,7 +400,7 @@ export function useHomeInsights(): HomeInsightsData {
     } finally {
       isRefreshingRef.current = false;
     }
-  }, [getCurrentMonthCategoryBreakdown, saveToCache]);
+  }, [getCurrentMonthCategoryBreakdown, saveToCache, isDemoMode]);
 
   // Refresh function
   const refresh = useCallback(async () => {

@@ -13,6 +13,7 @@ import { styles } from "@/src/styles/homeStyles";
 import { Goal } from "@/src/types/finny";
 import { SpendingData } from "@/src/hooks/useSpendingData";
 import { useHomeInsights } from "@/src/hooks/useHomeInsights";
+import { useDemoMode } from "@/src/contexts/DemoContext";
 import AppStorage from "@/src/utils/storage/storage";
 import { OnboardingStatus } from "@/src/utils/onboarding/onboardingProgress";
 
@@ -38,6 +39,7 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
   }) => {
     const router = useRouter();
     const { insight } = useHomeInsights();
+    const { isDemoMode } = useDemoMode();
 
     // Check if onboarding is complete
     const isOnboardingComplete = onboardingStatus?.isComplete ?? true;
@@ -76,7 +78,9 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
       const activeGoals = goals.filter(
         (goal) =>
           goal.status !== "completed" &&
-          !(goal.target_amount > 0 && goal.current_amount >= goal.target_amount)
+          !(
+            goal.target_amount > 0 && goal.current_amount >= goal.target_amount
+          ),
       );
 
       // Priority 1: Budget progress questions
@@ -84,17 +88,17 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
         const { percentage, remaining, daysLeft } = insight.budgetProgress!;
         if (percentage > 100) {
           return `You've overspent by ${Math.abs(remaining).toFixed(
-            0
+            0,
           )}%. What should you cut?`;
         }
         if (percentage > 80) {
           return `You've spent ${percentage.toFixed(
-            0
+            0,
           )}% of your budget with ${daysLeft} days left. Want to adjust?`;
         }
         if (percentage > 50) {
           return `You're ${percentage.toFixed(
-            0
+            0,
           )}% through your budget. On track?`;
         }
       }
@@ -103,31 +107,34 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
       if (insight?.type === "category_alert") {
         const { category, percentage } = insight.categoryAlert!;
         return `You're spending ${percentage.toFixed(
-          0
+          0,
         )}% on ${category}. Is that normal for you?`;
       }
 
       // Priority 3: Spending spike questions
       if (spendingData && spendingData.lastMonthChange > 15) {
         return `Your spending is up ${spendingData.lastMonthChange.toFixed(
-          0
+          0,
         )}% this month. What changed?`;
       }
 
       // Priority 4: Goal progress questions
       if (activeGoals.length > 0) {
-        const closestGoal = activeGoals.reduce((closest, goal) => {
-          if (!closest) return goal;
-          const closestProgress =
-            closest.target_amount > 0
-              ? closest.current_amount / closest.target_amount
-              : 0;
-          const goalProgress =
-            goal.target_amount > 0
-              ? goal.current_amount / goal.target_amount
-              : 0;
-          return goalProgress > closestProgress ? goal : closest;
-        }, null as Goal | null);
+        const closestGoal = activeGoals.reduce(
+          (closest, goal) => {
+            if (!closest) return goal;
+            const closestProgress =
+              closest.target_amount > 0
+                ? closest.current_amount / closest.target_amount
+                : 0;
+            const goalProgress =
+              goal.target_amount > 0
+                ? goal.current_amount / goal.target_amount
+                : 0;
+            return goalProgress > closestProgress ? goal : closest;
+          },
+          null as Goal | null,
+        );
 
         if (closestGoal) {
           const progress =
@@ -136,7 +143,7 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
               : 0;
           if (progress > 50 && progress < 90) {
             return `You're ${progress.toFixed(
-              0
+              0,
             )}% to your goal. Want to accelerate it?`;
           }
         }
@@ -161,7 +168,7 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
       // Priority 7: Net worth growth questions
       if (netWorthChange > 5) {
         return `Net worth up ${netWorthChange.toFixed(
-          1
+          1,
         )}% this month! What's driving it?`;
       }
 
@@ -200,6 +207,39 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
       getContextualQuestion ||
       "Ask Finny anything!";
     const linkDestination = getOnboardingMessage?.linkTo || "chat";
+
+    // Demo mode: use a nice message (same layout as normal)
+    if (isDemoMode) {
+      const demoMessage = "Plan me a 7 day trip to Hawaii, can I afford it?";
+      return (
+        <View style={styles.finnyMessageContainer}>
+          <TouchableOpacity
+            style={styles.finnyMessage}
+            activeOpacity={0.8}
+            onPress={() => {
+              AppStorage.setItemSync("initialChatMessage", demoMessage);
+              router.push("/(tabs)/chat");
+            }}
+          >
+            <View style={styles.finnyIconContainer}>
+              <Image
+                source={require("../../../assets/images/finny2.png")}
+                style={{
+                  width: 65,
+                  height: 80,
+                  borderRadius: 20,
+                  resizeMode: "contain",
+                }}
+              />
+            </View>
+            <View style={styles.finnyMessageContent}>
+              <Text style={styles.finnyMessageTitle}>Ask Finny</Text>
+              <Text style={styles.finnyMessageText}>{demoMessage}</Text>
+            </View>
+          </TouchableOpacity>
+        </View>
+      );
+    }
 
     const handlePress = () => {
       if (getOnboardingMessage) {
@@ -247,7 +287,7 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
         </TouchableOpacity>
       </View>
     );
-  }
+  },
 );
 
 FinnyMessage.displayName = "FinnyMessage";

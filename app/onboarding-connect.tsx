@@ -206,7 +206,7 @@ export default function AccountConnectionScreen() {
     const initializePlaid = async () => {
       try {
         const token = await fetchLinkToken();
-        setLinkToken(token);
+        setLinkToken(token ?? null);
       } catch (error) {
         logger.error("Error fetching link token:", error);
         Alert.alert(
@@ -442,7 +442,7 @@ export default function AccountConnectionScreen() {
 
           // Refresh link token for next connection
           const newToken = await fetchLinkToken();
-          setLinkToken(newToken);
+          setLinkToken(newToken ?? null);
         },
         // onExit:
         (error?: any) => {
@@ -469,7 +469,8 @@ export default function AccountConnectionScreen() {
               [
                 {
                   text: "OK",
-                  onPress: async () => setLinkToken(await fetchLinkToken()),
+                  onPress: async () =>
+                    setLinkToken((await fetchLinkToken()) ?? null),
                 },
               ],
             );
@@ -582,12 +583,27 @@ export default function AccountConnectionScreen() {
               <View style={styles.topBarSpacer} />
               <TouchableOpacity
                 style={styles.skipButton}
-                onPress={() => {
+                onPress={async () => {
                   logOnboardingEvent({ stage: "plaid", action: "skip_demo" });
+                  try {
+                    const {
+                      data: { user },
+                    } = await supabase.auth.getUser();
+                    if (user?.id) {
+                      await supabase
+                        .from("profiles")
+                        .update({
+                          skipped_to_demo_at: new Date().toISOString(),
+                        })
+                        .eq("id", user.id);
+                    }
+                  } catch (e) {
+                    logger.warn("Failed to record skip_demo in profiles", e);
+                  }
                   enterDemoMode();
                 }}
               >
-                <Text style={styles.skipButtonText}>Skip</Text>
+                <Text style={styles.skipButtonText}>Skip: Checkout demo</Text>
               </TouchableOpacity>
             </View>
             <ScrollView

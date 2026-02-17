@@ -390,6 +390,7 @@ CREATE TABLE public.profiles (
   location text,
   early_insights jsonb DEFAULT '[]'::jsonb,
   base_analysis jsonb,
+  skipped_to_demo_at timestamp with time zone,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );
