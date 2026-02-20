@@ -9,7 +9,7 @@ export const ENTITLEMENT_ID = "Finny Pro";
  */
 export const GRANDFATHERED_USER_IDS = new Set<string>([
   "79952f35-b607-40d6-a32e-d81386882eb7",
-  "f948c4ab-dc68-41d5-89bf-1935653cca37",
+  // "f948c4ab-dc68-41d5-89bf-1935653cca37",
   "a7a63c97-b74f-4df1-a85d-70716f3cd928",
   "3b527dd9-00bc-41ab-9d3e-c39cfc491016",
   "991d7203-04f5-4845-8a3a-471358128511",
