@@ -149,10 +149,24 @@ export const loadInitialCache = (userId: string | null): InitialCache => {
       Array.isArray(data.transactions) &&
       data.transactions.length > 0
     ) {
-      logger.debug(
-        `📦 [INSIGHTS] Loaded ${data.transactions.length} transactions from cache synchronously`,
-      );
-      return { transactions: data.transactions, hasCache: true };
+      // Spending breakdown is current-month only - reject cache from previous month
+      const now = new Date();
+      const currentYear = now.getFullYear();
+      const currentMonth = now.getMonth();
+      const hasCurrentMonthData = data.transactions.some((tx: { date?: string; authorized_date?: string }) => {
+        const d = tx.date || tx.authorized_date;
+        if (!d) return false;
+        const parts = d.split("-").map(Number);
+        const y = parts[0];
+        const m = parts[1];
+        return y === currentYear && m === currentMonth + 1;
+      });
+      if (hasCurrentMonthData) {
+        logger.debug(
+          `📦 [INSIGHTS] Loaded ${data.transactions.length} transactions from cache synchronously`,
+        );
+        return { transactions: data.transactions, hasCache: true };
+      }
     }
   } catch (error) {
     // Silently fail - will load async

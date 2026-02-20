@@ -38,6 +38,7 @@ import {
   recalculateInvestmentBalances,
 } from "@/src/utils/integrations/snaptrade";
 import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
+import { filterDisplayableHoldings } from "@/src/utils/investments/filterDisplayableHoldings";
 import { styles } from "@/src/styles/investmentsStyles";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
 import { useDemoMode } from "@/src/contexts/DemoContext";
@@ -179,6 +180,7 @@ function getDemoConnectionsForScreen(): ConnectionRow[] {
 
 export default function InvestmentsScreen({
   preloadedData,
+  isParentLoading,
 }: {
   preloadedData?: {
     holdings?: any[];
@@ -186,6 +188,7 @@ export default function InvestmentsScreen({
     balances?: any[];
     connections?: any[];
   };
+  isParentLoading?: boolean;
 }) {
   const router = useRouter();
   const { isDemoMode } = useDemoMode();
@@ -572,11 +575,29 @@ export default function InvestmentsScreen({
 
   useEffect(() => {
     const initializeScreen = async () => {
-      // Check if we need to reload data (either no data, recent sync, or preloaded data changed)
-      // NOTE: This only runs on mount or when preloadedData changes, not on pull-to-refresh
+      // When embedded in Insights (preloadedData provided), parent is single source of truth.
+      // Never load from DB here - parent fetches and passes data when user switches to investments.
+      if (preloadedData !== undefined) {
+        lastPreloadedDataRef.current = preloadedData;
+        setHoldings(preloadedData.holdings || []);
+        setOptions(preloadedData.options || []);
+        setBalances(preloadedData.balances || []);
+        setConnections(preloadedData.connections || []);
+        setHasCheckedConnections(true);
+        const hasAny =
+          (preloadedData.holdings?.length ?? 0) > 0 ||
+          (preloadedData.options?.length ?? 0) > 0 ||
+          (preloadedData.balances?.length ?? 0) > 0 ||
+          (preloadedData.connections?.length ?? 0) > 0;
+        hasData.current = hasAny;
+        setIsLoading(false);
+        return;
+      }
+
+      // Standalone route (/investments) - load from DB ourselves
       const shouldReload =
         !hasData.current ||
-        (lastSyncTime.current && Date.now() - lastSyncTime.current < 5000) || // 5 second window
+        (lastSyncTime.current && Date.now() - lastSyncTime.current < 5000) ||
         (preloadedData &&
           JSON.stringify(preloadedData) !==
             JSON.stringify(lastPreloadedDataRef.current));
@@ -585,44 +606,7 @@ export default function InvestmentsScreen({
         return;
       }
 
-      // Check if data is preloaded with actual content (when embedded in insights screen)
-      const hasAnyPreloadedData =
-        preloadedData &&
-        ((preloadedData.holdings && preloadedData.holdings.length > 0) ||
-          (preloadedData.options && preloadedData.options.length > 0) ||
-          (preloadedData.balances && preloadedData.balances.length > 0) ||
-          (preloadedData.connections && preloadedData.connections.length > 0));
-
-      if (hasAnyPreloadedData) {
-        // Preloaded data has content - use it and skip DB
-        const hasPreloadedDataChanged =
-          JSON.stringify(preloadedData) !==
-          JSON.stringify(lastPreloadedDataRef.current);
-        if (hasPreloadedDataChanged) {
-          lastPreloadedDataRef.current = preloadedData;
-          setHoldings(preloadedData!.holdings || []);
-          setOptions(preloadedData!.options || []);
-          setBalances(preloadedData!.balances || []);
-          setConnections(preloadedData!.connections || []);
-          setHasCheckedConnections(true);
-        }
-        hasData.current = true;
-        setIsLoading(false);
-        setHasCheckedConnections(true);
-        return;
-      }
-
-      // Preloaded data empty or missing - do a quick DB check so we don't flash empty state for users with holdings
-      if (preloadedData) {
-        lastPreloadedDataRef.current = preloadedData;
-        setHoldings(preloadedData.holdings || []);
-        setOptions(preloadedData.options || []);
-        setBalances(preloadedData.balances || []);
-        setConnections(preloadedData.connections || []);
-      }
-
       try {
-        // Load stored data first (like transaction screens)
         const hasStoredData = await loadFromDb();
 
         // If no stored data, we could potentially trigger a sync here
@@ -2353,27 +2337,8 @@ export default function InvestmentsScreen({
   const renderHoldings = () => {
     if (isLoading) return null;
 
-    // Filter out cash holdings - we already show available cash separately
-    let displayHoldings = filteredHoldings.filter((holding) => {
-      // Filter out holdings that are cash or cash equivalents
-      const symbol = holding.symbol?.toLowerCase() || "";
-      const description = holding.description?.toLowerCase() || "";
-      const securityType = holding.security_type?.toLowerCase() || "";
-
-      // Common cash/cash equivalent indicators
-      const isCash =
-        symbol === "cash" ||
-        symbol === "csh" ||
-        symbol === "cash_equivalent" ||
-        description.includes("cash") ||
-        description.includes("money market") ||
-        description.includes("sweep") ||
-        securityType.includes("cash") ||
-        securityType.includes("money market") ||
-        securityType.includes("sweep");
-
-      return !isCash;
-    });
+    // Filter out cash and Open Ended Fund (shared logic with HoldingsMoversCard)
+    let displayHoldings = filterDisplayableHoldings(filteredHoldings);
 
     // Apply security type filter
     if (selectedSecurityType) {
@@ -2381,11 +2346,6 @@ export default function InvestmentsScreen({
         (holding) => holding.security_type === selectedSecurityType,
       );
     }
-
-    // Also filter out Open Ended Fund from holdings display
-    displayHoldings = displayHoldings.filter(
-      (holding) => holding.security_type !== "Open Ended Fund",
-    );
 
     // Sort by gain/loss when applicable - descending (highest gains first)
     let sortedHoldings = displayHoldings;
@@ -2750,7 +2710,10 @@ export default function InvestmentsScreen({
               </View>
             )}
 
-            {isLoading && hasCheckedConnections && connections.length > 0 ? (
+            {isParentLoading ? (
+              // Embedded in Insights: parent is fetching - show Finny loading
+              renderLoadingState()
+            ) : isLoading && hasCheckedConnections && connections.length > 0 ? (
               renderLoadingState()
             ) : (isLoading || (isDemoMode && !hasCheckedConnections)) &&
               !hasCheckedConnections ? (

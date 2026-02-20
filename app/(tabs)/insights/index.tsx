@@ -62,6 +62,8 @@ import {
   getUpdateLinkToken,
   openPlaidLink,
   getRecentTransactions,
+  getCurrentMonthRange,
+  getCurrentAndLastMonthRange,
   getFilteredTransactions,
   getFilteredTransactionsCount,
   getUserAccountsForFilter,
@@ -200,8 +202,11 @@ export default function InsightsScreen() {
   // Get userId synchronously for initial cache load
   const initialUserId = getUserIdSync();
 
-  // Load cache synchronously before first render (like unified hook does)
-  const initialCache = loadInitialCache(initialUserId);
+  // Load cache synchronously - memoized to avoid running on every re-render
+  const initialCache = useMemo(
+    () => loadInitialCache(initialUserId),
+    [initialUserId]
+  );
 
   const [transactions, setTransactions] = useState<Transaction[]>(
     initialCache.transactions,
@@ -387,6 +392,7 @@ export default function InsightsScreen() {
   const [investmentOptions, setInvestmentOptions] = useState<any[]>([]);
   const [investmentBalances, setInvestmentBalances] = useState<any[]>([]);
   const [investmentConnections, setInvestmentConnections] = useState<any[]>([]);
+  const [isInvestmentDataLoading, setIsInvestmentDataLoading] = useState(false);
 
   // Top bar section state - use index instead of string key
   const [activeIndex, setActiveIndex] = useState<number>(DEFAULT_SECTION_INDEX);
@@ -630,33 +636,24 @@ export default function InsightsScreen() {
       const currentUserId = userId || (await getUserId());
       if (!currentUserId) return;
 
-      // Check caches before registering preloaders
-      const [hasTransactionsCache, hasRecurringCache, hasInvestmentCache] =
-        await Promise.all([
-          hasValidTransactionsCache(currentUserId),
-          hasValidRecurringCache(currentUserId),
-          hasValidInvestmentCache(currentUserId),
-        ]);
+      // Check caches before registering preloaders (skip if already cached)
+      const [hasRecurringCache, hasInvestmentCache] = await Promise.all([
+        hasValidRecurringCache(currentUserId),
+        hasValidInvestmentCache(currentUserId),
+      ]);
 
-      // Register preload tasks for each section
-      // Only register if cache doesn't exist (to avoid unnecessary work)
-      if (!hasTransactionsCache) {
-        SmartPreloader.registerTask({
-          id: "transactions",
-          priority: "high",
-          execute: async () => {
-            await loadFilteredTransactions(filterOptions, true, searchQuery);
-            return {
-              transactions: filteredTransactions,
-              count: totalFilteredCount,
-            };
-          },
-        });
-      } else {
-        logger.debug(
-          "⏭️ [PRELOADER] Skipping transactions preload - cache exists",
-        );
-      }
+      // Register preload tasks (transactions uses in-memory filter cache, not transaction cache)
+      SmartPreloader.registerTask({
+        id: "transactions",
+        priority: "high",
+        execute: async () => {
+          await loadFilteredTransactions(filterOptions, true, searchQuery);
+          return {
+            transactions: filteredTransactions,
+            count: totalFilteredCount,
+          };
+        },
+      });
 
       if (!hasRecurringCache) {
         SmartPreloader.registerTask({
@@ -1188,24 +1185,39 @@ export default function InsightsScreen() {
         return false;
       }
 
-      // First check cache (already loaded in mount effect, but check again)
+      // First check cache - validate cached data is for current month (spending breakdown)
       const cachedTransactions = await loadTransactionsFromCache(currentUserId);
       if (cachedTransactions && cachedTransactions.length > 0) {
-        logger.info(
-          "Insights: Using cached transactions:",
-          cachedTransactions.length,
-        );
-        setTransactions(cachedTransactions);
-        processTransactionsData(cachedTransactions);
-        hasData.current = true;
-        return true;
+        const now = new Date();
+        const currentYear = now.getFullYear();
+        const currentMonth = now.getMonth();
+        const hasCurrentMonthData = cachedTransactions.some((tx) => {
+          const d = tx.date || tx.authorized_date;
+          if (!d) return false;
+          const [y, m] = d.split("-").map(Number);
+          return y === currentYear && m === currentMonth + 1; // month 1-12 vs getMonth() 0-11
+        });
+        if (hasCurrentMonthData) {
+          logger.info(
+            "Insights: Using cached transactions:",
+            cachedTransactions.length,
+          );
+          setTransactions(cachedTransactions);
+          processTransactionsData(cachedTransactions);
+          hasData.current = true;
+          return true;
+        }
+        await clearTransactionsCache(currentUserId);
       }
 
       logger.info("Insights: Loading data from Supabase...");
 
-      // Fetch recent transactions using the new plaid utils
-      // Fetch more transactions to support 2 years of month history (estimate ~1000 transactions)
-      const transactions = await getRecentTransactions(currentUserId, 1000);
+      // Fetch current month only for spending breakdown
+      const { startDate, endDate } = getCurrentMonthRange();
+      const transactions = await getRecentTransactions(currentUserId, 2000, {
+        startDate,
+        endDate,
+      });
 
       if (transactions && transactions.length > 0) {
         logger.info(
@@ -1250,9 +1262,10 @@ export default function InsightsScreen() {
         return;
       }
 
-      // Fetch transactions and investment data in parallel for background refresh
+      // Fetch transactions (current month) and investment data in parallel for background refresh
+      const { startDate, endDate } = getCurrentMonthRange();
       const [transactions] = await Promise.all([
-        getRecentTransactions(userId, 1000),
+        getRecentTransactions(userId, 2000, { startDate, endDate }),
         loadInvestmentDataFromDB().catch((err) => {
           logger.error("Background investment refresh failed:", err);
           return false;
@@ -1477,34 +1490,92 @@ export default function InsightsScreen() {
       // Ensure timePeriod is always provided (fallback to "all" if undefined)
       const timePeriodToUse = filters.timePeriod || "all";
 
-      logger.info(
-        `🔍 Loading filtered transactions with timePeriod: "${timePeriodToUse}" (original: "${filters.timePeriod}")`,
-      );
+      // For "all": initial load uses 2-month range (fast); Load more fetches older
+      const useInitial2MonthLoad =
+        reset &&
+        timePeriodToUse === "all" &&
+        !search.trim();
+      const { startDate: twoMonthStart, endDate: twoMonthEnd } =
+        getCurrentAndLastMonthRange();
 
-      const newTransactions = await getFilteredTransactions(userId, {
-        accountIds: filters.accountIds,
-        timePeriod: timePeriodToUse,
-        categoryIds: filters.categoryIds,
-        searchQuery: search,
-        limit,
-        offset,
-      });
-
-      // logger.info(
-      //   `📊 getFilteredTransactions returned ${newTransactions.length} transactions`
-      // );
-
-      // Get total count for pagination (only on initial load or when search changes)
+      let newTransactions: Transaction[];
       let totalCount = totalFilteredCount;
+
       if (reset) {
-        // Ensure timePeriod is always provided (fallback to "all" if undefined)
-        const timePeriodToUse = filters.timePeriod || "all";
-        totalCount = await getFilteredTransactionsCount(userId, {
-          accountIds: filters.accountIds,
-          timePeriod: timePeriodToUse,
-          categoryIds: filters.categoryIds,
-          searchQuery: search,
-        });
+        if (useInitial2MonthLoad) {
+          // Fast initial load: 2 months only, skip full count
+          newTransactions = await getFilteredTransactions(userId, {
+            accountIds: filters.accountIds,
+            timePeriod: timePeriodToUse,
+            categoryIds: filters.categoryIds,
+            searchQuery: search,
+            limit,
+            offset: 0,
+            startDate: twoMonthStart,
+            endDate: twoMonthEnd,
+          });
+          totalCount = newTransactions.length;
+        } else {
+          const [txResult, countResult] = await Promise.all([
+            getFilteredTransactions(userId, {
+              accountIds: filters.accountIds,
+              timePeriod: timePeriodToUse,
+              categoryIds: filters.categoryIds,
+              searchQuery: search,
+              limit,
+              offset,
+            }),
+            getFilteredTransactionsCount(userId, {
+              accountIds: filters.accountIds,
+              timePeriod: timePeriodToUse,
+              categoryIds: filters.categoryIds,
+              searchQuery: search,
+            }),
+          ]);
+          newTransactions = txResult;
+          totalCount = countResult;
+        }
+      } else {
+        // Load more: for "all" fetch older transactions (before our current oldest)
+        if (timePeriodToUse === "all" && filteredTransactions.length > 0) {
+          const oldestDate = filteredTransactions.reduce(
+            (min, tx) =>
+              tx.date && (!min || tx.date < min) ? tx.date : min,
+            null as string | null
+          );
+          if (oldestDate) {
+            const dayBefore = new Date(oldestDate);
+            dayBefore.setDate(dayBefore.getDate() - 1);
+            const endDateForOlder = dayBefore.toISOString().split("T")[0];
+            newTransactions = await getFilteredTransactions(userId, {
+              accountIds: filters.accountIds,
+              categoryIds: filters.categoryIds,
+              searchQuery: search,
+              limit,
+              offset: 0,
+              startDate: "2023-01-01",
+              endDate: endDateForOlder,
+            });
+          } else {
+            newTransactions = await getFilteredTransactions(userId, {
+              accountIds: filters.accountIds,
+              timePeriod: timePeriodToUse,
+              categoryIds: filters.categoryIds,
+              searchQuery: search,
+              limit,
+              offset,
+            });
+          }
+        } else {
+          newTransactions = await getFilteredTransactions(userId, {
+            accountIds: filters.accountIds,
+            timePeriod: timePeriodToUse,
+            categoryIds: filters.categoryIds,
+            searchQuery: search,
+            limit,
+            offset,
+          });
+        }
       }
 
       // Deduplicate transactions by plaid_transaction_id to prevent duplicate keys in FlatList
@@ -1554,14 +1625,14 @@ export default function InsightsScreen() {
           unfilteredTransactionsRef.current = updatedTransactions;
         }
 
-        // Cache the initial load (only if not searching)
-        if (!search.trim()) {
+        // Cache the initial load (only if not searching). Skip cache for initial 2-month "all" load.
+        if (!search.trim() && !useInitial2MonthLoad) {
           setCachedData(
             getCacheKey(filters, 0),
             updatedTransactions,
             totalCount,
           );
-        } else {
+        } else if (search.trim()) {
           // Cache search results for instant repeat searches
           const searchCacheKey = `${search
             .trim()
@@ -1581,7 +1652,14 @@ export default function InsightsScreen() {
         }
       }
 
-      setHasMoreTransactions(updatedTransactions.length < totalCount);
+      // For initial "all" (2-month load): assume more until we've loaded older and got < limit
+      const hasMore =
+        useInitial2MonthLoad
+          ? true
+          : !reset && timePeriodToUse === "all"
+            ? newTransactions.length === limit
+            : updatedTransactions.length < totalCount;
+      setHasMoreTransactions(hasMore);
 
       // Log actual date range of displayed transactions for debugging
       if (updatedTransactions.length > 0 && reset) {
@@ -1982,6 +2060,7 @@ export default function InsightsScreen() {
 
   // Load investment data with AsyncStorage cache
   const loadInvestmentData = async () => {
+    setIsInvestmentDataLoading(true);
     try {
       const currentUserId = userId || (await getUserId());
       if (!currentUserId) {
@@ -2013,6 +2092,8 @@ export default function InsightsScreen() {
     } catch (err) {
       logger.error("Failed to load investment data:", err);
       return false;
+    } finally {
+      setIsInvestmentDataLoading(false);
     }
   };
 
@@ -2447,6 +2528,7 @@ export default function InsightsScreen() {
         balances: investmentBalances,
         connections: investmentConnections,
       },
+      isInvestmentDataLoading: isInvestmentDataLoading,
       refreshStatus,
       reAuthItems,
       onReAuth: handleReAuthWrapper,
@@ -2459,6 +2541,7 @@ export default function InsightsScreen() {
       investmentOptions,
       investmentBalances,
       investmentConnections,
+      isInvestmentDataLoading,
       refreshStatus,
       reAuthItems,
       handleReAuthWrapper,
@@ -2487,25 +2570,41 @@ export default function InsightsScreen() {
     ],
   );
 
-  // Render page component based on section key
-  const renderPage = (sectionKey: string) => {
-    switch (sectionKey) {
-      case "recurring":
-        return <RecurringPage {...recurringPageProps} />;
-      case "transactions":
-        return <TransactionsPage {...transactionsPageProps} />;
-      case "spending":
-        return <SpendingPage {...spendingPageProps} />;
-      case "budget":
-        return <BudgetPage {...budgetPageProps} />;
-      case "investments":
-        return <InvestmentsPage {...investmentsPageProps} />;
-      case "cashflow":
-        return <CashFlowPage {...cashFlowPageProps} />;
-      default:
-        return null;
-    }
-  };
+  // Render page component based on section key (memoized)
+  const renderPage = useCallback(
+    (sectionKey: string) => {
+      switch (sectionKey) {
+        case "recurring":
+          return <RecurringPage {...recurringPageProps} />;
+        case "transactions":
+          return <TransactionsPage {...transactionsPageProps} />;
+        case "spending":
+          return <SpendingPage {...spendingPageProps} />;
+        case "budget":
+          return <BudgetPage {...budgetPageProps} />;
+        case "investments":
+          return <InvestmentsPage {...investmentsPageProps} />;
+        case "cashflow":
+          return <CashFlowPage {...cashFlowPageProps} />;
+        default:
+          return null;
+      }
+    },
+    [
+      recurringPageProps,
+      transactionsPageProps,
+      spendingPageProps,
+      budgetPageProps,
+      investmentsPageProps,
+      cashFlowPageProps,
+    ]
+  );
+
+  // Lazy-mount: only render active section ±1 neighbor to reduce memory/CPU
+  const shouldMountSection = useCallback(
+    (index: number) => Math.abs(index - activeIndex) <= 1,
+    [activeIndex]
+  );
 
   return (
     <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
@@ -2535,6 +2634,7 @@ export default function InsightsScreen() {
           ref={pagerRef}
           style={{ flex: 1 }}
           initialPage={activeIndex}
+          offscreenPageLimit={1}
           onPageSelected={(e) => {
             const newIndex = e.nativeEvent.position;
             setActiveIndex(newIndex);
@@ -2543,7 +2643,9 @@ export default function InsightsScreen() {
         >
           {SECTIONS.map((section, index) => (
             <View key={section.key} style={{ flex: 1 }}>
-              {isLoading && !hasData.current && index === activeIndex ? (
+              {!shouldMountSection(index) ? (
+                <View style={{ flex: 1 }} />
+              ) : isLoading && !hasData.current && index === activeIndex ? (
                 <LoadingIndicator
                   message="Loading your financial insights..."
                   style={{ marginTop: 20 }}

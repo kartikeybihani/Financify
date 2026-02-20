@@ -12,6 +12,10 @@ import {
 } from "./linkAnalytics";
 
 import { API_BASE_URL } from "@/src/utils/core/apiUrl";
+import {
+  removeSnaptradeBrokerage,
+  clearSnaptradeConnection,
+} from "@/src/utils/integrations/snaptrade";
 
 const BASE_URL = API_BASE_URL;
 
@@ -291,6 +295,9 @@ export const addNewBankAccount = async (
     
     // 1. Get a new link token for adding accounts
     const linkToken = await fetchLinkToken();
+    if (!linkToken) {
+      throw new Error("Failed to get link token");
+    }
     logger.info("🔗 Generated link token for new bank connection");
     
     // 2. Open Plaid Link for the user to select a new bank
@@ -411,53 +418,77 @@ export const handleDisconnect = async (item_id: string) => {
 // === Disconnect All Items (for complete cleanup) ===
 export const handleDisconnectAll = async () => {
   try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) {
+      logger.info("❌ No authenticated user for disconnect all");
+      return { success: false, disconnected: 0, failed: 0, total: 0, errors: [] };
+    }
+
     const items = await getUserItems();
-    // Skip SnapTrade investment accounts (they are not Plaid items)
     const plaidItems = items.filter((item) => !item.item_id.startsWith("snaptrade-"));
     const snapTradeItems = items.filter((item) => item.item_id.startsWith("snaptrade-"));
+    const totalItems = plaidItems.length + snapTradeItems.length;
 
+    if (totalItems === 0) {
+      logger.info("ℹ️ No items to disconnect");
+      return { success: true, disconnected: 0, failed: 0, total: 0, errors: [] };
+    }
+
+    let plaidSuccessful = 0;
+    let plaidFailed = 0;
+    const errors: { error: string }[] = [];
+
+    // Disconnect Plaid items
+    if (plaidItems.length > 0) {
+      logger.info(`🔄 Disconnecting ${plaidItems.length} Plaid item(s)...`);
+      const plaidResults = await Promise.allSettled(
+        plaidItems.map((item) => handleDisconnect(item.item_id))
+      );
+      plaidSuccessful = plaidResults.filter((r) => r.status === "fulfilled").length;
+      plaidFailed = plaidResults.filter((r) => r.status === "rejected").length;
+      plaidResults
+        .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+        .forEach((r) => errors.push({ error: r.reason instanceof Error ? r.reason.message : String(r.reason) }));
+    }
+
+    // Disconnect SnapTrade investment accounts
+    let snapTradeSuccessful = 0;
+    let snapTradeFailed = 0;
     if (snapTradeItems.length > 0) {
-      logger.info(
-        `🚫 Skipping ${snapTradeItems.length} SnapTrade investment accounts for Plaid disconnect-all`
+      logger.info(`🔄 Disconnecting ${snapTradeItems.length} SnapTrade investment account(s)...`);
+      const snapTradeResults = await Promise.allSettled(
+        snapTradeItems.map((item) => {
+          const accountId = item.item_id.replace("snaptrade-", "");
+          return removeSnaptradeBrokerage(user.id, accountId);
+        })
+      );
+      snapTradeSuccessful = snapTradeResults.filter((r) => r.status === "fulfilled").length;
+      snapTradeFailed = snapTradeResults.filter((r) => r.status === "rejected").length;
+      snapTradeResults
+        .filter((r): r is PromiseRejectedResult => r.status === "rejected")
+        .forEach((r) => errors.push({ error: r.reason instanceof Error ? r.reason.message : String(r.reason) }));
+    }
+
+    const disconnected = plaidSuccessful + snapTradeSuccessful;
+    const failed = plaidFailed + snapTradeFailed;
+
+    logger.info(`✅ Disconnect summary: ${disconnected} successful (Plaid: ${plaidSuccessful}, SnapTrade: ${snapTradeSuccessful}), ${failed} failed`);
+
+    // Clear last used item regardless
+    await setLastUsedItemId("");
+
+    // Clear local SnapTrade credentials when all investment accounts are disconnected
+    if (snapTradeSuccessful > 0) {
+      await clearSnaptradeConnection().catch((err) =>
+        logger.warn("⚠️ Failed to clear SnapTrade credentials:", err)
       );
     }
 
-    logger.info(`🔄 Disconnecting all ${plaidItems.length} connected Plaid items...`);
-    
-    if (plaidItems.length === 0) {
-      logger.info("ℹ️ No items to disconnect");
-      return { success: true, disconnected: 0, failed: 0, total: 0 };
-    }
-    
-    const results = await Promise.allSettled(
-      plaidItems.map((item) => handleDisconnect(item.item_id))
-    );
-
-    const successful = results.filter(
-      (result) => result.status === "fulfilled"
-    ).length;
-    const failedResults = results.filter(
-      (result) => result.status === "rejected"
-    ) as PromiseRejectedResult[];
-    const failed = failedResults.length;
-
-    const errors = failedResults.map((result) => ({
-      error:
-        result.reason instanceof Error
-          ? result.reason.message
-          : String(result.reason),
-    }));
-    
-    logger.info(`✅ Disconnect summary: ${successful} successful, ${failed} failed`);
-    
-    // Clear last used item regardless
-    await setLastUsedItemId('');
-    
     return {
       success: failed === 0,
-      disconnected: successful,
+      disconnected,
       failed,
-      total: plaidItems.length,
+      total: totalItems,
       errors,
     };
   } catch (error) {
@@ -618,10 +649,35 @@ export const storeAccounts = async (item_id: string) => {
 
 // === Supabase Data Fetchers for UI ===
 
+/** Get start/end dates for current month only (spending breakdown) */
+export const getCurrentMonthRange = () => {
+  const now = new Date();
+  const startDate = new Date(now.getFullYear(), now.getMonth(), 1)
+    .toISOString()
+    .split("T")[0];
+  const endDate = now.toISOString().split("T")[0];
+  return { startDate, endDate };
+};
+
+/** Get start/end dates for current month + last month (fast initial load for transactions) */
+export const getCurrentAndLastMonthRange = () => {
+  const now = new Date();
+  const endDate = now.toISOString().split("T")[0];
+  const startDate = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+    .toISOString()
+    .split("T")[0];
+  return { startDate, endDate };
+};
+
 // Fetch recent transactions for a user
-export const getRecentTransactions = async (user_id: string, limit: number = 50) => {
+// When options.startDate/endDate provided, filters by date range (for fast initial load of current + last month)
+export const getRecentTransactions = async (
+  user_id: string,
+  limit: number = 50,
+  options?: { startDate?: string; endDate?: string }
+) => {
   try {
-    const { data, error } = await supabase
+    let query = supabase
       .from("transactions")
       .select(`
         *,
@@ -642,6 +698,15 @@ export const getRecentTransactions = async (user_id: string, limit: number = 50)
       .eq("user_id", user_id)
       .order("date", { ascending: false })
       .limit(limit);
+
+    if (options?.startDate) {
+      query = query.gte("date", options.startDate);
+    }
+    if (options?.endDate) {
+      query = query.lte("date", options.endDate);
+    }
+
+    const { data, error } = await query;
     
     if (error) throw error;
     
@@ -1692,6 +1757,8 @@ export const getFilteredTransactions = async (
     limit?: number;
     offset?: number;
     searchQuery?: string; // search by transaction name or category
+    startDate?: string; // optional override for fast initial load (e.g. 2 months)
+    endDate?: string; // optional override
   } = {}
 ) => {
   try {
@@ -1701,8 +1768,16 @@ export const getFilteredTransactions = async (
       categoryIds = [],
       limit = 50,
       offset = 0,
-      searchQuery = ""
+      searchQuery = "",
+    startDate: startDateOverride,
+    endDate: endDateOverride,
     } = options;
+
+    // Use override dates if provided (for fast initial load); else derive from timePeriod
+    const { startDate, endDate } =
+      startDateOverride && endDateOverride
+        ? { startDate: startDateOverride, endDate: endDateOverride }
+        : getDateRangeFromTimePeriod(timePeriod || "all");
 
     // Note: We now use category_id directly for filtering (more secure and performant)
     // categoryNames is kept for legacy fallback support only
@@ -1722,14 +1797,8 @@ export const getFilteredTransactions = async (
       }
     }
 
-
-    // Get date range
-    // Ensure timePeriod is valid, fallback to "all" if undefined/null/empty
-    const validTimePeriod = timePeriod || "all";
-    const { startDate, endDate } = getDateRangeFromTimePeriod(validTimePeriod);
-    
     logger.info(`📅 Time filter applied:`, {
-      timePeriod: validTimePeriod,
+      timePeriod: timePeriod || "all",
       startDate,
       endDate,
       daysDiff: Math.ceil((new Date(endDate).getTime() - new Date(startDate).getTime()) / (1000 * 60 * 60 * 24))

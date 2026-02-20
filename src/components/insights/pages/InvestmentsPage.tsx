@@ -11,6 +11,7 @@ interface InvestmentsPageProps {
     balances: any[];
     connections: any[];
   };
+  isInvestmentDataLoading?: boolean;
   refreshStatus: RefreshStatus;
   reAuthItems: ReAuthItem[];
   onReAuth: (item_id: string) => void;
@@ -22,6 +23,7 @@ interface InvestmentsPageProps {
 const InvestmentsPage = React.memo<InvestmentsPageProps>(
   ({
     preloadedData,
+    isInvestmentDataLoading,
     refreshStatus,
     reAuthItems,
     onReAuth,
@@ -47,7 +49,10 @@ const InvestmentsPage = React.memo<InvestmentsPageProps>(
           onReAuth={onReAuth}
           onDismissReAuth={onDismissReAuth}
         />
-        <InvestmentsScreen preloadedData={preloadedData} />
+        <InvestmentsScreen
+          preloadedData={preloadedData}
+          isParentLoading={isInvestmentDataLoading}
+        />
       </ScrollView>
     );
   },

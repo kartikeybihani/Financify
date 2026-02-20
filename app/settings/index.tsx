@@ -18,9 +18,10 @@ import { Ionicons, MaterialIcons } from "@expo/vector-icons";
 import AppStorage from "@/src/utils/storage/storage";
 import IconButton from "@/src/components/shared/IconButton";
 import { useRouter, useLocalSearchParams } from "expo-router";
-import { supabase } from "@/src/lib/supabase/supabase";
+import { supabase, supabaseUrl } from "@/src/lib/supabase/supabase";
 import FeedbackModal from "@/src/components/modals/FeedbackModal";
 import ContactModal from "@/src/components/modals/ContactModal";
+import DeleteAccountModal from "@/src/components/modals/DeleteAccountModal";
 import {
   handleDisconnectAll,
   syncAllUserTransactions,
@@ -47,8 +48,10 @@ export default function SettingsScreen() {
   const [biometricsEnabled, setBiometricsEnabled] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
+  const [showDeleteAccountModal, setShowDeleteAccountModal] = useState(false);
   const [isSyncingTransactions, setIsSyncingTransactions] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
 
   useEffect(() => {
     const fetchAndSetUserData = async () => {
@@ -95,73 +98,66 @@ export default function SettingsScreen() {
     loadNotificationSettings();
   }, []);
 
-  const handleDisconnectBank = async () => {
-    Alert.alert(
-      "Disconnect Bank Accounts",
-      "This will disconnect all connected bank accounts and clear all financial data. Your account will remain active.",
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
+  const performAccountDeletion = async () => {
+    try {
+      setIsDeletingAccount(true);
+      setShowDeleteAccountModal(false);
+
+      // Let the loading overlay paint before starting heavy work
+      await new Promise((r) => setTimeout(r, 100));
+
+      logger.info("[SettingsIndex] Starting account deletion...");
+
+      // 1. Disconnect all Plaid + SnapTrade (clean up external services)
+      await handleDisconnectAll();
+
+      // 2. Clear local cache
+      await clearAllCache();
+
+      // 3. Delete user from Supabase via Edge Function
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        throw new Error("No active session");
+      }
+
+      if (!supabaseUrl) {
+        throw new Error("Supabase URL not configured");
+      }
+
+      const res = await fetch(`${supabaseUrl}/functions/v1/delete-user`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
         },
-        {
-          text: "Disconnect",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              logger.info("[SettingsIndex] Starting bank disconnection...");
+      });
 
-              const result = await handleDisconnectAll();
-              const disconnected = result.disconnected || 0;
-              const failed = result.failed || 0;
-              const total = result.total ?? disconnected + failed;
+      const body = await res.json();
+      if (!res.ok) {
+        throw new Error(body?.error || "Failed to delete account");
+      }
 
-              logger.info("[SettingsIndex] Bank disconnection result:", result);
+      // 4. Sign out and navigate
+      await supabase.auth.signOut();
+      logger.info("[SettingsIndex] Account deleted successfully");
 
-              if (total === 0) {
-                Alert.alert(
-                  "No Account Found",
-                  "No connected bank accounts found to disconnect.",
-                );
-                return;
-              }
+      router.dismissAll();
+      router.replace("/");
+    } catch (error) {
+      logger.error("[SettingsIndex] Error deleting account:", error);
+      setIsDeletingAccount(false);
+      Alert.alert(
+        "Error",
+        error instanceof Error
+          ? error.message
+          : "Failed to delete account. Please try again.",
+      );
+    }
+  };
 
-              if (disconnected > 0) {
-                DeviceEventEmitter.emit("financialDataRefreshed", {
-                  accounts: [],
-                  identity: null,
-                  investments: null,
-                  liabilities: null,
-                  institution: null,
-                });
-              }
-
-              if (failed > 0) {
-                Alert.alert(
-                  disconnected === 0
-                    ? "Disconnect Failed"
-                    : "Partial Disconnect",
-                  disconnected === 0
-                    ? "Unable to disconnect any bank connections. Please try again."
-                    : `Disconnected ${disconnected}/${total} bank connection(s). Some connections could not be removed.`,
-                );
-              } else {
-                Alert.alert(
-                  "Success",
-                  `Disconnected ${disconnected} bank connection(s).`,
-                );
-              }
-            } catch (error) {
-              logger.error("Error disconnecting bank:", error);
-              Alert.alert(
-                "Error",
-                "Failed to disconnect bank accounts. Please try again.",
-              );
-            }
-          },
-        },
-      ],
-    );
+  const handleDeleteAccount = () => {
+    setShowDeleteAccountModal(true);
   };
 
   const handleLogout = async () => {
@@ -598,15 +594,6 @@ export default function SettingsScreen() {
           "Data",
           <>
             {renderSettingsItem(
-              <Ionicons name="wallet-outline" size={24} color="#ff6b6b" />,
-              "Disconnect & Clear Data",
-              handleDisconnectBank,
-              true,
-              undefined,
-              isDemoMode,
-              isDemoMode,
-            )}
-            {renderSettingsItem(
               <MaterialIcons name="logout" size={24} color="#ff6b6b" />,
               "Log Out",
               handleLogout,
@@ -621,6 +608,21 @@ export default function SettingsScreen() {
         <View style={styles.footer}>
           <Text style={styles.version}>Version 1.0.0</Text>
           <Text style={styles.copyright}>© 2026 Finny</Text>
+          <TouchableOpacity
+            onPress={handleDeleteAccount}
+            disabled={isDemoMode}
+            style={styles.deleteAccountButton}
+            activeOpacity={0.7}
+          >
+            <Text
+              style={[
+                styles.deleteAccountText,
+                isDemoMode && styles.deleteAccountTextDisabled,
+              ]}
+            >
+              Delete Account
+            </Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
 
@@ -635,8 +637,15 @@ export default function SettingsScreen() {
         onClose={() => setShowContactModal(false)}
       />
 
+      <DeleteAccountModal
+        visible={showDeleteAccountModal}
+        onClose={() => setShowDeleteAccountModal(false)}
+        onDelete={performAccountDeletion}
+        isDeleting={isDeletingAccount}
+      />
+
       <Modal
-        visible={isLoggingOut}
+        visible={isLoggingOut || isDeletingAccount}
         transparent
         animationType="fade"
         statusBarTranslucent
@@ -649,7 +658,9 @@ export default function SettingsScreen() {
           />
           <View style={styles.logoutOverlayContent}>
             <ActivityIndicator size="large" color="#fff" />
-            <Text style={styles.logoutOverlayText}>Logging out...</Text>
+            <Text style={styles.logoutOverlayText}>
+              {isDeletingAccount ? "Deleting account..." : "Logging out..."}
+            </Text>
           </View>
         </View>
       </Modal>
@@ -761,7 +772,7 @@ const styles = StyleSheet.create({
   footer: {
     paddingVertical: 20,
     alignItems: "center",
-    marginTop: 40,
+    marginTop: 10,
   },
   version: {
     fontSize: 14,
@@ -770,6 +781,22 @@ const styles = StyleSheet.create({
   },
   copyright: {
     fontSize: 12,
+    color: "#666",
+  },
+  deleteAccountButton: {
+    marginTop: 20,
+    alignSelf: "center",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderWidth: 1,
+    borderColor: "#ff6b6b",
+    borderRadius: 8,
+  },
+  deleteAccountText: {
+    fontSize: 14,
+    color: "#ff6b6b",
+  },
+  deleteAccountTextDisabled: {
     color: "#666",
   },
   premiumBadge: {

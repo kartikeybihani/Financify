@@ -1,21 +1,14 @@
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import React, { useMemo, useState } from "react";
 import {
   View,
   Text,
   TouchableOpacity,
   StyleSheet,
   Platform,
-  DeviceEventEmitter,
   Image,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import logger from "@/src/utils/core/logger";
+import { filterDisplayableHoldings } from "@/src/utils/investments/filterDisplayableHoldings";
 
 type MaybeNumber = number | null | undefined;
 
@@ -115,10 +108,11 @@ const computeDayImpact = (h: InvestmentHoldingRow): number => {
 const computeTodayTotalPerformanceFromHoldings = (
   holdings: InvestmentHoldingRow[]
 ): { amount: number; percentage: number; hasData: boolean } => {
+  const displayable = filterDisplayableHoldings(holdings);
   let total = 0;
   let totalMv = 0;
   let hasData = false;
-  for (const h of holdings) {
+  for (const h of displayable) {
     const direct =
       typeof h.day_change === "number" && Number.isFinite(h.day_change)
         ? h.day_change
@@ -205,8 +199,9 @@ const computeTodayTotalPerformance = (
 };
 
 const pickTopMovers = (holdings: InvestmentHoldingRow[]): Mover[] => {
+  const displayable = filterDisplayableHoldings(holdings);
   const movers: Mover[] = [];
-  for (const holding of holdings) {
+  for (const holding of displayable) {
     const symbol = (holding.symbol || "").trim();
     if (!symbol) continue;
 
@@ -235,8 +230,9 @@ const pickTopMovers = (holdings: InvestmentHoldingRow[]): Mover[] => {
 const pickTopMoversByTotalReturn = (
   holdings: InvestmentHoldingRow[]
 ): Mover[] => {
+  const displayable = filterDisplayableHoldings(holdings);
   const movers: Mover[] = [];
-  for (const holding of holdings) {
+  for (const holding of displayable) {
     const symbol = (holding.symbol || "").trim();
     if (!symbol) continue;
 
@@ -317,6 +313,12 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
     const holdings = (propHoldings as InvestmentHoldingRow[]) || [];
     const balances = (propBalances as InvestmentBalanceRow[]) || [];
 
+    // Filter out cash and Open Ended Fund (same as Investments screen)
+    const displayableHoldings = useMemo(
+      () => filterDisplayableHoldings(holdings),
+      [holdings]
+    );
+
     const dayMovers = useMemo(() => pickTopMovers(holdings), [holdings]);
     const fallbackMovers = useMemo(
       () => pickTopMoversByTotalReturn(holdings),
@@ -333,9 +335,8 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
     const hero = displayMovers[0];
     const runners = displayMovers.slice(1);
 
-    // Show card when there are any holdings (like GoalsSection - no gate needed)
-    // Holdings are loaded synchronously, so if we have holdings, show immediately
-    const hasHoldings = holdings.length > 0;
+    // Show card when there are displayable holdings (non-cash, non-open-ended fund)
+    const hasHoldings = displayableHoldings.length > 0;
     if (!hasHoldings) return null;
 
     const maxAbsPct = hero?.absPct || 1;

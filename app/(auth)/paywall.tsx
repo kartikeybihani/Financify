@@ -30,6 +30,7 @@ import type {
 } from "react-native-purchases";
 import { useSubscription } from "@/src/contexts/SubscriptionContext";
 import logger from "@/src/utils/core/logger";
+import * as WebBrowser from "expo-web-browser";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const FEATURE_CARD_WIDTH = SCREEN_WIDTH - 56;
@@ -383,6 +384,30 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
     : FEATURES;
 
   const handleClose = () => onClose("dismiss");
+
+  const handlePrivacyPolicy = async () => {
+    try {
+      await WebBrowser.openBrowserAsync("https://www.usefinny.com/privacy", {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+        controlsColor: "#4A90E2",
+        showTitle: true,
+      });
+    } catch (e) {
+      logger.warn("Failed to open privacy policy", e);
+    }
+  };
+
+  const handleTermsOfUse = async () => {
+    try {
+      await WebBrowser.openBrowserAsync("https://www.usefinny.com/terms", {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+        controlsColor: "#4A90E2",
+        showTitle: true,
+      });
+    } catch (e) {
+      logger.warn("Failed to open terms of use", e);
+    }
+  };
 
   if (!visible) return null;
 
@@ -868,6 +893,15 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                       Cancel anytime, for any reason. This subscription
                       automatically renews at the price selected above.
                     </Text>
+                    <View style={styles.legalLinksRow}>
+                      <TouchableOpacity onPress={handlePrivacyPolicy}>
+                        <Text style={styles.legalLink}>Privacy Policy</Text>
+                      </TouchableOpacity>
+                      <Text style={styles.legalSeparator}>•</Text>
+                      <TouchableOpacity onPress={handleTermsOfUse}>
+                        <Text style={styles.legalLink}>Terms of Use</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 </ScrollView>
               </LinearGradient>
@@ -1423,6 +1457,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     marginTop: 2,
     lineHeight: 14,
+  },
+  legalLinksRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  legalLink: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.45)",
+    textDecorationLine: "underline",
+  },
+  legalSeparator: {
+    fontSize: 10,
+    color: "rgba(255, 255, 255, 0.35)",
   },
   errorContainer: {
     marginBottom: 12,

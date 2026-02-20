@@ -2540,6 +2540,23 @@ async function handleSnapTradeRemoveBrokerage(res, userId, accountId) {
         // Continue anyway
       }
 
+      // Delete user_items entry for this SnapTrade account (item_id format: snaptrade-{accountId})
+      try {
+        const { error: userItemsError } = await supabase
+          .from("user_items")
+          .delete()
+          .eq("item_id", `snaptrade-${accountId}`)
+          .eq("user_id", userId);
+
+        if (userItemsError) {
+          console.warn("⚠️ Failed to delete user_items for SnapTrade:", userItemsError.message);
+        } else {
+          console.log("✅ SnapTrade user_items entry removed");
+        }
+      } catch (userItemsErr) {
+        console.warn("⚠️ Error deleting SnapTrade user_items:", userItemsErr);
+      }
+
       return res.status(200).json({
         success: true,
         message: "Investment account removed successfully",
@@ -2617,6 +2634,18 @@ async function handleSnapTradeRemoveBrokerage(res, userId, accountId) {
           }
         } catch (connectionErr) {
           console.warn("⚠️ Error deleting SnapTrade connection:", connectionErr);
+        }
+
+        // Delete user_items entry for this SnapTrade account
+        try {
+          await supabase
+            .from("user_items")
+            .delete()
+            .eq("item_id", `snaptrade-${accountId}`)
+            .eq("user_id", userId);
+          console.log("✅ SnapTrade user_items entry removed");
+        } catch (userItemsErr) {
+          console.warn("⚠️ Error deleting SnapTrade user_items:", userItemsErr);
         }
 
         return res.status(200).json({

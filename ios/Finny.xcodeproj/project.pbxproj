@@ -374,6 +374,7 @@
 					"FB_SONARKIT_ENABLED=1",
 				);
 				INFOPLIST_FILE = Finny/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Finny;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -408,6 +409,7 @@
 				CURRENT_PROJECT_VERSION = 2;
 				DEVELOPMENT_TEAM = 53SZ6G286C;
 				INFOPLIST_FILE = Finny/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = Finny;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

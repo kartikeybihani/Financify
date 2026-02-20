@@ -61,6 +61,7 @@ import CashInputModal from "@/src/components/modals/CashInputModal";
 
 import { styles } from "@/src/styles/homeStyles";
 import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
+import { hasDisplayableHoldings } from "@/src/utils/investments/filterDisplayableHoldings";
 import { getAuthenticatedUser } from "@/src/utils/auth/auth";
 import {
   getSnaptradeCredentialsWithFallback,
@@ -1239,12 +1240,9 @@ export default function HomeScreen() {
             />
           )}
 
-          {/* Holdings & Movers: show when user has holdings; blur when free */}
+          {/* Holdings & Movers: show when user has displayable holdings (non-cash, non-open-ended); blur when free */}
           {(function () {
-            const hasHoldings =
-              (investmentHoldings?.length ?? 0) > 0 ||
-              (investmentBalances?.length ?? 0) > 0;
-            if (!hasHoldings) return null;
+            if (!hasDisplayableHoldings(investmentHoldings)) return null;
             const card = (
               <HoldingsMoversCard
                 holdings={investmentHoldings}

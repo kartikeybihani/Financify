@@ -3,9 +3,21 @@ import AppStorage from '@/src/utils/storage/storage'
 import { createClient } from '@supabase/supabase-js'
 import Constants from 'expo-constants'
 
-// Get the environment variables
-const supabaseUrl = Constants.expoConfig?.extra?.supabaseUrl || process.env.SUPABASE_URL
-const supabaseAnonKey = Constants.expoConfig?.extra?.supabaseAnonKey || process.env.SUPABASE_ANON_KEY
+// Get from env (Expo bakes EXPO_PUBLIC_* into extra at build time)
+const rawSupabaseUrl =
+  Constants.expoConfig?.extra?.supabaseUrl ||
+  process.env.EXPO_PUBLIC_SUPABASE_URL ||
+  process.env.SUPABASE_URL
+
+// Normalize: strip /rest/v1 (dashboard sometimes shows this) and trailing slash
+export const supabaseUrl = rawSupabaseUrl
+  ? rawSupabaseUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '')
+  : ''
+
+const supabaseAnonKey =
+  Constants.expoConfig?.extra?.supabaseAnonKey ||
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error('Missing Supabase environment variables. Please check your .env file.')
