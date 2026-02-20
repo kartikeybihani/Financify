@@ -36,6 +36,7 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState("");
+  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   // Verification overlay state
   const [showVerificationOverlay, setShowVerificationOverlay] = useState(false);
@@ -93,6 +94,11 @@ export default function SignupScreen() {
       return false;
     }
 
+    if (!agreedToTerms) {
+      setFormError("Please agree to the Privacy Policy and Terms of Service");
+      return false;
+    }
+
     setFormError("");
     return true;
   };
@@ -124,7 +130,7 @@ export default function SignupScreen() {
         return;
       }
       setFormError(
-        error.message || "An error occurred during signup. Please try again."
+        error.message || "An error occurred during signup. Please try again.",
       );
       return;
     }
@@ -167,7 +173,7 @@ export default function SignupScreen() {
               // The polling and event listeners will handle verification checks
             },
           },
-        ]
+        ],
       );
       return;
     }
@@ -183,13 +189,13 @@ export default function SignupScreen() {
             first_name: firstName.trim(),
             last_name: lastName.trim(),
           },
-          { onConflict: "id" }
+          { onConflict: "id" },
         );
 
         if (profileError) {
           logger.error("Error creating profile: ", profileError);
           setFormError(
-            "Account created but failed to set up profile. Please try logging in."
+            "Account created but failed to set up profile. Please try logging in.",
           );
           return;
         }
@@ -206,7 +212,7 @@ export default function SignupScreen() {
     } catch (profileError) {
       logger.error("Error creating profile: ", profileError);
       setFormError(
-        "Account created but failed to set up profile. Please try logging in."
+        "Account created but failed to set up profile. Please try logging in.",
       );
       return;
     }
@@ -233,7 +239,7 @@ export default function SignupScreen() {
       if (error) {
         setVerificationError(
           error.message ||
-            "Failed to resend verification email. Please try again."
+            "Failed to resend verification email. Please try again.",
         );
         logger.error("Resend verification error: ", error);
       } else {
@@ -242,12 +248,12 @@ export default function SignupScreen() {
         startResendTimer();
         Alert.alert(
           "Email Sent",
-          "Verification email has been resent. Please check your inbox."
+          "Verification email has been resent. Please check your inbox.",
         );
       }
     } catch (err: any) {
       setVerificationError(
-        err.message || "An unexpected error occurred. Please try again."
+        err.message || "An unexpected error occurred. Please try again.",
       );
       logger.error("Resend verification exception: ", err);
     } finally {
@@ -304,7 +310,7 @@ export default function SignupScreen() {
       // No session - try to sign in with stored credentials
       // This will work if email is verified (Supabase allows sign-in after email confirmation)
       logger.info(
-        "No session found, attempting to sign in with stored credentials..."
+        "No session found, attempting to sign in with stored credentials...",
       );
 
       // Use stored password from signup time - must use captured value only
@@ -312,10 +318,10 @@ export default function SignupScreen() {
       const storedPassword = signupPasswordRef.current;
       if (!email || !storedPassword) {
         logger.error(
-          "Email or captured password not available for sign in. This should not happen if signup completed successfully."
+          "Email or captured password not available for sign in. This should not happen if signup completed successfully.",
         );
         setVerificationError(
-          "Unable to verify account. Please try signing in manually or resend the verification email."
+          "Unable to verify account. Please try signing in manually or resend the verification email.",
         );
         setIsVerifying(false);
         return;
@@ -365,7 +371,7 @@ export default function SignupScreen() {
         error?.message?.includes("Auth")
       ) {
         logger.info(
-          "No session available yet. This is normal before verification."
+          "No session available yet. This is normal before verification.",
         );
       } else {
         logger.error("Error checking verification: ", error);
@@ -391,13 +397,13 @@ export default function SignupScreen() {
           first_name: capturedFirstName,
           last_name: capturedLastName,
         },
-        { onConflict: "id" }
+        { onConflict: "id" },
       );
 
       if (profileError) {
         logger.error("Error creating profile: ", profileError);
         setVerificationError(
-          "Account verified but failed to set up profile. Please try logging in."
+          "Account verified but failed to set up profile. Please try logging in.",
         );
         setIsVerifying(false);
         return;
@@ -418,7 +424,7 @@ export default function SignupScreen() {
     } catch (profileError) {
       logger.error("Error creating profile: ", profileError);
       setVerificationError(
-        "Account verified but failed to set up profile. Please try logging in."
+        "Account verified but failed to set up profile. Please try logging in.",
       );
       setIsVerifying(false);
     }
@@ -738,9 +744,43 @@ export default function SignupScreen() {
             ) : null}
 
             <TouchableOpacity
-              style={[styles.button, loading && styles.buttonDisabled]}
+              style={styles.checkboxRow}
+              onPress={() => setAgreedToTerms((prev) => !prev)}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={agreedToTerms ? "checkbox" : "square-outline"}
+                size={22}
+                color={agreedToTerms ? "#4A90E2" : "rgba(255, 255, 255, 0.5)"}
+                style={styles.checkboxIcon}
+              />
+              <Text style={styles.checkboxLabel}>
+                I agree to the{" "}
+                <Text
+                  style={styles.privacyLink}
+                  onPress={() => handleTermsConditions()}
+                >
+                  Terms & Conditions
+                </Text>
+                . I understand my data may be shared with AI providers to give
+                me personalized recommendations. Read more in our{" "}
+                <Text
+                  style={styles.privacyLink}
+                  onPress={() => handlePrivacyPolicy()}
+                >
+                  Privacy Policy
+                </Text>
+                .
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.button,
+                (loading || !agreedToTerms) && styles.buttonDisabled,
+              ]}
               onPress={handleSignUp}
-              disabled={loading}
+              disabled={loading || !agreedToTerms}
             >
               <LinearGradient
                 colors={["#4A90E2", "#5DA0F2"]}
@@ -754,22 +794,6 @@ export default function SignupScreen() {
                   <Text style={styles.buttonText}>Create Account</Text>
                 )}
               </LinearGradient>
-            </TouchableOpacity>
-
-            <TouchableOpacity onPress={handlePrivacyPolicy}>
-              <Text style={styles.privacyText}>
-                By signing up, you agree to our{" "}
-                <Text
-                  style={styles.privacyLink}
-                  onPress={handleTermsConditions}
-                >
-                  Terms & Conditions
-                </Text>{" "}
-                and{" "}
-                <Text style={styles.privacyLink} onPress={handlePrivacyPolicy}>
-                  Privacy Policy
-                </Text>
-              </Text>
             </TouchableOpacity>
           </View>
         </ScrollView>
@@ -1019,9 +1043,26 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     marginTop: 5,
   },
+  checkboxRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    marginTop: 0,
+    marginBottom: 10,
+    gap: 12,
+  },
+  checkboxIcon: {
+    marginTop: 2,
+  },
+  checkboxLabel: {
+    flex: 1,
+    textAlign: "left",
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 12,
+    lineHeight: 18,
+  },
   privacyText: {
     textAlign: "left",
-    marginTop: 16,
+    marginTop: 5,
     color: "rgba(255, 255, 255, 0.6)",
     fontSize: 12,
     lineHeight: 18,
