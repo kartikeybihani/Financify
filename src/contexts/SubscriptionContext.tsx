@@ -39,7 +39,10 @@ export interface SubscriptionContextValue {
   refetch: () => Promise<void>;
   applyCustomerInfo: (info: CustomerInfo) => void;
   /** Show paywall. onConvert runs only when user subscribes/starts trial; onDismiss runs on any close (legacy). For compulsory trial, pass onConvert only. */
-  showPaywall: (opts?: { onConvert?: () => void; onDismiss?: () => void }) => void;
+  showPaywall: (opts?: {
+    onConvert?: () => void;
+    onDismiss?: () => void;
+  }) => void;
   hidePaywall: (reason?: PaywallCloseReason) => void;
   paywallVisible: boolean;
 }
@@ -257,7 +260,7 @@ export function SubscriptionProvider({
       onPaywallDismissRef.current = onDismiss;
       setPaywallVisible(true);
     },
-    []
+    [],
   );
 
   const hidePaywall = useCallback((reason?: PaywallCloseReason) => {
@@ -300,8 +303,10 @@ export function useSubscription(): SubscriptionContextValue {
       isLoading: false,
       refetch: async () => {},
       applyCustomerInfo: () => {},
-      showPaywall: (_opts?: { onConvert?: () => void; onDismiss?: () => void }) =>
-        {},
+      showPaywall: (_opts?: {
+        onConvert?: () => void;
+        onDismiss?: () => void;
+      }) => {},
       hidePaywall: () => {},
       paywallVisible: false,
     };
