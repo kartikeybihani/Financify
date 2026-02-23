@@ -3544,11 +3544,7 @@ async function handleAsk(
     }
 
     // Clean any markdown formatting from the response
-    const cleanedMessage = cleanResponseFormatting(
-      gaps.length > 0
-        ? `${cleanText}\n\n(Using available data - some data may be incomplete.)`
-        : cleanText,
-    );
+    const cleanedMessage = cleanResponseFormatting(cleanText);
 
     // Frontend handles all message splitting with sophisticated algorithm
     // Backend always sends full message string - frontend splits intelligently
