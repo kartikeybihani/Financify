@@ -3341,7 +3341,26 @@ async function handleAsk(
     // Memory extraction removed - migrating to Supermemory
     let memoryExtraction = [];
 
+    let didLogMainAskPrompt = false;
+
     async function callMainLLM(model, options = {}) {
+      const messages = [
+        { role: "system", content: system },
+        ...recentTurns,
+        {
+          role: "user",
+          content: userMessage,
+        },
+      ];
+
+      if (!didLogMainAskPrompt) {
+        didLogMainAskPrompt = true;
+        console.log(
+          "🧾 [LLM_PROMPT] Main ask messages payload:",
+          JSON.stringify(messages, null, 2),
+        );
+      }
+
       const resp = await fetch(
         "https://openrouter.ai/api/v1/chat/completions",
         {
@@ -3357,14 +3376,7 @@ async function handleAsk(
             max_tokens: 10000,
             stream: false,
             reasoning: { effort: "minimal", exclude: true }, // Disable reasoning output, only return actual response
-            messages: [
-              { role: "system", content: system },
-              ...recentTurns,
-              {
-                role: "user",
-                content: userMessage,
-              },
-            ],
+            messages,
           }),
         },
       );

@@ -158,6 +158,8 @@ CREATE TABLE public.conversation_logs (
   base_packs jsonb,
   classification_details jsonb,
   prompt_used text,
+  metrics jsonb,
+  request_id text,
   CONSTRAINT conversation_logs_pkey PRIMARY KEY (id),
   CONSTRAINT conversation_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
