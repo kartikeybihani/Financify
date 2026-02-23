@@ -35,9 +35,14 @@ import {
 } from "../lib/memoryUtils.js";
 import {
   detectUserState,
-  buildContextAwarePrompt,
+  buildContextAwarePromptDetailed,
   getClassificationPrompt,
 } from "../lib/prompt_engine.js";
+import {
+  buildMainAskMessages,
+  formatMainAskPromptLog,
+  shouldLogLLMPrompt,
+} from "../lib/llm/promptLogging.js";
 import {
   checkRateLimit,
   formatRetryAfterSeconds,
@@ -3316,7 +3321,7 @@ async function handleAsk(
     }
 
     // Build complete prompt using 6-layer architecture (with recent turns)
-    const system = buildContextAwarePrompt(
+    const systemBuild = buildContextAwarePromptDetailed(
       message,
       contextWithFeedback,
       financialDataForState,
@@ -3327,6 +3332,8 @@ async function handleAsk(
       runtimeHeader, // Context header (+ classification)
       recentTurns, // Recent conversation turns for context
     );
+
+    const system = systemBuild.system;
 
     // 5) Parallel processing: Main response + Memory extraction
     const llmT0 = Date.now();
@@ -3344,20 +3351,17 @@ async function handleAsk(
     let didLogMainAskPrompt = false;
 
     async function callMainLLM(model, options = {}) {
-      const messages = [
-        { role: "system", content: system },
-        ...recentTurns,
-        {
-          role: "user",
-          content: userMessage,
-        },
-      ];
+      const messages = buildMainAskMessages({ system, recentTurns, userMessage });
 
-      if (!didLogMainAskPrompt) {
+      if (!didLogMainAskPrompt && shouldLogLLMPrompt()) {
         didLogMainAskPrompt = true;
         console.log(
-          "🧾 [LLM_PROMPT] Main ask messages payload:",
-          JSON.stringify(messages, null, 2),
+          formatMainAskPromptLog({
+            model,
+            systemBuild,
+            recentTurns,
+            userMessage,
+          }),
         );
       }
 
@@ -3372,7 +3376,7 @@ async function handleAsk(
           signal: options.signal,
           body: JSON.stringify({
             model,
-            temperature: 0.25,
+            temperature: 0.4,
             max_tokens: 10000,
             stream: false,
             reasoning: { effort: "minimal", exclude: true }, // Disable reasoning output, only return actual response
