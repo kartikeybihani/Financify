@@ -916,7 +916,7 @@ async function syncItemTransactions(item_id, user_id) {
       if (accountIds.length > 0) {
         const { data: existingAccounts, error: accountsErr } = await supabase
           .from("accounts")
-          .select("account_id")
+          .select("account_id,name,official_name,mask,type,subtype")
           .in("account_id", accountIds)
           .eq("item_id", item_id);
 
@@ -926,8 +926,23 @@ async function syncItemTransactions(item_id, user_id) {
           );
         }
 
+        const isDegenerateAccount = (account) =>
+          !account?.name &&
+          !account?.official_name &&
+          !account?.mask &&
+          !account?.type &&
+          !account?.subtype;
+
+        const degenerateAccountIds = new Set(
+          (existingAccounts || [])
+            .filter((a) => isDegenerateAccount(a))
+            .map((a) => a.account_id),
+        );
+
         const validAccountIds = new Set(
-          existingAccounts?.map((a) => a.account_id) || [],
+          (existingAccounts || [])
+            .filter((a) => !degenerateAccountIds.has(a.account_id))
+            .map((a) => a.account_id),
         );
         const invalidRows = rows.filter(
           (r) => !validAccountIds.has(r.account_id),
@@ -937,12 +952,18 @@ async function syncItemTransactions(item_id, user_id) {
           const invalidAccountIds = [
             ...new Set(invalidRows.map((r) => r.account_id)),
           ];
+          const ghostAccountIds = invalidAccountIds.filter((id) =>
+            degenerateAccountIds.has(id),
+          );
+          const missingAccountIds = invalidAccountIds.filter(
+            (id) => !degenerateAccountIds.has(id),
+          );
           console.warn(
             `⚠️ Skipping ${
               invalidRows.length
-            } transactions for deleted accounts (account_ids: ${invalidAccountIds.join(
+            } transactions for invalid accounts (account_ids: ${invalidAccountIds.join(
               ", ",
-            )})`,
+            )}; ghost_accounts: ${ghostAccountIds.join(", ") || "none"}; missing_accounts: ${missingAccountIds.join(", ") || "none"})`,
           );
           // Filter out transactions with invalid account_ids instead of throwing error
           rows = rows.filter((r) => validAccountIds.has(r.account_id));

@@ -1793,14 +1793,22 @@ export default function InsightsScreen() {
         targetMonth !== undefined ? targetMonth : selectedMonth;
       const yearToUse = targetYear !== undefined ? targetYear : selectedYear;
 
-      // Filter out INTERNAL_TRANSFER transactions - they should not be counted in spending
-      const expenses = transactionsData.filter(
-        (tx) => tx.amount > 0 && tx.new_category !== "INTERNAL_TRANSFER",
+      // Exclude INTERNAL_TRANSFER everywhere (spending + detail views)
+      const nonTransferTransactions = transactionsData.filter(
+        (tx) => tx.new_category !== "INTERNAL_TRANSFER",
       );
+
+      // Spending breakdown is still expenses-only
+      const expenses = nonTransferTransactions.filter((tx) => tx.amount > 0);
 
       // Filter for selected month
       let currentMonthExpenses = filterTransactionsByMonth(
         expenses,
+        monthToUse,
+        yearToUse,
+      );
+      let currentMonthAllTransactions = filterTransactionsByMonth(
+        nonTransferTransactions,
         monthToUse,
         yearToUse,
       );
@@ -1819,6 +1827,11 @@ export default function InsightsScreen() {
 
         currentMonthExpenses = filterTransactionsByMonth(
           expenses,
+          mostRecentMonth,
+          mostRecentYear,
+        );
+        currentMonthAllTransactions = filterTransactionsByMonth(
+          nonTransferTransactions,
           mostRecentMonth,
           mostRecentYear,
         );
@@ -1876,7 +1889,7 @@ export default function InsightsScreen() {
       setCategoryBreakdown(filteredCategories);
 
       // Store current month transactions for category detail modal
-      setCurrentMonthTransactions(currentMonthExpenses);
+      setCurrentMonthTransactions(currentMonthAllTransactions);
 
       const uniqueCategories = [
         "All Categories",

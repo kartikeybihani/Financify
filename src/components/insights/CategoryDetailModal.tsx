@@ -123,10 +123,26 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [isModalTransitioning, setIsModalTransitioning] = useState(false);
 
-  const averageTransaction =
-    categoryTransactions.length > 0
-      ? data.amount / categoryTransactions.length
-      : 0;
+  const { netSpent, grossSpent, totalRefunds } = useMemo(() => {
+    // Plaid amounts are typically positive for spending (outflow) and negative for refunds/credits (inflow)
+    let spent = 0;
+    let refunds = 0;
+
+    for (const tx of categoryTransactions) {
+      if (typeof tx.amount !== "number") continue;
+      if (tx.amount > 0) {
+        spent += tx.amount;
+      } else if (tx.amount < 0) {
+        refunds += Math.abs(tx.amount);
+      }
+    }
+
+    return {
+      netSpent: spent - refunds,
+      grossSpent: spent,
+      totalRefunds: refunds,
+    };
+  }, [categoryTransactions]);
 
   // Calculate max height for transactions list (70% of screen minus header/stats space ~200px)
   const screenHeight = Dimensions.get("window").height;
@@ -174,21 +190,22 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
 
           <View style={styles.categoryDetailStats}>
             <View style={styles.categoryDetailStat}>
-              <Text style={styles.categoryDetailStatLabel}>Total Spent</Text>
+              <Text style={styles.categoryDetailStatLabel}>Net Spent</Text>
               <Text style={styles.categoryDetailStatValue}>
-                ${data.amount.toLocaleString()}
+                {netSpent < 0 ? "-" : ""}$
+                {Math.abs(netSpent).toLocaleString()}
               </Text>
             </View>
             <View style={styles.categoryDetailStat}>
-              <Text style={styles.categoryDetailStatLabel}>Transactions</Text>
+              <Text style={styles.categoryDetailStatLabel}>Gross Spent</Text>
               <Text style={styles.categoryDetailStatValue}>
-                {categoryTransactions.length}
+                ${grossSpent.toLocaleString()}
               </Text>
             </View>
             <View style={styles.categoryDetailStat}>
-              <Text style={styles.categoryDetailStatLabel}>Average</Text>
+              <Text style={styles.categoryDetailStatLabel}>Refunds</Text>
               <Text style={styles.categoryDetailStatValue}>
-                ${averageTransaction.toFixed(0)}
+                -${totalRefunds.toLocaleString()}
               </Text>
             </View>
           </View>
@@ -247,9 +264,25 @@ const CategoryDetailModal: React.FC<CategoryDetailModalProps> = ({
                         {formatDate(tx.authorized_date || tx.date)}
                       </Text>
                     </View>
-                    <Text style={styles.categoryTransactionAmount}>
-                      -${tx.amount.toFixed(2)}
-                    </Text>
+                    {(() => {
+                      const amount = typeof tx.amount === "number" ? tx.amount : 0;
+                      const isReceived = amount < 0;
+                      const isSpent = amount > 0;
+                      const sign = isReceived ? "+" : isSpent ? "-" : "";
+                      const formatted = `${sign}$${Math.abs(amount).toFixed(2)}`;
+
+                      return (
+                        <Text
+                          style={[
+                            styles.categoryTransactionAmount,
+                            isReceived ? { color: "#4CD964" } : null,
+                            !isSpent && !isReceived ? { color: "#888" } : null,
+                          ]}
+                        >
+                          {formatted}
+                        </Text>
+                      );
+                    })()}
                   </TouchableOpacity>
                 ))}
               </ScrollView>

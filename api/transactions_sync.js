@@ -1952,7 +1952,7 @@ export default async function handler(req, res) {
       if (accountIds.length > 0) {
         const { data: existingAccounts, error: accountsErr } = await supabase
           .from("accounts")
-          .select("account_id")
+          .select("account_id,name,official_name,mask,type,subtype")
           .in("account_id", accountIds)
           .eq("item_id", item_id);
 
@@ -1960,8 +1960,23 @@ export default async function handler(req, res) {
           console.error("❌ Failed to validate accounts:", accountsErr);
           // Don't throw - try to continue with what we have
         } else {
+          const isDegenerateAccount = (account) =>
+            !account?.name &&
+            !account?.official_name &&
+            !account?.mask &&
+            !account?.type &&
+            !account?.subtype;
+
+          const degenerateAccountIds = new Set(
+            (existingAccounts || [])
+              .filter((a) => isDegenerateAccount(a))
+              .map((a) => a.account_id),
+          );
+
           const validAccountIds = new Set(
-            existingAccounts?.map((a) => a.account_id) || [],
+            (existingAccounts || [])
+              .filter((a) => !degenerateAccountIds.has(a.account_id))
+              .map((a) => a.account_id),
           );
           const invalidRows = rows.filter(
             (r) => !validAccountIds.has(r.account_id),
@@ -1971,12 +1986,18 @@ export default async function handler(req, res) {
             const invalidAccountIds = [
               ...new Set(invalidRows.map((r) => r.account_id)),
             ];
+            const ghostAccountIds = invalidAccountIds.filter((id) =>
+              degenerateAccountIds.has(id),
+            );
+            const missingAccountIds = invalidAccountIds.filter(
+              (id) => !degenerateAccountIds.has(id),
+            );
             console.warn(
               `⚠️ Skipping ${
                 invalidRows.length
-              } transactions for missing accounts (account_ids: ${invalidAccountIds.join(
+              } transactions for invalid accounts (account_ids: ${invalidAccountIds.join(
                 ", ",
-              )})`,
+              )}; ghost_accounts: ${ghostAccountIds.join(", ") || "none"}; missing_accounts: ${missingAccountIds.join(", ") || "none"})`,
             );
 
             // Attempt to re-sync accounts from Plaid in case they were added/changed
@@ -2027,12 +2048,19 @@ export default async function handler(req, res) {
                     // Re-check if missing accounts now exist
                     const { data: recheckAccounts } = await supabase
                       .from("accounts")
-                      .select("account_id")
+                      .select("account_id,name,official_name,mask,type,subtype")
                       .in("account_id", invalidAccountIds)
                       .eq("item_id", item_id);
 
+                    const recheckDegenerateIds = new Set(
+                      (recheckAccounts || [])
+                        .filter((a) => isDegenerateAccount(a))
+                        .map((a) => a.account_id),
+                    );
                     const recheckValidIds = new Set(
-                      recheckAccounts?.map((a) => a.account_id) || [],
+                      (recheckAccounts || [])
+                        .filter((a) => !recheckDegenerateIds.has(a.account_id))
+                        .map((a) => a.account_id),
                     );
                     const restoredCount = invalidAccountIds.filter((id) =>
                       recheckValidIds.has(id),
