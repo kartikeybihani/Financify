@@ -120,7 +120,7 @@ export default function FinanceFact({
           onPress={handleDismiss}
           hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
         >
-          <Ionicons name="close" size={16} color="rgba(255,255,255,0.6)" />
+          <Ionicons name="close" size={16} color="rgba(255,255,255,0.75)" />
         </TouchableOpacity>
       </View>
     </View>
@@ -134,10 +134,10 @@ const styles = StyleSheet.create({
     marginTop: 32, // Spacing from options above
   },
   factCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    backgroundColor: "rgba(255, 255, 255, 0.065)",
     borderRadius: 50,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(255, 255, 255, 0.13)",
     padding: 14,
     flexDirection: "row",
     alignItems: "center",
@@ -153,7 +153,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   factText: {
-    color: "rgba(255, 255, 255, 0.85)",
+    color: "rgba(255, 255, 255, 0.9)",
     fontSize: 13,
     fontWeight: "500",
     lineHeight: 18,

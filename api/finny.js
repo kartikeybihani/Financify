@@ -1337,7 +1337,7 @@ export default async function handler(req, res) {
 
   // Derive user from Supabase JWT instead of trusting client context
   let serverUserId = null;
-  let userProfile = { name: null, age: null };
+  let userProfile = { name: null, age: null, monthly_income: null };
   const requestId = generateRequestId();
   const authStartTime = Date.now();
   let hadAuthHeader = false;
@@ -1365,6 +1365,10 @@ export default async function handler(req, res) {
               const meta = adminUser.user.user_metadata || {};
               userProfile.name = meta.name || meta.full_name || null;
               userProfile.age = meta.age || null;
+              const metaMonthlyIncome = Number(meta.monthly_income);
+              userProfile.monthly_income = Number.isFinite(metaMonthlyIncome)
+                ? metaMonthlyIncome
+                : null;
             }
           }
         } catch (e) {
@@ -1477,6 +1481,7 @@ export default async function handler(req, res) {
     name: null,
     age: null,
     occupation: null,
+    monthly_income: null,
     finny_style: "conversational",
     intent_context: "",
   };
@@ -1534,6 +1539,7 @@ export default async function handler(req, res) {
         name: null,
         age: null,
         occupation: null,
+        monthly_income: null,
         finny_style: "conversational",
         intent_context: "",
       };
@@ -1587,6 +1593,8 @@ export default async function handler(req, res) {
     name: userProfile.name || userProfileData.name,
     age: userProfileData.age || userProfile.age, // Prioritize profiles table over user_metadata
     occupation: userProfileData.occupation,
+    monthly_income:
+      userProfileData.monthly_income ?? userProfile.monthly_income ?? null,
     finny_style: userProfileData.finny_style,
     intent_context: userProfileData.intent_context,
   };
@@ -3184,6 +3192,7 @@ async function handleAsk(
       spend: packs.spend,
       invest: packs.invest, // Investment holdings
       goals: packs.goals, // Financial goals
+      profileMonthlyIncome: context?.profile?.monthly_income || null,
       categoryDetails: packs.categoryDetails, // Category transaction details for analysis
       transactions: packs.base?.recentTransactions || [],
       accounts: packs.base?.accounts || packs.accounts || [], // Include accounts for credit utilization detection
@@ -6559,6 +6568,14 @@ async function handleOffTopic(
       `Message: ${messageText}`,
       `Mode hint: ${isVenting ? "venting" : "general_off_topic"}`,
       userProfile?.name ? `User name: ${userProfile.name}` : null,
+      typeof userProfile?.monthly_income === "number" &&
+      Number.isFinite(userProfile.monthly_income) &&
+      userProfile.monthly_income > 0
+        ? `Monthly income: $${userProfile.monthly_income.toLocaleString(
+            undefined,
+            { maximumFractionDigits: 0 },
+          )}`
+        : null,
       userProfileForFinny?.profile
         ? `User profile:\n${
             userProfileForFinny.profile.static?.length > 0

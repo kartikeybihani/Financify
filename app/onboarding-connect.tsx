@@ -10,6 +10,7 @@ import {
   ScrollView,
   Animated,
   Image,
+  TextInput,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -71,6 +72,8 @@ export default function AccountConnectionScreen() {
     useState<AccountAnalysisResult | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [isFirstConnection, setIsFirstConnection] = useState(true);
+  const [monthlyIncomeInput, setMonthlyIncomeInput] = useState("");
+  const [isSavingIncome, setIsSavingIncome] = useState(false);
   const finnyCardOpacity = React.useRef(new Animated.Value(0)).current;
 
   const formatDate = (d: Date) => {
@@ -233,7 +236,7 @@ export default function AccountConnectionScreen() {
           // Load existing base_analysis if it exists
           const { data: profile } = await supabase
             .from("profiles")
-            .select("base_analysis")
+            .select("base_analysis, monthly_income")
             .eq("id", user.id)
             .maybeSingle();
 
@@ -260,6 +263,10 @@ export default function AccountConnectionScreen() {
                 error_message: analysis.error_message,
               });
             }
+          }
+
+          if (typeof profile?.monthly_income === "number") {
+            setMonthlyIncomeInput(String(Math.round(profile.monthly_income)));
           }
         }
       } catch (error) {
@@ -505,6 +512,33 @@ export default function AccountConnectionScreen() {
 
   const handleContinue = async () => {
     try {
+      const trimmedIncome = monthlyIncomeInput.replace(/[^0-9.]/g, "").trim();
+      if (trimmedIncome.length > 0) {
+        const parsedIncome = Number(trimmedIncome);
+        if (!Number.isFinite(parsedIncome) || parsedIncome <= 0) {
+          Alert.alert(
+            "Invalid income",
+            "Please enter a valid monthly income amount."
+          );
+          return;
+        }
+
+        setIsSavingIncome(true);
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (user?.id) {
+          const { error: incomeError } = await supabase
+            .from("profiles")
+            .update({
+              monthly_income: Math.round(parsedIncome),
+              monthly_income_updated_at: new Date().toISOString(),
+            })
+            .eq("id", user.id);
+          if (incomeError) throw incomeError;
+        }
+      }
+
       logger.info(
         "🧭 AccountConnectionScreen: Moving to final onboarding stage",
       );
@@ -541,6 +575,34 @@ export default function AccountConnectionScreen() {
         "We couldn't move to the next step. Please try again.",
         [{ text: "OK" }],
       );
+    } finally {
+      setIsSavingIncome(false);
+    }
+  };
+
+  const handleSafetyCommitment = async () => {
+    try {
+      await WebBrowser.openBrowserAsync("https://www.usefinny.com/safety", {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+        controlsColor: "#4A90E2",
+        showTitle: true,
+      });
+    } catch (error) {
+      Alert.alert("Error", "Cannot open safety page");
+      logger.error("Failed to open safety page:", error);
+    }
+  };
+
+  const handlePrivacyPolicy = async () => {
+    try {
+      await WebBrowser.openBrowserAsync("https://www.usefinny.com/privacy", {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+        controlsColor: "#4A90E2",
+        showTitle: true,
+      });
+    } catch (error) {
+      Alert.alert("Error", "Cannot open privacy policy");
+      logger.error("Failed to open privacy policy:", error);
     }
   };
 
@@ -569,7 +631,11 @@ export default function AccountConnectionScreen() {
 
   return (
     <LinearGradient
-      colors={["#1A1A2E", "#16213E", "#0D1117"]}
+      colors={[
+        "rgba(11, 15, 22, 0.99)",
+        "rgba(23, 33, 62, 0.95)",
+        "rgba(11, 15, 22, 0.99)",
+      ]}
       locations={[0, 0.5, 1]}
       style={styles.container}
     >
@@ -580,7 +646,6 @@ export default function AccountConnectionScreen() {
         {!hasConnectedBank ? (
           <>
             <View style={styles.topBar}>
-              <View style={styles.topBarSpacer} />
               <TouchableOpacity
                 style={styles.skipButton}
                 onPress={async () => {
@@ -603,7 +668,7 @@ export default function AccountConnectionScreen() {
                   enterDemoMode();
                 }}
               >
-                <Text style={styles.skipButtonText}>Skip: Checkout demo</Text>
+                <Text style={styles.skipButtonText}>Skip</Text>
               </TouchableOpacity>
             </View>
             <ScrollView
@@ -613,9 +678,10 @@ export default function AccountConnectionScreen() {
             >
               {/* Header - Clear and direct */}
               <View style={styles.header}>
-                <Text style={styles.title}>Connect your accounts</Text>
-                <Text style={styles.description}>
-                  Add your accounts to get started!
+                <Text
+                  style={[styles.description, styles.preConnectDescription]}
+                >
+                  Add your accounts to get started
                 </Text>
               </View>
 
@@ -627,14 +693,14 @@ export default function AccountConnectionScreen() {
                     <View style={styles.dataFlowItem}>
                       <MaterialCommunityIcons
                         name="bank"
-                        size={20}
+                        size={18}
                         color="#fff"
                       />
                       <Text style={styles.dataFlowLabel}>Your Bank</Text>
                     </View>
                     <Ionicons
                       name="arrow-forward"
-                      size={16}
+                      size={14}
                       color="rgba(255,255,255,0.4)"
                     />
                     <View style={styles.dataFlowItem}>
@@ -645,11 +711,15 @@ export default function AccountConnectionScreen() {
                     </View>
                     <Ionicons
                       name="arrow-forward"
-                      size={16}
+                      size={14}
                       color="rgba(255,255,255,0.4)"
                     />
                     <View style={styles.dataFlowItem}>
-                      <Text style={styles.finnyEmoji}>🐬</Text>
+                      {/* <Text style={styles.finnyEmoji}>🐬</Text> */}
+                      <Image
+                        source={require("../assets/images/appicon.png")}
+                        style={styles.finnyAvatar1}
+                      />
                       <Text style={styles.dataFlowLabel}>Read-only</Text>
                     </View>
                   </View>
@@ -658,7 +728,7 @@ export default function AccountConnectionScreen() {
                     <View style={styles.permissionRow}>
                       <Ionicons
                         name="checkmark-circle"
-                        size={16}
+                        size={14}
                         color="#00D4AA"
                       />
                       <Text style={styles.permissionText}>
@@ -666,31 +736,40 @@ export default function AccountConnectionScreen() {
                       </Text>
                     </View>
                     <View style={styles.permissionRow}>
-                      <Ionicons name="close-circle" size={16} color="#FF6B6B" />
+                      <Ionicons name="close-circle" size={14} color="#FF6B6B" />
                       <Text style={styles.permissionText}>
                         Finny cannot move money or make payments
                       </Text>
                     </View>
                     <View style={styles.permissionRow}>
-                      <Ionicons name="close-circle" size={16} color="#FF6B6B" />
+                      <Ionicons name="close-circle" size={14} color="#FF6B6B" />
                       <Text style={styles.permissionText}>
-                        Finny never sees your bank password
+                        Finny never sees your bank credentials
                       </Text>
                     </View>
                   </View>
                 </View>
               </View>
 
-              {/* Control section - You're in control */}
-              <View style={styles.controlSection}>
-                <View style={styles.controlCard}>
-                  <Ionicons name="settings-outline" size={20} color="#4A90E2" />
-                  <View style={styles.controlContent}>
-                    <Text style={styles.controlTitle}>You're in control</Text>
-                    <Text style={styles.controlSubtitle}>
-                      Disconnect anytime • Delete all data with one tap
-                    </Text>
-                  </View>
+              {/* AI disclosure for account connection */}
+              <View style={styles.aiDisclosureSection}>
+                <View style={styles.aiDisclosureCard}>
+                  <Text style={styles.aiDisclosureTitle}>AI Data Use</Text>
+                  <Text style={styles.aiDisclosureText}>
+                    By connecting you allow Finny to use your data with AI to
+                    generate personalized insights.
+                  </Text>
+                  <Text style={styles.aiDisclosureText}>
+                    We take your information seriously and handle it with care.
+                    Read our{" "}
+                    <Text
+                      style={styles.aiDisclosureTextLink}
+                      onPress={handlePrivacyPolicy}
+                    >
+                      safety commitment
+                    </Text>{" "}
+                    for more information.
+                  </Text>
                 </View>
               </View>
 
@@ -704,7 +783,7 @@ export default function AccountConnectionScreen() {
                     <View style={styles.plaidVerified}>
                       <Ionicons
                         name="shield-checkmark"
-                        size={12}
+                        size={11}
                         color="#00D4AA"
                       />
                       <Text style={styles.plaidVerifiedText}>
@@ -718,9 +797,11 @@ export default function AccountConnectionScreen() {
                   </Text>
                 </View>
               </View>
-
-              {/* Connect button */}
-              <View style={styles.buttonContainer}>
+            </ScrollView>
+            <View style={styles.preConnectFooter}>
+              <View
+                style={[styles.buttonContainer, styles.footerButtonContainer]}
+              >
                 <TouchableOpacity
                   style={[
                     styles.connectButton,
@@ -732,40 +813,29 @@ export default function AccountConnectionScreen() {
                   {isLoading ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <>
-                      <Text style={styles.connectButtonText}>
-                        Connect my accounts
-                      </Text>
-                      {/* <Ionicons name="arrow-forward" size={18} color="#fff" /> */}
-                    </>
+                    <Text style={styles.connectButtonText}>
+                      Connect my accounts
+                    </Text>
                   )}
                 </TouchableOpacity>
                 <Text style={styles.timeEstimate}>Takes about 60 seconds</Text>
-                <TouchableOpacity
-                  style={styles.safetyLinkButton}
-                  onPress={async () => {
-                    try {
-                      await WebBrowser.openBrowserAsync(
-                        "https://www.usefinny.com/safety",
-                        {
-                          presentationStyle:
-                            WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
-                          controlsColor: "#4A90E2",
-                          showTitle: true,
-                        },
-                      );
-                    } catch (error) {
-                      Alert.alert("Error", "Cannot open safety page");
-                      logger.error("Failed to open safety page:", error);
-                    }
-                  }}
-                >
-                  <Text style={styles.safetyLinkText}>
-                    Learn more about Finny's safety commitment
-                  </Text>
-                </TouchableOpacity>
+                <View style={styles.linkRow}>
+                  <TouchableOpacity
+                    style={styles.safetyLinkButton}
+                    onPress={handleSafetyCommitment}
+                  >
+                    <Text style={styles.safetyLinkText}>Safety commitment</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.linkDivider}>•</Text>
+                  <TouchableOpacity
+                    style={styles.safetyLinkButton}
+                    onPress={handlePrivacyPolicy}
+                  >
+                    <Text style={styles.safetyLinkText}>Privacy</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
-            </ScrollView>
+            </View>
           </>
         ) : (
           <View style={styles.content}>
@@ -860,6 +930,27 @@ export default function AccountConnectionScreen() {
                 </Animated.View>
               )}
 
+              <View style={styles.incomeAskCard}>
+                <Text style={styles.incomeAskTitle}>
+                  Quick one: what is your monthly income?
+                </Text>
+                <Text style={styles.incomeAskSubtitle}>
+                  Optional, but it helps Finny personalize insights faster.
+                </Text>
+                <View style={styles.incomeInputRow}>
+                  <Text style={styles.incomeDollar}>$</Text>
+                  <TextInput
+                    style={styles.incomeInput}
+                    value={monthlyIncomeInput}
+                    onChangeText={setMonthlyIncomeInput}
+                    placeholder="e.g. 5000"
+                    placeholderTextColor="rgba(255,255,255,0.45)"
+                    keyboardType="numeric"
+                    returnKeyType="done"
+                  />
+                </View>
+              </View>
+
               {connectedAccounts.map((account) => (
                 <View key={account.account_id} style={styles.accountCard}>
                   <View style={styles.cardHeader}>
@@ -922,8 +1013,13 @@ export default function AccountConnectionScreen() {
               <TouchableOpacity
                 style={styles.continueButton}
                 onPress={handleContinue}
+                disabled={isSavingIncome}
               >
-                <Text style={styles.continueButtonText}>Continue</Text>
+                {isSavingIncome ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={styles.continueButtonText}>Continue</Text>
+                )}
               </TouchableOpacity>
             </View>
           </View>
@@ -964,10 +1060,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     paddingHorizontal: 20,
     paddingTop: Platform.OS === "ios" ? 4 : 6,
-    paddingBottom: 4,
-  },
-  topBarSpacer: {
-    flex: 1,
+    paddingBottom: 2,
   },
   skipButton: {
     paddingVertical: 4,
@@ -981,7 +1074,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    paddingTop: Platform.OS === "ios" ? 40 : 20,
+    paddingTop: 0,
   },
   content: {
     flex: 1,
@@ -994,11 +1087,12 @@ const styles = StyleSheet.create({
   },
   preConnectScrollContent: {
     padding: 24,
-    paddingTop: 5,
-    paddingBottom: 20,
+    paddingTop: 8,
+    paddingBottom: 16,
   },
   header: {
     marginBottom: 24,
+    marginTop: 8,
   },
   title: {
     fontSize: 26,
@@ -1016,16 +1110,22 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   description: {
-    fontSize: 15,
-    color: "rgba(255, 255, 255, 0.75)",
-    lineHeight: 22,
+    fontSize: 24,
+    color: "#fff",
+    // lineHeight: 24,
     textAlign: "left",
+    fontFamily: "Manrope",
+    fontWeight: "900",
+  },
+  preConnectDescription: {
+    marginTop: 12,
+    fontWeight: "600",
   },
   // Section label style
   sectionLabel: {
     fontSize: 11,
     fontWeight: "600",
-    color: "rgba(255, 255, 255, 0.5)",
+    color: "rgba(255, 255, 255, 0.58)",
     letterSpacing: 1,
     marginBottom: 10,
   },
@@ -1062,22 +1162,23 @@ const styles = StyleSheet.create({
   },
   // Transparency section
   transparencySection: {
-    marginBottom: 16,
+    marginTop: 6,
+    marginBottom: 12,
   },
   transparencyCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
-    borderRadius: 14,
-    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.055)",
+    borderRadius: 13,
+    padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
   },
   dataFlowRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    marginBottom: 14,
+    paddingVertical: 10,
+    paddingHorizontal: 6,
+    marginBottom: 12,
   },
   dataFlowItem: {
     alignItems: "center",
@@ -1085,92 +1186,92 @@ const styles = StyleSheet.create({
   },
   dataFlowLabel: {
     fontSize: 10,
-    color: "rgba(255, 255, 255, 0.6)",
+    color: "rgba(255, 255, 255, 0.72)",
     fontWeight: "500",
   },
   plaidBadge: {
-    backgroundColor: "#000",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
+    backgroundColor: "rgb(255, 255, 255)",
+    paddingHorizontal: 6,
+    paddingVertical: 3,
     borderRadius: 4,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.14)",
   },
   plaidBadgeText: {
     fontSize: 12,
     fontWeight: "700",
-    color: "#fff",
+    color: "rgba(0, 0, 0, 0.96)",
   },
   finnyEmoji: {
-    fontSize: 20,
+    fontSize: 18,
   },
   permissionsList: {
-    gap: 10,
+    gap: 9,
     borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.08)",
-    paddingTop: 14,
+    borderTopColor: "rgba(255, 255, 255, 0.12)",
+    paddingTop: 12,
   },
   permissionRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 10,
+    gap: 8,
   },
   permissionText: {
-    fontSize: 13,
-    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.88)",
   },
-  // Control section
-  controlSection: {
-    marginBottom: 16,
-    marginTop: 10,
+  aiDisclosureSection: {
+    marginBottom: 22,
+    marginTop: 14,
   },
-  controlCard: {
-    backgroundColor: "rgba(74, 144, 226, 0.08)",
+  aiDisclosureCard: {
+    backgroundColor: "rgba(52, 102, 176, 0.2)",
     borderRadius: 12,
     padding: 14,
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
     borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.15)",
+    borderColor: "rgba(134, 184, 255, 0.35)",
+    gap: 8,
   },
-  controlContent: {
-    flex: 1,
-  },
-  controlTitle: {
+  aiDisclosureTitle: {
     fontSize: 14,
     fontWeight: "600",
     color: "#fff",
-    marginBottom: 2,
   },
-  controlSubtitle: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.6)",
+  aiDisclosureText: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.86)",
+    lineHeight: 15,
+  },
+  aiDisclosureTextLink: {
+    color: "#4A90E2",
+    textDecorationLine: "underline",
   },
   // Plaid credibility section
   plaidSection: {
-    marginBottom: 14,
-    marginTop: 15,
+    marginBottom: 10,
+    marginTop: 10,
   },
   plaidCard: {
-    backgroundColor: "rgba(0, 0, 0, 0.3)",
-    borderRadius: 14,
-    padding: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.055)",
+    borderRadius: 12,
+    padding: 12,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
   },
   plaidHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 10,
+    marginBottom: 8,
   },
   plaidLogoBadge: {
     backgroundColor: "#fff",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
     borderRadius: 6,
   },
   plaidLogoText: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "800",
     color: "#000",
   },
@@ -1180,14 +1281,14 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   plaidVerifiedText: {
-    fontSize: 11,
-    color: "#00D4AA",
+    fontSize: 10,
+    color: "#72E7CC",
     fontWeight: "500",
   },
   plaidDescription: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.7)",
-    lineHeight: 19,
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.8)",
+    lineHeight: 16,
   },
   // Time estimate
   timeEstimate: {
@@ -1196,18 +1297,26 @@ const styles = StyleSheet.create({
     textAlign: "center",
     // marginTop: 12,
   },
-  // Safety link button
+  linkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    paddingVertical: 1,
+  },
+  linkDivider: {
+    color: "rgba(255, 255, 255, 0.4)",
+    fontSize: 12,
+  },
   safetyLinkButton: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    gap: 6,
-    // marginTop: 16,
-    paddingVertical: 1,
+    paddingVertical: 2,
   },
   safetyLinkText: {
-    fontSize: 13,
-    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.72)",
     textDecorationLine: "underline",
   },
   // Legacy trust styles (keeping for reference, can remove later)
@@ -1257,11 +1366,11 @@ const styles = StyleSheet.create({
     paddingBottom: 16,
   },
   accountCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 16,
     padding: 16,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
@@ -1322,13 +1431,23 @@ const styles = StyleSheet.create({
   },
   addMoreText: {
     fontSize: 14,
-    color: "rgba(255, 255, 255, 0.6)",
+    color: "rgba(255, 255, 255, 0.7)",
     textAlign: "left",
     marginTop: 5,
   },
   buttonContainer: {
     gap: 12,
     marginTop: 20,
+  },
+  preConnectFooter: {
+    paddingHorizontal: 24,
+    paddingTop: 10,
+    paddingBottom: 12,
+    borderTopWidth: 0,
+    backgroundColor: "transparent",
+  },
+  footerButtonContainer: {
+    marginTop: 0,
   },
   connectButton: {
     backgroundColor: "#4A90E2",
@@ -1346,7 +1465,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   addAccountButton: {
-    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    backgroundColor: "rgba(74, 144, 226, 0.22)",
     borderRadius: 26,
     padding: 16,
     alignItems: "center",
@@ -1355,10 +1474,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     gap: 8,
     borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.3)",
+    borderColor: "rgba(135, 187, 255, 0.4)",
   },
   addAccountButtonText: {
-    color: "#4A90E2",
+    color: "#9BC4FF",
     fontSize: 16,
     fontWeight: "600",
   },
@@ -1428,13 +1547,13 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   finnyCard: {
-    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    backgroundColor: "rgba(61, 122, 212, 0.18)",
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
     borderWidth: 1.5,
-    borderColor: "rgba(74, 144, 226, 0.3)",
-    shadowColor: "#4A90E2",
+    borderColor: "rgba(137, 188, 255, 0.36)",
+    shadowColor: "#5A9EF0",
     shadowOffset: {
       width: 0,
       height: 4,
@@ -1453,11 +1572,21 @@ const styles = StyleSheet.create({
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: "rgba(74, 144, 226, 0.25)",
+    backgroundColor: "rgba(61, 122, 212, 0.34)",
     justifyContent: "center",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.4)",
+    borderColor: "rgba(147, 194, 255, 0.45)",
+  },
+  finnyAvatar1: {
+    width: 23,
+    height: 23,
+    borderRadius: 18,
+    // backgroundColor: "rgba(74, 144, 226, 0.25)",
+    justifyContent: "center",
+    alignItems: "center",
+    // borderWidth: 1,
+    // borderColor: "rgba(74, 144, 226, 0.4)",
   },
   finnyLabel: {
     fontSize: 12,
@@ -1475,5 +1604,45 @@ const styles = StyleSheet.create({
   finnyCardError: {
     backgroundColor: "rgba(255, 107, 107, 0.1)",
     borderColor: "rgba(255, 107, 107, 0.3)",
+  },
+  incomeAskCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
+  },
+  incomeAskTitle: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "600",
+    marginBottom: 6,
+  },
+  incomeAskSubtitle: {
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 12,
+    marginBottom: 10,
+  },
+  incomeInputRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)",
+    borderRadius: 10,
+    backgroundColor: "rgba(0, 0, 0, 0.16)",
+    paddingHorizontal: 12,
+  },
+  incomeDollar: {
+    color: "#9BC4FF",
+    fontSize: 18,
+    marginRight: 8,
+    fontWeight: "600",
+  },
+  incomeInput: {
+    flex: 1,
+    color: "#fff",
+    fontSize: 16,
+    paddingVertical: 10,
   },
 });

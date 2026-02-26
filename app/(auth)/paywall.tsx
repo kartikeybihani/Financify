@@ -813,7 +813,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                             <View style={styles.pricingAmountRow}>
                               <Text style={styles.pricingAmount}>
                                 {monthlyPackage?.product.priceString ||
-                                  "$10.99"}
+                                  "$12.99"}
                               </Text>
                               <Text style={styles.pricingPeriod}>/month</Text>
                             </View>

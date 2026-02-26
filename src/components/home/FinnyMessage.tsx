@@ -27,6 +27,23 @@ interface FinnyMessageProps {
   onboardingStatus?: OnboardingStatus | null;
 }
 
+interface OnboardingMessageConfig {
+  displayMessage: string;
+  linkTo: "insights" | "chat";
+  chatPrefillMessage?: string;
+}
+
+interface ContextualMessageConfig {
+  displayMessage: string;
+  chatPrefillMessage: string;
+}
+
+const appendChatEmoji = (text: string): string => {
+  const trimmed = text.trim();
+  if (!trimmed) return trimmed;
+  return `${trimmed} 💬`;
+};
+
 export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
   ({
     goals = [],
@@ -46,7 +63,7 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
     const progress = onboardingStatus?.progress;
 
     // Generate onboarding-based messages if onboarding is not complete
-    const getOnboardingMessage = useMemo(() => {
+    const getOnboardingMessage = useMemo<OnboardingMessageConfig | null>(() => {
       if (isOnboardingComplete || !progress) {
         return null;
       }
@@ -54,15 +71,17 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
       // Priority: Step 2 (budget) over Step 3 (ask Finny)
       if (!progress.budget_setup) {
         return {
-          message: "Set up your budget to track spending and stay on track!",
+          displayMessage: "Set up your budget to track spending and stay on track!",
           linkTo: "insights" as const,
         };
       }
 
       if (!progress.finny_asked) {
         return {
-          message: "Ask Finny anything about your finances!",
+          displayMessage: "Ask Finny anything about your finances!",
           linkTo: "chat" as const,
+          chatPrefillMessage:
+            "Help me understand my finances and what I should focus on first.",
         };
       }
 
@@ -70,7 +89,7 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
     }, [isOnboardingComplete, progress]);
 
     // Generate context-aware questions that create curiosity (only if onboarding is complete)
-    const getContextualQuestion = useMemo(() => {
+    const getContextualPrompt = useMemo<ContextualMessageConfig | null>(() => {
       // If onboarding is not complete, return null (we'll use onboarding message instead)
       if (!isOnboardingComplete) {
         return null;
@@ -87,35 +106,60 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
       if (insight?.type === "budget_progress") {
         const { percentage, remaining, daysLeft } = insight.budgetProgress!;
         if (percentage > 100) {
-          return `You've overspent by ${Math.abs(remaining).toFixed(
-            0,
-          )}%. What should you cut?`;
+          return {
+            displayMessage: `You've overspent by ${Math.abs(remaining).toFixed(
+              0,
+            )}%. What should you cut?`,
+            chatPrefillMessage: `I'm overspent by ${Math.abs(remaining).toFixed(
+              0,
+            )}%. What should I cut first?`,
+          };
         }
         if (percentage > 80) {
-          return `You've spent ${percentage.toFixed(
-            0,
-          )}% of your budget with ${daysLeft} days left. Want to adjust?`;
+          return {
+            displayMessage: `You've spent ${percentage.toFixed(
+              0,
+            )}% of your budget with ${daysLeft} days left. Want to adjust?`,
+            chatPrefillMessage: `I've spent ${percentage.toFixed(
+              0,
+            )}% of my budget with ${daysLeft} days left. Should I adjust my plan?`,
+          };
         }
         if (percentage > 50) {
-          return `You're ${percentage.toFixed(
-            0,
-          )}% through your budget. On track?`;
+          return {
+            displayMessage: `You're ${percentage.toFixed(
+              0,
+            )}% through your budget. On track?`,
+            chatPrefillMessage: `I'm ${percentage.toFixed(
+              0,
+            )}% through my budget. Am I on track?`,
+          };
         }
       }
 
       // Priority 2: Category alert questions
       if (insight?.type === "category_alert") {
         const { category, percentage } = insight.categoryAlert!;
-        return `You're spending ${percentage.toFixed(
-          0,
-        )}% on ${category}. Is that normal for you?`;
+        return {
+          displayMessage: `You're spending ${percentage.toFixed(
+            0,
+          )}% on ${category}. Is that normal for you?`,
+          chatPrefillMessage: `I'm spending ${percentage.toFixed(
+            0,
+          )}% on ${category}. Is that normal for me?`,
+        };
       }
 
       // Priority 3: Spending spike questions
       if (spendingData && spendingData.lastMonthChange > 15) {
-        return `Your spending is up ${spendingData.lastMonthChange.toFixed(
-          0,
-        )}% this month. What changed?`;
+        return {
+          displayMessage: `Your spending is up ${spendingData.lastMonthChange.toFixed(
+            0,
+          )}% this month. What changed?`,
+          chatPrefillMessage: `My spending is up ${spendingData.lastMonthChange.toFixed(
+            0,
+          )}% this month. Can you help me figure out what changed?`,
+        };
       }
 
       // Priority 4: Goal progress questions
@@ -142,49 +186,93 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
               ? (closestGoal.current_amount / closestGoal.target_amount) * 100
               : 0;
           if (progress > 50 && progress < 90) {
-            return `You're ${progress.toFixed(
-              0,
-            )}% to your goal. Want to accelerate it?`;
+            return {
+              displayMessage: `You're ${progress.toFixed(
+                0,
+              )}% to your goal. Want to accelerate it?`,
+              chatPrefillMessage: `I'm ${progress.toFixed(
+                0,
+              )}% to my goal. How can I accelerate it?`,
+            };
           }
         }
       }
 
       // Priority 5: Investment questions
       if (investmentsTotal > 0 && investmentsTotal > totalBalance * 0.2) {
-        return `Your investments are ${(
-          (investmentsTotal / totalBalance) *
-          100
-        ).toFixed(0)}% of net worth. Optimized?`;
+        return {
+          displayMessage: `Your investments are ${(
+            (investmentsTotal / totalBalance) *
+            100
+          ).toFixed(0)}% of net worth. Optimized?`,
+          chatPrefillMessage: `My investments are ${(
+            (investmentsTotal / totalBalance) *
+            100
+          ).toFixed(0)}% of my net worth. Is this optimized?`,
+        };
       }
 
       // Priority 6: Debt questions
       if (liabilitiesTotal > 0 && liabilitiesTotal > totalBalance * 0.3) {
-        return `Your debt is ${(
-          (liabilitiesTotal / totalBalance) *
-          100
-        ).toFixed(0)}% of net worth. Want a payoff plan?`;
+        return {
+          displayMessage: `Your debt is ${(
+            (liabilitiesTotal / totalBalance) *
+            100
+          ).toFixed(0)}% of net worth. Want a payoff plan?`,
+          chatPrefillMessage: `My debt is ${(
+            (liabilitiesTotal / totalBalance) *
+            100
+          ).toFixed(0)}% of my net worth. Help me make a payoff plan.`,
+        };
       }
 
       // Priority 7: Net worth growth questions
       if (netWorthChange > 5) {
-        return `Net worth up ${netWorthChange.toFixed(
-          1,
-        )}% this month! What's driving it?`;
+        return {
+          displayMessage: `Net worth up ${netWorthChange.toFixed(
+            1,
+          )}% this month! What's driving it?`,
+          chatPrefillMessage: `My net worth is up ${netWorthChange.toFixed(
+            1,
+          )}% this month. What's driving it?`,
+        };
       }
 
       // Priority 8: No goals questions
       if (goals.length === 0 && totalBalance > 0) {
-        return `What's your biggest financial goal right now?`;
+        return {
+          displayMessage: `What's your biggest financial goal right now?`,
+          chatPrefillMessage:
+            "I want to set a financial goal, but I'm not sure where to start.",
+        };
       }
 
       // Default curiosity-driven questions
-      const defaultQuestions = [
-        `Where did most of your money go this month?`,
-        `What's your biggest spending category?`,
-        `Are you on track with your financial goals?`,
-        `What's one thing you could optimize today?`,
-        `How does your spending compare to last month?`,
-        `What's your biggest financial opportunity?`,
+      const defaultQuestions: ContextualMessageConfig[] = [
+        {
+          displayMessage: `Where did most of your money go this month?`,
+          chatPrefillMessage: `Where did most of my money go this month?`,
+        },
+        {
+          displayMessage: `What's your biggest spending category?`,
+          chatPrefillMessage: `What's my biggest spending category?`,
+        },
+        {
+          displayMessage: `Are you on track with your financial goals?`,
+          chatPrefillMessage: `Am I on track with my financial goals?`,
+        },
+        {
+          displayMessage: `What's one thing you could optimize today?`,
+          chatPrefillMessage: `What's one thing I should optimize today?`,
+        },
+        {
+          displayMessage: `How does your spending compare to last month?`,
+          chatPrefillMessage: `How does my spending compare to last month?`,
+        },
+        {
+          displayMessage: `What's your biggest financial opportunity?`,
+          chatPrefillMessage: `What's my biggest financial opportunity right now?`,
+        },
       ];
 
       return defaultQuestions[
@@ -203,21 +291,30 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
 
     // Determine the message and link destination
     const displayMessage =
-      getOnboardingMessage?.message ||
-      getContextualQuestion ||
+      getOnboardingMessage?.displayMessage ||
+      getContextualPrompt?.displayMessage ||
       "Ask Finny anything!";
     const linkDestination = getOnboardingMessage?.linkTo || "chat";
+    const chatPrefillMessage =
+      getOnboardingMessage?.chatPrefillMessage ||
+      getContextualPrompt?.chatPrefillMessage ||
+      "Help me understand my finances and what I should focus on right now.";
 
     // Demo mode: use a nice message (same layout as normal)
     if (isDemoMode) {
-      const demoMessage = "Plan me a 7 day trip to Hawaii, can I afford it?";
+      const demoDisplayMessage = "Plan me a 7 day trip to Hawaii, can I afford it?";
+      const demoChatPrefillMessage =
+        "Can I afford a 7 day trip to Hawaii? Help me plan it.";
       return (
         <View style={styles.finnyMessageContainer}>
           <TouchableOpacity
             style={styles.finnyMessage}
             activeOpacity={0.8}
             onPress={() => {
-              AppStorage.setItemSync("initialChatMessage", demoMessage);
+              AppStorage.setItemSync(
+                "initialChatMessage",
+                appendChatEmoji(demoChatPrefillMessage),
+              );
               router.push("/(tabs)/chat");
             }}
           >
@@ -234,7 +331,7 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
             </View>
             <View style={styles.finnyMessageContent}>
               <Text style={styles.finnyMessageTitle}>Ask Finny</Text>
-              <Text style={styles.finnyMessageText}>{demoMessage}</Text>
+              <Text style={styles.finnyMessageText}>{demoDisplayMessage}</Text>
             </View>
           </TouchableOpacity>
         </View>
@@ -245,6 +342,7 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
       if (getOnboardingMessage) {
         // Navigate to the appropriate tab based on onboarding step
         if (linkDestination === "insights") {
+          AppStorage.setItemSync("initialChatMessage", "");
           router.push("/(tabs)/insights");
           setTimeout(() => {
             DeviceEventEmitter.emit("navigateToInsightsSection", {
@@ -252,12 +350,18 @@ export const FinnyMessage: React.FC<FinnyMessageProps> = React.memo(
             });
           }, 200);
         } else {
+          AppStorage.setItemSync(
+            "initialChatMessage",
+            appendChatEmoji(chatPrefillMessage),
+          );
           router.push("/(tabs)/chat");
         }
       } else {
-        // Set initial message based on current insight/question
-        const question = getContextualQuestion || displayMessage;
-        AppStorage.setItemSync("initialChatMessage", question);
+        // Set initial message in first-person phrasing for the chat input
+        AppStorage.setItemSync(
+          "initialChatMessage",
+          appendChatEmoji(chatPrefillMessage),
+        );
         router.push("/(tabs)/chat");
       }
     };

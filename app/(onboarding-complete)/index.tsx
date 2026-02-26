@@ -1147,14 +1147,14 @@ export default function FinalScreen() {
     <View style={styles.container}>
       <StatusBar
         barStyle="light-content"
-        backgroundColor="rgba(10, 14, 20, 0.98)"
+        backgroundColor="rgba(11, 15, 22, 0.98)"
       />
       <LinearGradient
         colors={[
-          "rgba(10, 14, 20, 0.98)",
-          "rgba(22, 33, 62, 0.92)",
-          "rgba(22, 33, 62, 0.92)",
-          "rgba(10, 14, 20, 0.98)",
+          "rgba(11, 15, 22, 0.99)",
+          "rgba(23, 33, 62, 0.95)",
+          "rgba(23, 33, 62, 0.95)",
+          "rgba(11, 15, 22, 0.99)",
         ]}
         locations={[0, 0.3, 0.4, 1]}
         style={styles.gradientContainer}
@@ -1316,7 +1316,7 @@ export default function FinalScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "rgba(10, 14, 20, 0.98)",
+    backgroundColor: "rgba(11, 15, 22, 0.98)",
   },
   gradientContainer: {
     flex: 1,
@@ -1339,10 +1339,10 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   firstReadCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    backgroundColor: "rgba(255, 255, 255, 0.055)",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.10)",
+    borderColor: "rgba(255,255,255,0.12)",
     marginHorizontal: Math.max(20, width * 0.05),
     marginTop: 22,
     padding: 16,
@@ -1365,7 +1365,7 @@ const styles = StyleSheet.create({
     letterSpacing: 1.6,
     textTransform: "uppercase",
     fontFamily: "ManropeSemiBold",
-    color: "rgba(255,255,255,0.58)",
+    color: "rgba(255,255,255,0.64)",
   },
   firstReadHero: {
     fontSize: 15,
@@ -1380,19 +1380,19 @@ const styles = StyleSheet.create({
   firstReadMirror: {
     fontSize: 13,
     fontFamily: "ManropeBold",
-    color: "rgba(255,255,255,0.92)",
+    color: "rgba(255,255,255,0.94)",
     lineHeight: 20,
     marginBottom: 14,
   },
   firstReadRule: {
     borderLeftWidth: 2,
-    borderLeftColor: "rgba(255,255,255,0.15)",
+    borderLeftColor: "rgba(255,255,255,0.22)",
     paddingLeft: 10,
   },
   firstReadBody: {
     fontSize: 13,
     fontFamily: "Manrope",
-    color: "rgba(255,255,255,0.85)",
+    color: "rgba(255,255,255,0.88)",
     lineHeight: 19,
     marginBottom: 10,
   },
@@ -1402,7 +1402,7 @@ const styles = StyleSheet.create({
   firstReadClose: {
     fontSize: 14,
     fontFamily: "ManropeMedium",
-    color: "rgba(255,255,255,0.72)",
+    color: "rgba(255,255,255,0.78)",
     lineHeight: 21,
     marginTop: 12,
   },
@@ -1420,12 +1420,12 @@ const styles = StyleSheet.create({
     marginTop: 32,
   },
   insightCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 16,
     marginBottom: 0,
     padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderColor: "rgba(255, 255, 255, 0.13)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
@@ -1459,14 +1459,14 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   cardSubtitle: {
-    color: "rgba(255, 255, 255, 0.75)",
+    color: "rgba(255, 255, 255, 0.82)",
     fontSize: 14,
     fontWeight: "500",
     lineHeight: 20,
     marginTop: 4,
   },
   cardSubtitleInline: {
-    color: "rgba(255, 255, 255, 0.75)",
+    color: "rgba(255, 255, 255, 0.82)",
     fontSize: 13,
     fontWeight: "500",
     lineHeight: 18,
@@ -1513,7 +1513,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(255, 255, 255, 0.24)",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 6,
@@ -1537,7 +1537,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   categoryBoxPercentage: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(255, 255, 255, 0.24)",
     paddingHorizontal: 6,
     paddingVertical: 3,
     borderRadius: 10,
@@ -1550,7 +1550,7 @@ const styles = StyleSheet.create({
   insightsNudgeText: {
     fontSize: 12,
     fontWeight: "500",
-    color: "rgba(255, 255, 255, 0.45)",
+    color: "rgba(255, 255, 255, 0.56)",
     textAlign: "center",
     marginTop: 12,
     fontStyle: "italic",
@@ -1574,7 +1574,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#4A90E2",
+    backgroundColor: "#5A9EF0",
   },
   loadingText: {
     color: "rgba(255, 255, 255, 0.7)",
@@ -1601,7 +1601,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.12)",
+    borderColor: "rgba(255,255,255,0.16)",
   },
   buttonText: {
     color: "#fff",
@@ -1631,7 +1631,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: "rgba(10, 14, 20, 0.95)",
+    backgroundColor: "rgba(11, 15, 22, 0.95)",
     zIndex: 1000,
     justifyContent: "center",
     alignItems: "center",
@@ -1661,7 +1661,7 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#4A90E2",
+    backgroundColor: "#5A9EF0",
     marginHorizontal: 4,
     opacity: 0.3,
   },

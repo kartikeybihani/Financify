@@ -894,94 +894,58 @@ export async function getOrCreateCurrentBudgetPeriod(
   today: Date = new Date()
 ): Promise<BudgetPeriod | null> {
   try {
-    // Calculate current month boundaries in LOCAL timezone
+    // Keep a single active period per user; refresh its date window to current month.
     const year = today.getFullYear();
     const month = today.getMonth();
     const periodStart = new Date(year, month, 1);
-    const periodEnd = new Date(year, month + 1, 0); // Last day of month
-
-    // Use local date strings to avoid timezone shifts
+    const periodEnd = new Date(year, month + 1, 0);
     const periodStartStr = formatLocalDate(periodStart);
     const periodEndStr = formatLocalDate(periodEnd);
 
-    // Try to find existing period for this month
-    // First, try exact match
-    const { data: existing, error: fetchError } = await supabase
+    // Prefer the latest active period, regardless of stored month window.
+    const { data: existingActive, error: fetchError } = await supabase
       .from("budget_periods")
       .select("*")
       .eq("user_id", userId)
-      .eq("period_start", periodStartStr)
-      .eq("period_end", periodEndStr)
+      .eq("status", "active")
+      .order("updated_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (fetchError && fetchError.code !== "PGRST116") {
-      // PGRST116 is "not found" which is fine
-      logger.error("Error fetching budget period:", fetchError);
+      logger.error("Error fetching active budget period:", fetchError);
       return null;
     }
 
-    if (existing) {
-      return existing as BudgetPeriod;
-    }
+    if (existingActive) {
+      // Keep reporting windows aligned to current month without creating new rows.
+      if (
+        existingActive.period_start !== periodStartStr ||
+        existingActive.period_end !== periodEndStr
+      ) {
+        const { data: updatedPeriod, error: updateError } = await supabase
+          .from("budget_periods")
+          .update({
+            period_start: periodStartStr,
+            period_end: periodEndStr,
+          })
+          .eq("id", existingActive.id)
+          .select()
+          .single();
 
-    // If no exact match, check if there's a period that overlaps with this month
-    // (in case dates are slightly off due to timezone issues)
-    const { data: overlappingPeriod } = await supabase
-      .from("budget_periods")
-      .select("*")
-      .eq("user_id", userId)
-      .lte("period_start", periodEndStr)
-      .gte("period_end", periodStartStr)
-      .maybeSingle();
-
-    if (overlappingPeriod) {
-      // Update the period with correct dates
-      const { data: updatedPeriod, error: updateError } = await supabase
-        .from("budget_periods")
-        .update({
-          period_start: periodStartStr,
-          period_end: periodEndStr,
-        })
-        .eq("id", overlappingPeriod.id)
-        .select()
-        .single();
-      
-      if (!updateError && updatedPeriod) {
-        return updatedPeriod as BudgetPeriod;
+        if (!updateError && updatedPeriod) {
+          return updatedPeriod as BudgetPeriod;
+        }
       }
+
+      return {
+        ...(existingActive as BudgetPeriod),
+        period_start: periodStartStr,
+        period_end: periodEndStr,
+      };
     }
 
-    // Before creating a new period, archive any old active periods
-    // Find all active periods that have ended (period_end < current month start)
-    const { data: oldActivePeriods, error: archiveError } = await supabase
-      .from("budget_periods")
-      .select("id")
-      .eq("user_id", userId)
-      .eq("status", "active")
-      .lt("period_end", periodStartStr);
-
-    if (archiveError) {
-      logger.error("Error fetching old active periods for archiving:", archiveError);
-      // Continue anyway - don't block new period creation
-    } else if (oldActivePeriods && oldActivePeriods.length > 0) {
-      // Archive all old active periods
-      const oldPeriodIds = oldActivePeriods.map((p) => p.id);
-      const { error: updateStatusError } = await supabase
-        .from("budget_periods")
-        .update({ status: "archived" })
-        .in("id", oldPeriodIds);
-
-      if (updateStatusError) {
-        logger.error("Error archiving old active periods:", updateStatusError);
-        // Continue anyway - don't block new period creation
-      } else {
-        logger.info(
-          `Archived ${oldPeriodIds.length} old active budget period(s) for user ${userId}`
-        );
-      }
-    }
-
-    // Create new period
+    // No active period yet: create one.
     const periodName = periodStart.toLocaleDateString("en-US", {
       month: "long",
       year: "numeric",
@@ -995,7 +959,7 @@ export async function getOrCreateCurrentBudgetPeriod(
         period_start: periodStartStr,
         period_end: periodEndStr,
         period_type: "monthly",
-        status: "active", // Create as active (old periods are archived above)
+        status: "active",
       })
       .select()
       .single();
@@ -1003,57 +967,6 @@ export async function getOrCreateCurrentBudgetPeriod(
     if (createError) {
       logger.error("Error creating budget period:", createError);
       return null;
-    }
-
-    // Copy budget entries from the previous month's budget
-    // Find the most recent period (archived or active) that ended before current month
-    const { data: previousPeriod, error: prevPeriodError } = await supabase
-      .from("budget_periods")
-      .select("id")
-      .eq("user_id", userId)
-      .lt("period_end", periodStartStr)
-      .order("period_end", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-
-    if (prevPeriodError && prevPeriodError.code !== "PGRST116") {
-      logger.error("Error fetching previous budget period:", prevPeriodError);
-      // Continue - new period created, just no entries copied
-    } else if (previousPeriod) {
-      // Get all budget entries from the previous period
-      const { data: previousEntries, error: entriesError } = await supabase
-        .from("budget_entries")
-        .select("*")
-        .eq("budget_period_id", previousPeriod.id);
-
-      if (entriesError) {
-        logger.error("Error fetching previous budget entries:", entriesError);
-        // Continue - new period created, just no entries copied
-      } else if (previousEntries && previousEntries.length > 0) {
-        // Copy all entries to the new period, keeping everything the same except budget_period_id
-        const newEntries = previousEntries.map((entry) => ({
-          budget_period_id: newPeriod.id,
-          scope_type: entry.scope_type,
-          category_id: entry.category_id,
-          group_key: entry.group_key,
-          label: entry.label,
-          limit_amount: entry.limit_amount,
-          is_flexible: entry.is_flexible ?? false,
-        }));
-
-        const { error: insertError } = await supabase
-          .from("budget_entries")
-          .insert(newEntries);
-
-        if (insertError) {
-          logger.error("Error copying budget entries from previous period:", insertError);
-          // Continue - new period created, just entries not copied
-        } else {
-          logger.info(
-            `Copied ${newEntries.length} budget entries from previous period to new period for user ${userId}`
-          );
-        }
-      }
     }
 
     return newPeriod as BudgetPeriod;
@@ -1082,43 +995,24 @@ export async function getCurrentBudgetPeriodIfExists(
     const periodStartStr = formatLocalDate(periodStart);
     const periodEndStr = formatLocalDate(periodEnd);
 
-    // Exact match first
+    // Read-only lookup: return latest active period regardless of stored month.
     const { data: existing, error: fetchError } = await supabase
       .from("budget_periods")
       .select("*")
       .eq("user_id", userId)
-      .eq("period_start", periodStartStr)
-      .eq("period_end", periodEndStr)
+      .eq("status", "active")
+      .order("updated_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (fetchError && fetchError.code !== "PGRST116") {
-      logger.error("Error fetching budget period:", fetchError);
+      logger.error("Error fetching active budget period:", fetchError);
       return null;
     }
 
     if (existing) {
-      return existing as BudgetPeriod;
-    }
-
-    // Fallback: overlap match (timezone/legacy safety)
-    const { data: overlappingPeriod, error: overlapError } = await supabase
-      .from("budget_periods")
-      .select("*")
-      .eq("user_id", userId)
-      .lte("period_start", periodEndStr)
-      .gte("period_end", periodStartStr)
-      .maybeSingle();
-
-    if (overlapError && overlapError.code !== "PGRST116") {
-      logger.error("Error fetching overlapping budget period:", overlapError);
-      return null;
-    }
-
-    if (overlappingPeriod) {
-      // Normalize dates for legacy/overlap periods without mutating the DB.
-      // We want actuals calculations to use the canonical month boundaries.
       return {
-        ...(overlappingPeriod as BudgetPeriod),
+        ...(existing as BudgetPeriod),
         period_start: periodStartStr,
         period_end: periodEndStr,
       };

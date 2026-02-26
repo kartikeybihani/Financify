@@ -393,6 +393,8 @@ CREATE TABLE public.profiles (
   early_insights jsonb DEFAULT '[]'::jsonb,
   base_analysis jsonb,
   skipped_to_demo_at timestamp with time zone,
+  monthly_income numeric CHECK (monthly_income IS NULL OR monthly_income >= 0::numeric),
+  monthly_income_updated_at timestamp with time zone,
   CONSTRAINT profiles_pkey PRIMARY KEY (id),
   CONSTRAINT profiles_id_fkey FOREIGN KEY (id) REFERENCES auth.users(id)
 );

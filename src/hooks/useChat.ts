@@ -497,11 +497,8 @@ export const useChat = (userName?: string | null) => {
           await saveCurrentSession();
         }
       } else if (nextAppState === 'active' && appStateRef.current === 'background') {
-        // App came to foreground - start fresh session
-        logger.info("App came to foreground - starting fresh session");
-        if (chatMessages.length > 1) {
-          await startNewSession();
-        }
+        // Keep active chat intact when returning to foreground.
+        logger.info("App came to foreground - keeping current session");
       }
       appStateRef.current = nextAppState;
     });

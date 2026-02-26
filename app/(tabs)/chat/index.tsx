@@ -10,6 +10,8 @@ import {
   Easing,
   KeyboardAvoidingView,
   Keyboard,
+  LayoutAnimation,
+  UIManager,
   ListRenderItem,
   Dimensions,
   ActivityIndicator,
@@ -86,9 +88,10 @@ function ChatScreenContent() {
   const [showStartersModal, setShowStartersModal] = useState(false);
   const [showStockTickerModal, setShowStockTickerModal] = useState(false);
   const [stockTickerDraft, setStockTickerDraft] = useState("");
-  const minInputHeight = responsiveHeight(4);
-  const maxInputHeight = responsiveHeight(14);
-  const [inputHeight, setInputHeight] = useState(minInputHeight);
+  const inputLineHeight = Math.round(isSmallScreen ? 13 : 18);
+  const inputVerticalPadding =
+    Platform.OS === "ios" ? responsivePadding(1) : 0;
+  const minInputHeight = Math.round(inputLineHeight + inputVerticalPadding * 2);
   const [dimensions, setDimensions] = useState(Dimensions.get("window"));
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
@@ -97,8 +100,10 @@ function ChatScreenContent() {
   );
   const [showFeedbackNotification, setShowFeedbackNotification] =
     useState(false);
+  const [isInputFocused, setIsInputFocused] = useState(false);
   const atBottomRef = useRef(true);
   const contentHeights = useRef({ content: 0, view: 0 });
+  const inputFocusAnimation = useRef(new Animated.Value(0)).current;
 
   // Handle orientation changes
   useEffect(() => {
@@ -110,18 +115,33 @@ function ChatScreenContent() {
 
   // Handle keyboard state - use keyboardWill* on iOS so layout animates in sync with keyboard
   useEffect(() => {
+    if (
+      Platform.OS === "android" &&
+      UIManager.setLayoutAnimationEnabledExperimental
+    ) {
+      UIManager.setLayoutAnimationEnabledExperimental(true);
+    }
+
     const showEvent =
       Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
     const hideEvent =
       Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
 
     const handleShow = (e: any) => {
-      if (Platform.OS === "ios") Keyboard.scheduleLayoutAnimation(e);
+      if (Platform.OS === "ios") {
+        Keyboard.scheduleLayoutAnimation(e);
+      } else {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
       setIsKeyboardOpen(true);
     };
 
     const handleHide = (e: any) => {
-      if (Platform.OS === "ios") Keyboard.scheduleLayoutAnimation(e);
+      if (Platform.OS === "ios") {
+        Keyboard.scheduleLayoutAnimation(e);
+      } else {
+        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+      }
       setIsKeyboardOpen(false);
     };
 
@@ -133,6 +153,15 @@ function ChatScreenContent() {
       hideListener?.remove();
     };
   }, []);
+
+  useEffect(() => {
+    Animated.timing(inputFocusAnimation, {
+      toValue: isInputFocused ? 1 : 0,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+  }, [isInputFocused, inputFocusAnimation]);
 
   const {
     chatMessages,
@@ -275,6 +304,11 @@ function ChatScreenContent() {
 
     return data;
   }, [chatMessages, showNudges, isTyping, progressStatus]);
+
+  const hasUserMessage = React.useMemo(
+    () => chatMessages.some((msg) => msg.sender === "user"),
+    [chatMessages],
+  );
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -470,7 +504,6 @@ function ChatScreenContent() {
     pushChat("user", messageText);
     Keyboard.dismiss();
     setUserInput("");
-    setInputHeight(minInputHeight);
     setIsTyping(true);
 
     try {
@@ -856,40 +889,56 @@ function ChatScreenContent() {
                 },
               ]}
             >
-              <FlatList
-                horizontal
-                showsHorizontalScrollIndicator={false}
-                contentContainerStyle={styles.suggestionsContainer}
-                data={suggestions}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    onPress={() => !isTyping && handleSend(item.text)}
-                    style={[
-                      styles.suggestionChip,
-                      isTyping && styles.suggestionChipDisabled,
-                    ]}
-                    activeOpacity={isTyping ? 1 : 0.7}
-                    disabled={isTyping}
-                  >
-                    <Ionicons
-                      name={item.icon}
-                      size={13}
-                      color={isTyping ? "#666" : "#FFFFFF"}
-                      style={styles.suggestionIcon}
-                    />
-                    <Text
+              {!hasUserMessage && (
+                <FlatList
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.suggestionsContainer}
+                  data={suggestions}
+                  renderItem={({ item }) => (
+                    <TouchableOpacity
+                      onPress={() => !isTyping && handleSend(item.text)}
                       style={[
-                        styles.suggestionText,
-                        isTyping && styles.suggestionTextDisabled,
+                        styles.suggestionChip,
+                        isTyping && styles.suggestionChipDisabled,
                       ]}
+                      activeOpacity={isTyping ? 1 : 0.7}
+                      disabled={isTyping}
                     >
-                      {item.text}
-                    </Text>
-                  </TouchableOpacity>
-                )}
-                keyExtractor={(item, index) => index.toString()}
-              />
-              <View style={styles.inputBar}>
+                      <Ionicons
+                        name={item.icon}
+                        size={13}
+                        color={isTyping ? "#666" : "#FFFFFF"}
+                        style={styles.suggestionIcon}
+                      />
+                      <Text
+                        style={[
+                          styles.suggestionText,
+                          isTyping && styles.suggestionTextDisabled,
+                        ]}
+                      >
+                        {item.text}
+                      </Text>
+                    </TouchableOpacity>
+                  )}
+                  keyExtractor={(item, index) => index.toString()}
+                />
+              )}
+              <Animated.View
+                style={[
+                  styles.inputBar,
+                  {
+                    transform: [
+                      {
+                        scale: inputFocusAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [1, 1.01],
+                        }),
+                      },
+                    ],
+                  },
+                ]}
+              >
                 <TouchableOpacity
                   style={styles.plusButton}
                   onPress={() => setShowStartersModal(true)}
@@ -897,32 +946,34 @@ function ChatScreenContent() {
                   <Ionicons name="add" size={24} color="#4A90E2" />
                 </TouchableOpacity>
                 <TextInput
-                  placeholder="Ask Finny anything about money..."
+                  placeholder="Ask finny anything..."
                   placeholderTextColor="#888"
-                  style={[styles.input, { height: inputHeight }]}
+                  style={[
+                    styles.input,
+                    {
+                      height: minInputHeight,
+                      lineHeight: inputLineHeight,
+                      paddingTop: inputVerticalPadding,
+                      paddingBottom: inputVerticalPadding,
+                    },
+                  ]}
                   value={userInput}
                   onChangeText={setUserInput}
-                  multiline
+                  multiline={false}
+                  scrollEnabled
                   returnKeyLabel="return"
-                  textAlignVertical="top"
-                  onContentSizeChange={(event) => {
-                    const nextHeight = Math.min(
-                      Math.max(
-                        event.nativeEvent.contentSize.height,
-                        minInputHeight,
-                      ),
-                      maxInputHeight,
-                    );
-                    setInputHeight(nextHeight);
-                  }}
                   onSubmitEditing={() => handleSend()}
                   onFocus={() => {
+                    setIsInputFocused(true);
                     // Scroll to bottom only if user isn't already at the bottom
                     if (!atBottomRef.current) {
                       setTimeout(() => {
                         scrollToAbsoluteBottom();
                       }, 150);
                     }
+                  }}
+                  onBlur={() => {
+                    setIsInputFocused(false);
                   }}
                 />
                 <TouchableOpacity
@@ -939,7 +990,7 @@ function ChatScreenContent() {
                     color={isTyping ? "#888" : "#4A90E2"}
                   />
                 </TouchableOpacity>
-              </View>
+              </Animated.View>
             </View>
           </View>
         </KeyboardAvoidingView>

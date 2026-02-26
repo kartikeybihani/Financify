@@ -188,6 +188,22 @@ export default function BudgetCreationModal({
         throw new Error("User not authenticated");
       }
 
+      // Persist monthly income to profile so it can be reused across the app.
+      try {
+        await supabase
+          .from("profiles")
+          .update({
+            monthly_income: Math.round(incomeValue),
+            monthly_income_updated_at: new Date().toISOString(),
+          })
+          .eq("id", user.id);
+      } catch (profileUpdateError) {
+        logger.warn(
+          "[BUDGET] Failed to persist monthly income from budget modal:",
+          profileUpdateError,
+        );
+      }
+
       // Call API to generate budget
       const response = await authenticatedFetch(
         `${API_BASE_URL}/api/transactions_sync`,
@@ -310,6 +326,25 @@ export default function BudgetCreationModal({
         return;
       }
 
+      // Autofill income from profile if available.
+      try {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("monthly_income")
+          .eq("id", user.id)
+          .maybeSingle();
+
+        if (
+          typeof profile?.monthly_income === "number" &&
+          Number.isFinite(profile.monthly_income) &&
+          profile.monthly_income > 0
+        ) {
+          setIncome(String(Math.round(profile.monthly_income)));
+        }
+      } catch (profileError) {
+        logger.warn("[BUDGET] Failed to fetch monthly_income:", profileError);
+      }
+
       setLoading(true);
       const response = await authenticatedFetch(
         `${API_BASE_URL}/api/transactions_sync`,
@@ -364,46 +399,26 @@ export default function BudgetCreationModal({
         return;
       }
 
-      // Find and delete draft period
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = today.getMonth();
-      const periodStart = new Date(year, month, 1);
-      const periodEnd = new Date(year, month + 1, 0);
-
-      const formatLocalDate = (date: Date) => {
-        const y = date.getFullYear();
-        const m = String(date.getMonth() + 1).padStart(2, "0");
-        const d = String(date.getDate()).padStart(2, "0");
-        return `${y}-${m}-${d}`;
-      };
-
-      const periodStartStr = formatLocalDate(periodStart);
-      const periodEndStr = formatLocalDate(periodEnd);
-
-      const { data: draftPeriod } = await supabase
+      // Delete all draft periods for this user to keep a single clean draft state.
+      const { data: draftPeriods } = await supabase
         .from("budget_periods")
         .select("id")
         .eq("user_id", user.id)
-        .eq("period_start", periodStartStr)
-        .eq("period_end", periodEndStr)
-        .eq("status", "draft")
-        .maybeSingle();
+        .eq("status", "draft");
 
-      if (draftPeriod) {
-        // Clear budget_analysis and delete entries first
+      const draftIds = (draftPeriods || []).map((period) => period.id);
+      if (draftIds.length > 0) {
         await supabase
           .from("budget_periods")
           .update({ budget_analysis: null })
-          .eq("id", draftPeriod.id);
+          .in("id", draftIds);
 
         await supabase
           .from("budget_entries")
           .delete()
-          .eq("budget_period_id", draftPeriod.id);
+          .in("budget_period_id", draftIds);
 
-        // Delete period
-        await supabase.from("budget_periods").delete().eq("id", draftPeriod.id);
+        await supabase.from("budget_periods").delete().in("id", draftIds);
       }
     } catch (err) {
       logger.error("[BUDGET] Error deleting draft budget:", err);

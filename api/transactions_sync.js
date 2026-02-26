@@ -60,22 +60,46 @@ async function getOrCreateCurrentBudgetPeriod(userId) {
   const periodStartStr = formatLocalDate(periodStart);
   const periodEndStr = formatLocalDate(periodEnd);
 
-  // Try to find existing period
+  // Keep a single active period and reuse it.
   const { data: existing, error: fetchError } = await supabase
     .from("budget_periods")
     .select("*")
     .eq("user_id", userId)
-    .eq("period_start", periodStartStr)
-    .eq("period_end", periodEndStr)
+    .eq("status", "active")
+    .order("updated_at", { ascending: false })
+    .limit(1)
     .maybeSingle();
 
   if (fetchError && fetchError.code !== "PGRST116") {
-    console.error("Error fetching budget period:", fetchError);
+    console.error("Error fetching active budget period:", fetchError);
     return null;
   }
 
   if (existing) {
-    return existing;
+    if (
+      existing.period_start !== periodStartStr ||
+      existing.period_end !== periodEndStr
+    ) {
+      const { data: updatedPeriod, error: updateError } = await supabase
+        .from("budget_periods")
+        .update({
+          period_start: periodStartStr,
+          period_end: periodEndStr,
+        })
+        .eq("id", existing.id)
+        .select()
+        .single();
+
+      if (!updateError && updatedPeriod) {
+        return updatedPeriod;
+      }
+    }
+
+    return {
+      ...existing,
+      period_start: periodStartStr,
+      period_end: periodEndStr,
+    };
   }
 
   // Create new period
@@ -762,24 +786,14 @@ async function handleBudgetCreation(req, res, userId) {
     // If categories are provided and save flag is true, save to database
     if (categories && Array.isArray(categories) && save) {
       try {
-        // Get or create budget period (prefer draft if exists)
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = today.getMonth();
-        const periodStart = new Date(year, month, 1);
-        const periodEnd = new Date(year, month + 1, 0);
-
-        const periodStartStr = formatLocalDate(periodStart);
-        const periodEndStr = formatLocalDate(periodEnd);
-
-        // First, check for draft period
+        // Get or create budget period (prefer latest draft if exists)
         const { data: draftPeriod } = await supabase
           .from("budget_periods")
           .select("*")
           .eq("user_id", userId)
-          .eq("period_start", periodStartStr)
-          .eq("period_end", periodEndStr)
           .eq("status", "draft")
+          .order("updated_at", { ascending: false })
+          .limit(1)
           .maybeSingle();
 
         let period = draftPeriod;
@@ -1119,13 +1133,12 @@ async function handleBudgetCreation(req, res, userId) {
 
       // Save as draft budget
       try {
-        // Check for existing draft period first
+        // Check for existing draft period first (latest draft regardless of month)
         const today = new Date();
         const year = today.getFullYear();
         const month = today.getMonth();
         const periodStart = new Date(year, month, 1);
         const periodEnd = new Date(year, month + 1, 0);
-
         const periodStartStr = formatLocalDate(periodStart);
         const periodEndStr = formatLocalDate(periodEnd);
 
@@ -1133,9 +1146,9 @@ async function handleBudgetCreation(req, res, userId) {
           .from("budget_periods")
           .select("id")
           .eq("user_id", userId)
-          .eq("period_start", periodStartStr)
-          .eq("period_end", periodEndStr)
           .eq("status", "draft")
+          .order("updated_at", { ascending: false })
+          .limit(1)
           .maybeSingle();
 
         let period = null;
@@ -1155,66 +1168,29 @@ async function handleBudgetCreation(req, res, userId) {
 
           period = existingDraft;
         } else {
-          // Check if there's an active period - if so, create new draft
-          const { data: activePeriod } = await supabase
+          // Create new draft period
+          const periodName =
+            periodStart.toLocaleDateString("en-US", {
+              month: "long",
+              year: "numeric",
+            }) + " Budget";
+
+          const { data: newPeriod, error: createError } = await supabase
             .from("budget_periods")
-            .select("*")
-            .eq("user_id", userId)
-            .eq("period_start", periodStartStr)
-            .eq("period_end", periodEndStr)
-            .eq("status", "active")
-            .maybeSingle();
+            .insert({
+              user_id: userId,
+              name: periodName,
+              period_start: periodStartStr,
+              period_end: periodEndStr,
+              period_type: "monthly",
+              status: "draft",
+              budget_analysis: rawResponse,
+            })
+            .select()
+            .single();
 
-          if (activePeriod) {
-            // Create new draft period (user wants to regenerate)
-            const periodName =
-              periodStart.toLocaleDateString("en-US", {
-                month: "long",
-                year: "numeric",
-              }) + " Budget";
-
-            const { data: newPeriod, error: createError } = await supabase
-              .from("budget_periods")
-              .insert({
-                user_id: userId,
-                name: periodName,
-                period_start: periodStartStr,
-                period_end: periodEndStr,
-                period_type: "monthly",
-                status: "draft",
-                budget_analysis: rawResponse,
-              })
-              .select()
-              .single();
-
-            if (!createError && newPeriod) {
-              period = newPeriod;
-            }
-          } else {
-            // Create new draft period
-            const periodName =
-              periodStart.toLocaleDateString("en-US", {
-                month: "long",
-                year: "numeric",
-              }) + " Budget";
-
-            const { data: newPeriod, error: createError } = await supabase
-              .from("budget_periods")
-              .insert({
-                user_id: userId,
-                name: periodName,
-                period_start: periodStartStr,
-                period_end: periodEndStr,
-                period_type: "monthly",
-                status: "draft",
-                budget_analysis: rawResponse,
-              })
-              .select()
-              .single();
-
-            if (!createError && newPeriod) {
-              period = newPeriod;
-            }
+          if (!createError && newPeriod) {
+            period = newPeriod;
           }
         }
 
@@ -1336,23 +1312,14 @@ export default async function handler(req, res) {
         return res.status(401).json({ error: "Unauthorized" });
       }
 
-      // Check for draft budget period for current month
-      const today = new Date();
-      const year = today.getFullYear();
-      const month = today.getMonth();
-      const periodStart = new Date(year, month, 1);
-      const periodEnd = new Date(year, month + 1, 0);
-
-      const periodStartStr = formatLocalDate(periodStart);
-      const periodEndStr = formatLocalDate(periodEnd);
-
+      // Check latest draft budget period
       const { data: draftPeriod } = await supabase
         .from("budget_periods")
         .select("*")
         .eq("user_id", user.id)
-        .eq("period_start", periodStartStr)
-        .eq("period_end", periodEndStr)
         .eq("status", "draft")
+        .order("updated_at", { ascending: false })
+        .limit(1)
         .maybeSingle();
 
       if (!draftPeriod) {

@@ -36,7 +36,6 @@ export default function SignupScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [formError, setFormError] = useState("");
-  const [agreedToTerms, setAgreedToTerms] = useState(false);
 
   // Verification overlay state
   const [showVerificationOverlay, setShowVerificationOverlay] = useState(false);
@@ -91,11 +90,6 @@ export default function SignupScreen() {
 
     if (!lastName || !lastName.trim()) {
       setFormError("Please enter your last name");
-      return false;
-    }
-
-    if (!agreedToTerms) {
-      setFormError("Please agree to the Privacy Policy and Terms of Service");
       return false;
     }
 
@@ -743,44 +737,22 @@ export default function SignupScreen() {
               <Text style={styles.formErrorText}>{formError}</Text>
             ) : null}
 
-            <TouchableOpacity
-              style={styles.checkboxRow}
-              onPress={() => setAgreedToTerms((prev) => !prev)}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name={agreedToTerms ? "checkbox" : "square-outline"}
-                size={22}
-                color={agreedToTerms ? "#4A90E2" : "rgba(255, 255, 255, 0.5)"}
-                style={styles.checkboxIcon}
-              />
-              <Text style={styles.checkboxLabel}>
-                I agree to the{" "}
-                <Text
-                  style={styles.privacyLink}
-                  onPress={() => handleTermsConditions()}
-                >
-                  Terms & Conditions
-                </Text>
-                . I understand my data may be shared with AI providers to give
-                me personalized recommendations. Read more in our{" "}
-                <Text
-                  style={styles.privacyLink}
-                  onPress={() => handlePrivacyPolicy()}
-                >
-                  Privacy Policy
-                </Text>
-                .
+            <Text style={styles.privacyText}>
+              By creating an account, you agree to our{" "}
+              <Text style={styles.privacyLink} onPress={handleTermsConditions}>
+                Terms & Conditions
+              </Text>{" "}
+              and{" "}
+              <Text style={styles.privacyLink} onPress={handlePrivacyPolicy}>
+                Privacy Policy
               </Text>
-            </TouchableOpacity>
+              .
+            </Text>
 
             <TouchableOpacity
-              style={[
-                styles.button,
-                (loading || !agreedToTerms) && styles.buttonDisabled,
-              ]}
+              style={[styles.button, loading && styles.buttonDisabled]}
               onPress={handleSignUp}
-              disabled={loading || !agreedToTerms}
+              disabled={loading}
             >
               <LinearGradient
                 colors={["#4A90E2", "#5DA0F2"]}
@@ -1043,28 +1015,12 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     marginTop: 5,
   },
-  checkboxRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginTop: 0,
-    marginBottom: 10,
-    gap: 12,
-  },
-  checkboxIcon: {
-    marginTop: 2,
-  },
-  checkboxLabel: {
-    flex: 1,
-    textAlign: "left",
-    color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 12,
-    lineHeight: 18,
-  },
   privacyText: {
     textAlign: "left",
-    marginTop: 5,
+    marginTop: 0,
+    marginBottom: 12,
     color: "rgba(255, 255, 255, 0.6)",
-    fontSize: 12,
+    fontSize: 11,
     lineHeight: 18,
   },
   privacyLink: {

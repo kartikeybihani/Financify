@@ -261,7 +261,11 @@ export default function AboutYouScreen() {
 
   return (
     <LinearGradient
-      colors={["#1A1A2E", "#16213E", "#0D1117"]}
+      colors={[
+        "rgba(11, 15, 22, 0.99)",
+        "rgba(23, 33, 62, 0.95)",
+        "rgba(11, 15, 22, 0.99)",
+      ]}
       locations={[0, 0.5, 1]}
       style={styles.container}
     >
@@ -477,7 +481,10 @@ export default function AboutYouScreen() {
             <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
               <View style={styles.referralModalWrapper}>
                 <LinearGradient
-                  colors={["rgba(31, 31, 31, 0.98)", "rgba(18, 18, 18, 0.99)"]}
+                  colors={[
+                    "rgba(20, 28, 48, 0.98)",
+                    "rgba(12, 18, 34, 0.99)",
+                  ]}
                   style={styles.referralModalContent}
                 >
                   <ScrollView
@@ -620,10 +627,10 @@ const styles = StyleSheet.create({
     letterSpacing: 0.3,
   },
   inputWrapSmall: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(255,255,255,0.06)",
     borderRadius: 14,
     borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: "rgba(255,255,255,0.12)",
     paddingHorizontal: 14,
     paddingVertical: Platform.OS === "ios" ? 14 : 11,
     shadowColor: "#000",
@@ -642,10 +649,10 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   inputWrap: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(255,255,255,0.06)",
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: "rgba(255,255,255,0.12)",
     paddingHorizontal: 16,
     paddingVertical: Platform.OS === "ios" ? 16 : 12,
     shadowColor: "#000",
@@ -660,10 +667,10 @@ const styles = StyleSheet.create({
   input: { color: "#fff", fontSize: 16, fontWeight: "500", flex: 1 },
   placeholder: { color: "rgba(255,255,255,0.5)" },
   occupationInputWrap: {
-    backgroundColor: "rgba(255,255,255,0.05)",
+    backgroundColor: "rgba(255,255,255,0.06)",
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: "rgba(255,255,255,0.15)",
+    borderColor: "rgba(255,255,255,0.12)",
     paddingHorizontal: 16,
     paddingVertical: Platform.OS === "ios" ? 12 : 10,
     shadowColor: "#000",
@@ -681,7 +688,7 @@ const styles = StyleSheet.create({
     maxHeight: 240,
   },
   helperText: {
-    color: "rgba(255,255,255,0.5)",
+    color: "rgba(255,255,255,0.62)",
     fontSize: 13,
     fontWeight: "400",
     marginTop: 8,
@@ -700,12 +707,12 @@ const styles = StyleSheet.create({
   glassButton: {
     backgroundColor: "#3b88e3",
     borderWidth: 1.3,
-    borderColor: "rgba(74, 145, 226, 0.3)",
+    borderColor: "rgba(135, 187, 255, 0.42)",
     paddingVertical: 16,
     paddingHorizontal: 32,
     alignItems: "center",
     borderRadius: 25,
-    shadowColor: "#4A90E2",
+    shadowColor: "#5A9EF0",
     shadowOpacity: 0.4,
     shadowRadius: 4,
     shadowOffset: { width: 2, height: 2 },
@@ -719,7 +726,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   modalContent: {
-    backgroundColor: "#1A1A2E",
+    backgroundColor: "rgba(15, 22, 38, 0.98)",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     height: 300,
@@ -756,7 +763,7 @@ const styles = StyleSheet.create({
   },
   picker: {
     height: 200,
-    backgroundColor: "#1A1A2E",
+    backgroundColor: "rgba(15, 22, 38, 0.98)",
   },
   pickerItem: {
     color: "#fff",
@@ -769,7 +776,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
   },
   agePickerModal: {
-    backgroundColor: "#1A1A2E",
+    backgroundColor: "rgba(15, 22, 38, 0.98)",
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     paddingBottom: 20,
@@ -783,7 +790,7 @@ const styles = StyleSheet.create({
     paddingVertical: 16,
     borderBottomWidth: 1,
     borderBottomColor: "rgba(255,255,255,0.1)",
-    backgroundColor: "#1A1A2E",
+    backgroundColor: "rgba(15, 22, 38, 0.98)",
   },
   agePickerContent: {
     flex: 1,
@@ -854,7 +861,7 @@ const styles = StyleSheet.create({
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -871,18 +878,18 @@ const styles = StyleSheet.create({
   },
   referralOption: {
     width: "48%",
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 16,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
     alignItems: "center",
     position: "relative",
   },
   referralOptionSelected: {
-    borderColor: "rgba(74, 144, 226, 0.5)",
-    backgroundColor: "rgba(74, 144, 226, 0.15)",
+    borderColor: "rgba(137, 188, 255, 0.5)",
+    backgroundColor: "rgba(61, 122, 212, 0.2)",
   },
   referralIconContainer: {
     width: 44,
@@ -913,7 +920,7 @@ const styles = StyleSheet.create({
     right: 8,
   },
   locationDisplay: {
-    color: "#4A90E2",
+    color: "#8BB9FF",
     fontSize: 12,
     fontWeight: "500",
     marginTop: 4,

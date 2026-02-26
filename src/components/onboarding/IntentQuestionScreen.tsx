@@ -167,7 +167,11 @@ export default function IntentQuestionScreen({
 
   return (
     <LinearGradient
-      colors={["#1A1A2E", "#16213E", "#0D1117"]}
+      colors={[
+        "rgba(11, 15, 22, 0.99)",
+        "rgba(23, 33, 62, 0.95)",
+        "rgba(11, 15, 22, 0.99)",
+      ]}
       locations={[0, 0.5, 1]}
       style={styles.container}
     >
@@ -250,11 +254,11 @@ const styles = StyleSheet.create({
     marginBottom: 30,
   },
   optionCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderRadius: 16,
     padding: 12,
     borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
     shadowColor: "#000",
     shadowOpacity: 0.1,
     shadowRadius: 8,
@@ -266,9 +270,9 @@ const styles = StyleSheet.create({
     minHeight: 60,
   },
   selectedCard: {
-    borderColor: "#4A90E2",
-    backgroundColor: "rgba(74, 144, 226, 0.1)",
-    shadowColor: "#4A90E2",
+    borderColor: "rgba(137, 188, 255, 0.52)",
+    backgroundColor: "rgba(61, 122, 212, 0.2)",
+    shadowColor: "#5A9EF0",
     shadowOpacity: 0.3,
     elevation: 10,
     transform: [{ scale: 1.02 }],
@@ -277,12 +281,12 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
     justifyContent: "center",
     alignItems: "center",
     marginRight: 12,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(255, 255, 255, 0.14)",
   },
   cardContent: {
     flex: 1,
@@ -302,10 +306,10 @@ const styles = StyleSheet.create({
     width: 28,
     height: 28,
     borderRadius: 14,
-    backgroundColor: "#4A90E2",
+    backgroundColor: "#5A9EF0",
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#4A90E2",
+    shadowColor: "#5A9EF0",
     shadowOpacity: 0.2,
     shadowRadius: 1,
     elevation: 4,

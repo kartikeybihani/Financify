@@ -15,6 +15,7 @@ import AppStorage from "@/src/utils/storage/storage";
 import EditEmailModal from "@/src/components/menu/EditEmailModal";
 import EditOccupationModal from "@/src/components/menu/EditOccupationModal";
 import EditLocationModal from "@/src/components/menu/EditLocationModal";
+import EditIncomeModal from "@/src/components/menu/EditIncomeModal";
 import logger from "@/src/utils/core/logger";
 import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
 
@@ -33,6 +34,9 @@ export default function PersonalInfoScreen() {
   const [profileAge, setProfileAge] = useState<number | null>(null);
   const [firstName, setFirstName] = useState<string>("");
   const [lastName, setLastName] = useState<string>("");
+  const [monthlyIncome, setMonthlyIncome] = useState<number | null>(null);
+  const [newMonthlyIncome, setNewMonthlyIncome] = useState("");
+  const [showIncomeModal, setShowIncomeModal] = useState(false);
 
   useEffect(() => {
     const fetchAndSetUserData = async () => {
@@ -54,7 +58,9 @@ export default function PersonalInfoScreen() {
           try {
             const { data: profile } = await supabase
               .from("profiles")
-              .select("occupation, location, age, first_name, last_name")
+              .select(
+                "occupation, location, age, first_name, last_name, monthly_income"
+              )
               .eq("id", user.id)
               .maybeSingle();
             if (profile) {
@@ -65,6 +71,11 @@ export default function PersonalInfoScreen() {
               );
               setFirstName(profile.first_name || "");
               setLastName(profile.last_name || "");
+              setMonthlyIncome(
+                typeof profile.monthly_income === "number"
+                  ? profile.monthly_income
+                  : null
+              );
             }
           } catch (e) {
             logger.error("[PersonalInfo] Failed to fetch profile:", e);
@@ -148,6 +159,45 @@ export default function PersonalInfoScreen() {
       setShowLocationModal(false);
       setNewLocation("");
 
+      await invalidateProfileCache();
+    } catch (error: any) {
+      throw error;
+    }
+  };
+
+  const formatIncomeDisplay = (value: number | null) => {
+    if (value === null || Number.isNaN(value)) return "Not available";
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+
+  const handleSaveMonthlyIncome = async (incomeValue: string) => {
+    try {
+      const raw = incomeValue.replace(/[^0-9.]/g, "").trim();
+      if (!raw) {
+        throw new Error("Please enter a monthly income amount.");
+      }
+      const parsed = Number(raw);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        throw new Error("Please enter a valid monthly income amount.");
+      }
+
+      const { error } = await supabase
+        .from("profiles")
+        .update({
+          monthly_income: Math.round(parsed),
+          monthly_income_updated_at: new Date().toISOString(),
+        })
+        .eq("id", userData?.id);
+
+      if (error) throw error;
+
+      setMonthlyIncome(Math.round(parsed));
+      setShowIncomeModal(false);
+      setNewMonthlyIncome("");
       await invalidateProfileCache();
     } catch (error: any) {
       throw error;
@@ -247,6 +297,18 @@ export default function PersonalInfoScreen() {
               () => {
                 setNewLocation(location || "");
                 setShowLocationModal(true);
+              }
+            )}
+            <View style={styles.divider} />
+            {renderInfoItem(
+              "cash-outline",
+              "Monthly Income",
+              formatIncomeDisplay(monthlyIncome),
+              () => {
+                setNewMonthlyIncome(
+                  monthlyIncome ? String(Math.round(monthlyIncome)) : ""
+                );
+                setShowIncomeModal(true);
               }
             )}
             <View style={styles.divider} />
@@ -360,6 +422,17 @@ export default function PersonalInfoScreen() {
         }}
         onSave={handleSaveLocation}
       />
+
+      <EditIncomeModal
+        visible={showIncomeModal}
+        value={newMonthlyIncome}
+        onChange={setNewMonthlyIncome}
+        onCancel={() => {
+          setShowIncomeModal(false);
+          setNewMonthlyIncome("");
+        }}
+        onSave={handleSaveMonthlyIncome}
+      />
     </SafeAreaView>
   );
 }
@@ -464,27 +537,5 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     justifyContent: "center",
     alignItems: "center",
-  },
-  modalContainer: {
-    width: "80%",
-    backgroundColor: "#fff",
-    borderRadius: 8,
-    padding: 20,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 12,
-  },
-  input: {
-    borderWidth: 1,
-    borderColor: "#ccc",
-    borderRadius: 4,
-    padding: 8,
-    marginBottom: 12,
-  },
-  modalButtons: {
-    flexDirection: "row",
-    justifyContent: "flex-end",
   },
 });
