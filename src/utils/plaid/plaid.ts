@@ -659,6 +659,16 @@ export const getCurrentMonthRange = () => {
   return { startDate, endDate };
 };
 
+/** Get start/end dates for last 24 months including current month (spending month picker) */
+export const getLast24MonthsRange = () => {
+  const now = new Date();
+  const endDate = now.toISOString().split("T")[0];
+  const startDate = new Date(now.getFullYear(), now.getMonth() - 23, 1)
+    .toISOString()
+    .split("T")[0];
+  return { startDate, endDate };
+};
+
 /** Get start/end dates for current month + last month (fast initial load for transactions) */
 export const getCurrentAndLastMonthRange = () => {
   const now = new Date();

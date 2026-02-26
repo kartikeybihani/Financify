@@ -6,20 +6,15 @@ import {
   StyleSheet,
   Platform,
   useWindowDimensions,
-  Dimensions,
   ActivityIndicator,
   ScrollView,
   Alert,
 } from "react-native";
-import { Ionicons, AntDesign, Feather } from "@expo/vector-icons";
+import { Ionicons, Feather } from "@expo/vector-icons";
 import { GlassView } from "expo-glass-effect";
 import { LinearGradient } from "expo-linear-gradient";
 import { getTransactionsForRecurringStream } from "@/src/utils/plaid/plaid";
-import {
-  Transaction,
-  RecurringStream,
-  RecurringTransaction,
-} from "@/src/types/plaid";
+import { RecurringStream, RecurringTransaction } from "@/src/types/plaid";
 import IconButton from "@/src/components/shared/IconButton";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 import { supabase } from "@/src/lib/supabase/supabase";
@@ -100,7 +95,7 @@ export default function RecurringSection({
   const [addingBackRecurring, setAddingBackRecurring] = useState(false);
   const [userId, setUserId] = useState<string | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [pastRecurringExpanded, setPastRecurringExpanded] = useState(false);
+  const [inactiveExpanded, setInactiveExpanded] = useState(false);
   const [analysisMessageIndex, setAnalysisMessageIndex] = useState(0);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
 
@@ -111,7 +106,7 @@ export default function RecurringSection({
     }
     const interval = setInterval(() => {
       setAnalysisMessageIndex((prev) =>
-        prev >= ANALYSIS_MESSAGES.length - 1 ? 0 : prev + 1
+        prev >= ANALYSIS_MESSAGES.length - 1 ? 0 : prev + 1,
       );
     }, 2200);
     return () => clearInterval(interval);
@@ -124,7 +119,7 @@ export default function RecurringSection({
     }
     const interval = setInterval(() => {
       setLoadingMessageIndex((prev) =>
-        prev >= LOADING_MESSAGES.length - 1 ? 0 : prev + 1
+        prev >= LOADING_MESSAGES.length - 1 ? 0 : prev + 1,
       );
     }, 2200);
     return () => clearInterval(interval);
@@ -136,12 +131,15 @@ export default function RecurringSection({
     : 0;
   const shouldUseLiquidGlass = isIOS && iosVersion >= 18;
 
-  const { width } = Dimensions.get("window");
-  const horizontalPadding = 0; // No extra padding since parent container already has padding
-  const interCardGap = 20;
+  const { width } = useWindowDimensions();
+  const horizontalPadding = 20;
+  const interCardGap = 14;
+  const cardColumns = width >= 760 ? 2 : 1;
   const cardWidth = Math.floor(
-    (width - 40 - horizontalPadding * 2 - interCardGap) / 2,
-  ); // 40px is the parent container padding (20px left + 20px right)
+    cardColumns === 2
+      ? (width - horizontalPadding * 2 - interCardGap) / 2
+      : width - horizontalPadding * 2,
+  );
 
   // Fetch user ID on mount
   useEffect(() => {
@@ -201,14 +199,8 @@ export default function RecurringSection({
     }
   }, [effectiveRecurringData, effectiveIsLoading, isDemoMode]);
 
-  // Function to clear cache (useful for refresh scenarios)
-  const clearTransactionsCache = () => {
-    transactionsCache.current.clear();
-  };
-
-  // Build and pad list so there are always two items per row
-  const data: ListItem[] = useMemo(() => {
-    const active = effectiveRecurringData
+  const activeStreams = useMemo(() => {
+    return effectiveRecurringData
       ? [
           ...(effectiveRecurringData.subscriptions || []),
           ...(effectiveRecurringData.bills || []),
@@ -216,14 +208,51 @@ export default function RecurringSection({
           ...(effectiveRecurringData.other || []),
         ].filter((item) => item.is_active)
       : [];
-
-    if (active.length % 2 !== 0) {
-      return [...active, { spacer: true, id: "spacer" }];
-    }
-    return active;
   }, [effectiveRecurringData]);
 
-  const inactiveStreams = (effectiveRecurringData?.inactive || []) as RecurringStream[];
+  // Build and pad list so we always fill the last row when using 2 columns
+  const data: ListItem[] = useMemo(() => {
+    if (cardColumns !== 2) return activeStreams;
+
+    if (activeStreams.length % 2 !== 0) {
+      return [...activeStreams, { spacer: true, id: "spacer" }];
+    }
+    return activeStreams;
+  }, [activeStreams, cardColumns]);
+
+  const inactiveStreams = useMemo(
+    () => (effectiveRecurringData?.inactive || []) as RecurringStream[],
+    [effectiveRecurringData],
+  );
+
+  const monthlyOutflow = useMemo(
+    () =>
+      activeStreams.reduce(
+        (sum, stream) =>
+          sum + (stream.average_amount > 0 ? stream.average_amount : 0),
+        0,
+      ),
+    [activeStreams],
+  );
+
+  const monthlyInflow = useMemo(
+    () =>
+      activeStreams.reduce(
+        (sum, stream) =>
+          sum +
+          (stream.average_amount < 0 ? Math.abs(stream.average_amount) : 0),
+        0,
+      ),
+    [activeStreams],
+  );
+
+  const getStreamDisplayName = (stream: RecurringStream) =>
+    stream.merchant_name || stream.description || "Unknown";
+
+  const getStreamStatusLabel = (stream: RecurringStream) => {
+    if (stream.is_active) return "Active";
+    return stream.user_dismissed ? "Dismissed" : "Stopped";
+  };
 
   const getStreamTypeIcon = (stream: RecurringStream) => {
     const merchant = (
@@ -307,6 +336,17 @@ export default function RecurringSection({
     // If you want the year too, add year: "numeric"
   };
 
+  const formatFrequencyLabel = (frequency?: string | null) => {
+    if (!frequency || frequency === "user-marked") return null;
+    const normalized = frequency.toLowerCase().replace("-", " ");
+    return normalized.charAt(0).toUpperCase() + normalized.slice(1);
+  };
+
+  const formatSignedAmount = (amount: number) => {
+    const sign = amount < 0 ? "+" : "-";
+    return `${sign}$${Math.abs(amount).toFixed(2)}`;
+  };
+
   const formatDate = (dateStr: string) => {
     const options: Intl.DateTimeFormatOptions = {
       year: "numeric",
@@ -321,7 +361,8 @@ export default function RecurringSection({
     setShowTransactionHistory(true);
 
     if (isDemoMode) {
-      const demoTransactions = demoRecurringTransactionsByStream[stream.stream_id] || [];
+      const demoTransactions =
+        demoRecurringTransactionsByStream[stream.stream_id] || [];
       setStreamTransactions(demoTransactions as RecurringTransaction[]);
       setLoadingTransactions(false);
       return;
@@ -475,18 +516,25 @@ export default function RecurringSection({
       return;
     }
 
-    const isPlaidStream =
-      !selectedStream.stream_id.startsWith("user-marked-");
+    const isPlaidStream = !selectedStream.stream_id.startsWith("user-marked-");
     if (!isPlaidStream) return;
 
-    const merchantName = selectedStream.merchant_name || selectedStream.description;
+    const merchantName =
+      selectedStream.merchant_name || selectedStream.description;
     const isDismissed = !!selectedStream.user_dismissed;
 
     try {
       setAddingBackRecurring(true);
 
-      const fn = isDismissed ? unDismissRecurringStream : reactivateRecurringStream;
-      const result = await fn(userId, selectedStream.stream_id, merchantName || undefined, selectedStream.description || undefined);
+      const fn = isDismissed
+        ? unDismissRecurringStream
+        : reactivateRecurringStream;
+      const result = await fn(
+        userId,
+        selectedStream.stream_id,
+        merchantName || undefined,
+        selectedStream.description || undefined,
+      );
 
       if (!result.success) {
         Alert.alert("Error", result.error || "Please try again.");
@@ -509,13 +557,7 @@ export default function RecurringSection({
     if ((item as SpacerItem).spacer) {
       return (
         <View
-          style={[
-            styles.transactionBox,
-            {
-              width: cardWidth,
-              opacity: 0,
-            },
-          ]}
+          style={[styles.cardSpacer, { width: cardWidth }]}
           pointerEvents="none"
         />
       );
@@ -527,12 +569,8 @@ export default function RecurringSection({
       stream,
     ) as keyof typeof Ionicons.glyphMap;
     const nextDate = getNextTransactionDate(stream);
-    const isInactive = stream.is_active === false;
-    const showNextDate =
-      !isInactive &&
-      stream.frequency &&
-      stream.frequency !== "user-marked" &&
-      nextDate;
+    const frequencyLabel = formatFrequencyLabel(stream.frequency);
+    const showNextDate = !!(frequencyLabel && nextDate);
 
     const CardShell = shouldUseLiquidGlass ? GlassView : View;
 
@@ -554,7 +592,7 @@ export default function RecurringSection({
             styles.transactionBox,
             {
               width: cardWidth,
-              height: 120,
+              height: 94,
             },
           ]}
         >
@@ -571,14 +609,14 @@ export default function RecurringSection({
             />
           )}
 
-          <View style={styles.boxHeader}>
+          <View style={styles.cardTopRow}>
             <View
               style={[styles.iconContainer, { backgroundColor: color + "15" }]}
             >
               <Ionicons name={iconName} size={18} color={color} />
             </View>
             <Text style={styles.merchantName} numberOfLines={1}>
-              {stream.merchant_name || stream.description}
+              {getStreamDisplayName(stream)}
             </Text>
             {preloadingStreams.has(stream.stream_id) ? (
               <ActivityIndicator
@@ -596,41 +634,89 @@ export default function RecurringSection({
             )}
           </View>
 
-          <View style={styles.boxContent}>
-            <Text style={[styles.amount, { color }]}>
-              {stream.average_amount < 0 ? "+" : "-"}$
-              {Math.abs(stream.average_amount).toFixed(2)}
-            </Text>
-            {stream.frequency && stream.frequency !== "user-marked" && (
-              <Text style={styles.frequency}>
-                {(stream.frequency || "").toLowerCase()}
-              </Text>
-            )}
-          </View>
+          <Text style={[styles.amount, { color }]}>
+            {formatSignedAmount(stream.average_amount)}
+          </Text>
 
-          {(showNextDate || isInactive) && (
-            <View style={styles.boxFooter}>
-              <Text style={styles.nextDate}>
-                {isInactive
-                  ? stream.user_dismissed
-                    ? "Dismissed"
-                    : "Stopped"
-                  : `Next: ${formatShort(nextDate)}`}
-              </Text>
-            </View>
-          )}
+          <View style={styles.cardMetaRow}>
+            <Text style={styles.frequency}>
+              {frequencyLabel || "User-marked"}
+            </Text>
+
+            <Text style={showNextDate ? styles.nextDate : styles.nextDateMuted}>
+              {showNextDate ? `Next ${formatShort(nextDate)}` : "No next date"}
+            </Text>
+          </View>
         </CardShell>
       </TouchableOpacity>
     );
   };
 
+  const renderInactiveRow = (stream: RecurringStream, index: number) => {
+    const color = getStreamTypeColor(stream);
+    const iconName = getStreamTypeIcon(
+      stream,
+    ) as keyof typeof Ionicons.glyphMap;
+    const statusLabel = getStreamStatusLabel(stream);
+    const frequencyLabel = formatFrequencyLabel(stream.frequency);
+
+    return (
+      <View key={stream.stream_id}>
+        <TouchableOpacity
+          activeOpacity={0.8}
+          onPress={() => handleCardPress(stream)}
+          style={styles.inactiveRow}
+        >
+          <View style={styles.inactiveRowLeft}>
+            <View
+              style={[
+                styles.inactiveIconContainer,
+                { backgroundColor: color + "15" },
+              ]}
+            >
+              <Ionicons name={iconName} size={16} color={color} />
+            </View>
+            <View style={styles.inactiveRowTextBlock}>
+              <Text style={styles.inactiveMerchantName} numberOfLines={1}>
+                {getStreamDisplayName(stream)}
+              </Text>
+              <View style={styles.inactiveSubRow}>
+                <View
+                  style={[
+                    styles.statusPill,
+                    statusLabel === "Dismissed"
+                      ? styles.dismissedPill
+                      : styles.stoppedPill,
+                  ]}
+                >
+                  <Text style={styles.statusPillText}>{statusLabel}</Text>
+                </View>
+                {frequencyLabel && (
+                  <Text style={styles.inactiveFrequency}>{frequencyLabel}</Text>
+                )}
+              </View>
+            </View>
+          </View>
+          <View style={styles.inactiveRowRight}>
+            <Text style={[styles.inactiveAmount, { color }]}>
+              {formatSignedAmount(stream.average_amount)}
+            </Text>
+            <Ionicons name="chevron-forward" size={14} color="#6F7788" />
+          </View>
+        </TouchableOpacity>
+        {index < inactiveStreams.length - 1 && (
+          <View style={styles.inactiveDivider} />
+        )}
+      </View>
+    );
+  };
+
   const renderTransactionHistoryView = () => {
     if (!selectedStream) return null;
-
-    const color = getStreamTypeColor(selectedStream);
-    const iconName = getStreamTypeIcon(
-      selectedStream,
-    ) as keyof typeof Ionicons.glyphMap;
+    const selectedFrequency = formatFrequencyLabel(selectedStream.frequency);
+    const selectedStatus = selectedStream.is_active
+      ? null
+      : getStreamStatusLabel(selectedStream);
 
     return (
       <View style={styles.fullWidthContainer}>
@@ -639,18 +725,17 @@ export default function RecurringSection({
           <View style={styles.headerInfo}>
             <View style={styles.headerText}>
               <Text style={styles.headerTitle}>
-                {selectedStream.merchant_name || selectedStream.description}
+                {getStreamDisplayName(selectedStream)}
               </Text>
               <Text style={styles.headerSubtitle}>
-                {selectedStream.frequency &&
-                selectedStream.frequency !== "user-marked"
-                  ? `${
-                      (selectedStream.frequency || "").charAt(0).toUpperCase() +
-                      (selectedStream.frequency || "").slice(1).toLowerCase()
-                    } • `
-                  : ""}
+                {selectedFrequency ? `${selectedFrequency} • ` : ""}
                 {selectedStream.transaction_ids?.length || 0} transactions
               </Text>
+              {selectedStatus && (
+                <Text style={styles.headerStatusSubtext}>
+                  Status: {selectedStatus}
+                </Text>
+              )}
             </View>
           </View>
           <IconButton
@@ -674,33 +759,39 @@ export default function RecurringSection({
         )}
 
         {/* Remove or Add back button (hidden in demo mode) */}
-        {!loadingTransactions && streamTransactions.length > 0 && !isDemoMode && (
-          <>
-            {selectedStream.is_active && !selectedStream.user_dismissed ? (
-              <TouchableOpacity
-                style={styles.removeRecurringButton}
-                onPress={handleRemoveRecurring}
-                disabled={removingRecurring}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.removeRecurringButtonText}>
-                  {removingRecurring ? "Removing..." : "Remove this from recurring"}
-                </Text>
-              </TouchableOpacity>
-            ) : !selectedStream.stream_id.startsWith("user-marked-") ? (
-              <TouchableOpacity
-                style={styles.addBackRecurringButton}
-                onPress={handleAddBackToRecurring}
-                disabled={addingBackRecurring}
-                activeOpacity={0.7}
-              >
-                <Text style={styles.addBackRecurringButtonText}>
-                  {addingBackRecurring ? "Adding back..." : "Add this into Recurring again"}
-                </Text>
-              </TouchableOpacity>
-            ) : null}
-          </>
-        )}
+        {!loadingTransactions &&
+          streamTransactions.length > 0 &&
+          !isDemoMode && (
+            <>
+              {selectedStream.is_active && !selectedStream.user_dismissed ? (
+                <TouchableOpacity
+                  style={styles.removeRecurringButton}
+                  onPress={handleRemoveRecurring}
+                  disabled={removingRecurring}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.removeRecurringButtonText}>
+                    {removingRecurring
+                      ? "Removing..."
+                      : "Remove this from recurring"}
+                  </Text>
+                </TouchableOpacity>
+              ) : !selectedStream.stream_id.startsWith("user-marked-") ? (
+                <TouchableOpacity
+                  style={styles.addBackRecurringButton}
+                  onPress={handleAddBackToRecurring}
+                  disabled={addingBackRecurring}
+                  activeOpacity={0.7}
+                >
+                  <Text style={styles.addBackRecurringButtonText}>
+                    {addingBackRecurring
+                      ? "Adding back..."
+                      : "Add this into Recurring again"}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+            </>
+          )}
 
         {/* Transaction History */}
         <View style={styles.historyContent}>
@@ -795,14 +886,16 @@ export default function RecurringSection({
   }
 
   const renderLoadingView = (messages: string[], messageIndex: number) => (
-    <View style={[styles.analyzingContainer, { paddingHorizontal: 20, marginTop: 16, marginBottom: 50 }]}>
+    <View
+      style={[
+        styles.analyzingContainer,
+        { paddingHorizontal: 20, marginTop: 16, marginBottom: 50 },
+      ]}
+    >
       <View style={styles.sectionHeader}>
         <Text style={titleStyle}>Recurring Transactions</Text>
       </View>
-      <FinnyLoadingIndicator
-        message={messages[messageIndex]}
-        duration={2200}
-      />
+      <FinnyLoadingIndicator message={messages[messageIndex]} duration={2200} />
     </View>
   );
 
@@ -831,6 +924,8 @@ export default function RecurringSection({
     );
   };
 
+  const hasRecurringStreams = data.length > 0 || inactiveStreams.length > 0;
+
   return (
     <View style={{ paddingHorizontal: 20, marginTop: 16, marginBottom: 50 }}>
       <View style={styles.sectionHeader}>
@@ -846,11 +941,29 @@ export default function RecurringSection({
             ) : (
               <>
                 <Ionicons name="sparkles" size={14} color="#4A90E2" />
-                <Text style={styles.analyzeButtonText}>Quick search</Text>
+                <Text style={styles.analyzeButtonText}>Re-scan</Text>
               </>
             )}
           </TouchableOpacity>
         )}
+      </View>
+      <View style={styles.summaryRow}>
+        <View style={styles.summaryPill}>
+          <Text style={styles.summaryLabel}>Active</Text>
+          <Text style={styles.summaryValue}>{activeStreams.length}</Text>
+        </View>
+        <View style={styles.summaryPill}>
+          <Text style={styles.summaryLabel}>Monthly out</Text>
+          <Text style={[styles.summaryValue, styles.summaryOutflow]}>
+            -${monthlyOutflow.toFixed(0)}
+          </Text>
+        </View>
+        <View style={styles.summaryPill}>
+          <Text style={styles.summaryLabel}>Monthly in</Text>
+          <Text style={[styles.summaryValue, styles.summaryInflow]}>
+            +${monthlyInflow.toFixed(0)}
+          </Text>
+        </View>
       </View>
       <View
         style={{
@@ -858,70 +971,58 @@ export default function RecurringSection({
           paddingBottom: 4,
         }}
       >
-        {data.length === 0 ? (
+        {!hasRecurringStreams ? (
           renderEmptyState()
         ) : (
           <>
-            <View
-              style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                justifyContent: "space-between",
-              }}
-            >
-              {data.map((it) => (
-                <View
-                  key={
-                    "spacer" in it
-                      ? (it as SpacerItem).id
-                      : (it as RecurringStream).stream_id
-                  }
-                  style={{ width: cardWidth, marginBottom: 18 }}
-                >
-                  {renderCard({ item: it })}
-                </View>
-              ))}
-            </View>
+            {data.length > 0 && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  justifyContent:
+                    cardColumns === 2 ? "space-between" : "flex-start",
+                }}
+              >
+                {data.map((it) => (
+                  <View
+                    key={
+                      "spacer" in it
+                        ? (it as SpacerItem).id
+                        : (it as RecurringStream).stream_id
+                    }
+                    style={{ width: cardWidth, marginBottom: 14 }}
+                  >
+                    {renderCard({ item: it })}
+                  </View>
+                ))}
+              </View>
+            )}
             {inactiveStreams.length > 0 && (
-              <View style={styles.pastSection}>
+              <View style={styles.inactiveSection}>
                 <TouchableOpacity
-                  style={styles.pastSectionHeader}
-                  onPress={() => setPastRecurringExpanded((prev) => !prev)}
+                  style={styles.inactiveSectionHeader}
+                  onPress={() => setInactiveExpanded((prev) => !prev)}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.pastSectionTitle}>
-                    Past recurring ({inactiveStreams.length})
-                  </Text>
+                  <View>
+                    <Text style={styles.inactiveSectionTitle}>
+                      Inactive recurring ({inactiveStreams.length})
+                    </Text>
+                    <Text style={styles.inactiveSectionSubtitle}>
+                      Dismissed and stopped streams
+                    </Text>
+                  </View>
                   <Ionicons
-                    name={pastRecurringExpanded ? "chevron-up" : "chevron-down"}
+                    name={inactiveExpanded ? "chevron-up" : "chevron-down"}
                     size={18}
-                    color="#888"
+                    color="#9AA1AF"
                   />
                 </TouchableOpacity>
-                {pastRecurringExpanded && (
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      flexWrap: "wrap",
-                      justifyContent: "space-between",
-                    }}
-                  >
-                    {inactiveStreams.map((stream) => (
-                      <View
-                        key={stream.stream_id}
-                        style={{ width: cardWidth, marginBottom: 18 }}
-                      >
-                        {renderCard({ item: stream })}
-                      </View>
-                    ))}
-                    {inactiveStreams.length % 2 !== 0 && (
-                      <View
-                        style={[
-                          styles.transactionBox,
-                          { width: cardWidth, opacity: 0 },
-                        ]}
-                        pointerEvents="none"
-                      />
+                {inactiveExpanded && (
+                  <View style={styles.inactiveList}>
+                    {inactiveStreams.map((stream, index) =>
+                      renderInactiveRow(stream, index),
                     )}
                   </View>
                 )}
@@ -938,17 +1039,20 @@ const styles = StyleSheet.create({
   cardTouchable: {
     transform: [{ scale: 1 }],
   },
+  cardSpacer: {
+    opacity: 0,
+  },
   transactionBox: {
-    backgroundColor: "rgba(20, 20, 25, 0.95)",
+    backgroundColor: "rgba(18, 20, 25, 0.96)",
     borderRadius: 16,
-    padding: 12,
-    borderWidth: 0,
-    borderColor: "rgba(248, 17, 17, 0.08)",
+    padding: 11,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.06)",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 14,
+    elevation: 5,
     overflow: "hidden",
   },
   gradientOverlay: {
@@ -959,19 +1063,19 @@ const styles = StyleSheet.create({
     bottom: 0,
     borderRadius: 16,
   },
-  boxHeader: {
+  cardTopRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 6,
+    marginBottom: 7,
     zIndex: 1,
   },
   iconContainer: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
+    width: 24,
+    height: 24,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 10,
+    marginRight: 8,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -980,44 +1084,42 @@ const styles = StyleSheet.create({
   },
   merchantName: {
     flex: 1,
-    fontSize: 14,
-    fontWeight: "500",
-    color: "#fff",
-    letterSpacing: 0.2,
-    opacity: 0.9,
-  },
-  boxContent: {
-    marginBottom: 8,
-    zIndex: 1,
-  },
-  amount: {
-    fontSize: 18,
+    fontSize: 13.5,
     fontWeight: "600",
     color: "#fff",
-    marginBottom: 4,
-    letterSpacing: 0.3,
+    letterSpacing: 0.1,
+    opacity: 0.95,
   },
-  frequency: {
-    fontSize: 12,
-    color: "#888",
-    textTransform: "capitalize",
-    letterSpacing: 0.5,
-    fontWeight: "400",
-    opacity: 0.8,
+  amount: {
+    fontSize: 19,
+    fontWeight: "700",
+    color: "#fff",
+    marginBottom: 6,
+    letterSpacing: 0.2,
   },
-  boxFooter: {
-    borderTopWidth: 0.5,
-    borderTopColor: "rgba(255, 255, 255, 0.06)",
-    paddingTop: 6,
-    marginTop: 2,
+  cardMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 8,
     zIndex: 1,
   },
-  nextDate: {
-    fontSize: 11,
-    color: "#999",
-    fontWeight: "400",
+  frequency: {
+    fontSize: 11.5,
+    color: "#AEB6C6",
     letterSpacing: 0.2,
-    opacity: 0.7,
+    fontWeight: "500",
+  },
+  nextDate: {
+    fontSize: 11.5,
+    color: "#E4E8F0",
+    fontWeight: "500",
+    letterSpacing: 0.2,
+  },
+  nextDateMuted: {
+    fontSize: 11,
+    color: "#6F7788",
+    fontWeight: "500",
   },
   chevronIcon: {
     marginLeft: 8,
@@ -1127,6 +1229,13 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#888",
     opacity: 0.8,
+  },
+  headerStatusSubtext: {
+    marginTop: 5,
+    fontSize: 12,
+    color: "#B9C0CF",
+    fontWeight: "600",
+    letterSpacing: 0.2,
   },
   historyContent: {
     flex: 1,
@@ -1269,6 +1378,38 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginBottom: 4,
   },
+  summaryRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 10,
+  },
+  summaryPill: {
+    flex: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    borderRadius: 12,
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+  },
+  summaryLabel: {
+    fontSize: 11,
+    color: "#8E96A6",
+    letterSpacing: 0.3,
+    marginBottom: 4,
+  },
+  summaryValue: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#F4F7FC",
+    letterSpacing: 0.1,
+  },
+  summaryOutflow: {
+    color: "#FF9F9F",
+  },
+  summaryInflow: {
+    color: "#7DDEB1",
+  },
   analyzingContainer: {
     minHeight: 320,
     justifyContent: "flex-start",
@@ -1287,23 +1428,108 @@ const styles = StyleSheet.create({
     fontWeight: "500",
     color: "#4A90E2",
   },
-  pastSection: {
+  inactiveSection: {
     marginTop: 24,
     paddingTop: 20,
     borderTopWidth: 1,
     borderTopColor: "rgba(255, 255, 255, 0.08)",
   },
-  pastSectionHeader: {
+  inactiveSectionHeader: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
     marginBottom: 12,
   },
-  pastSectionTitle: {
+  inactiveSectionTitle: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#888",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
+    color: "#A3A9B5",
+    letterSpacing: 0.2,
+  },
+  inactiveSectionSubtitle: {
+    marginTop: 2,
+    fontSize: 12,
+    color: "#6F7788",
+  },
+  inactiveList: {
+    backgroundColor: "rgba(255, 255, 255, 0.02)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.05)",
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  inactiveRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  inactiveRowLeft: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    marginRight: 10,
+  },
+  inactiveIconContainer: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  inactiveRowTextBlock: {
+    flex: 1,
+  },
+  inactiveMerchantName: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#D7DCEA",
+    marginBottom: 4,
+  },
+  inactiveSubRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  statusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderWidth: 1,
+  },
+  statusPillText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#DDE3F0",
+    letterSpacing: 0.2,
+  },
+  dismissedPill: {
+    borderColor: "rgba(255, 159, 159, 0.5)",
+    backgroundColor: "rgba(255, 159, 159, 0.16)",
+  },
+  stoppedPill: {
+    borderColor: "rgba(161, 174, 194, 0.4)",
+    backgroundColor: "rgba(161, 174, 194, 0.14)",
+  },
+  inactiveFrequency: {
+    fontSize: 11,
+    color: "#7D8697",
+    fontWeight: "500",
+  },
+  inactiveRowRight: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
+  inactiveAmount: {
+    fontSize: 14,
+    fontWeight: "700",
+    letterSpacing: 0.1,
+  },
+  inactiveDivider: {
+    height: 1,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    marginHorizontal: 12,
   },
 });

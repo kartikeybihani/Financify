@@ -7,10 +7,14 @@ import {
   TouchableOpacity,
   TextInput,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
+  ScrollView,
 } from "react-native";
 import { BlurView } from "expo-blur";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface MonthlyBudgetEditModalProps {
   visible: boolean;
@@ -25,6 +29,7 @@ export default function MonthlyBudgetEditModal({
   onClose,
   onSave,
 }: MonthlyBudgetEditModalProps) {
+  const insets = useSafeAreaInsets();
   const [amount, setAmount] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -60,8 +65,13 @@ export default function MonthlyBudgetEditModal({
       transparent
       animationType="fade"
       onRequestClose={loading ? () => {} : onClose}
+      statusBarTranslucent
     >
-      <View style={styles.overlay}>
+      <KeyboardAvoidingView
+        style={styles.overlay}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
+      >
         <BlurView intensity={40} style={StyleSheet.absoluteFill} tint="dark" />
         <View style={styles.modalContainer}>
           <LinearGradient
@@ -89,7 +99,17 @@ export default function MonthlyBudgetEditModal({
                 <Text style={styles.loadingText}>Saving...</Text>
               </View>
             ) : (
-              <>
+              <ScrollView
+                style={styles.formScroll}
+                contentContainerStyle={[
+                  styles.formScrollContent,
+                  { paddingBottom: Math.max(12, insets.bottom + 8) },
+                ]}
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="interactive"
+                bounces={false}
+              >
                 <View style={styles.content}>
                   <Text style={styles.label}>
                     Set your total monthly budget
@@ -139,11 +159,11 @@ export default function MonthlyBudgetEditModal({
                     </LinearGradient>
                   </TouchableOpacity>
                 </View>
-              </>
+              </ScrollView>
             )}
           </LinearGradient>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }
@@ -159,6 +179,7 @@ const styles = StyleSheet.create({
   modalContainer: {
     width: "100%",
     maxWidth: 400,
+    maxHeight: "88%",
     borderRadius: 24,
     overflow: "hidden",
     shadowColor: "#000",
@@ -172,6 +193,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
     padding: 24,
+  },
+  formScroll: {
+    flexGrow: 0,
+  },
+  formScrollContent: {
+    flexGrow: 1,
+    justifyContent: "space-between",
   },
   header: {
     flexDirection: "row",

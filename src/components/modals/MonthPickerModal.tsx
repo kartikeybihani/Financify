@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import IconButton from "@/src/components/shared/IconButton";
+import type { MonthOption } from "@/src/components/insights/components/MonthSelector";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -23,6 +24,7 @@ interface MonthPickerModalProps {
   selectedMonth: number;
   selectedYear: number;
   onMonthSelect: (month: number, year: number) => void;
+  availableMonths?: MonthOption[];
 }
 
 const FAB_GRADIENT_COLORS = [
@@ -51,37 +53,47 @@ const MonthPickerModal: React.FC<MonthPickerModalProps> = ({
   selectedMonth,
   selectedYear,
   onMonthSelect,
+  availableMonths,
 }) => {
   const insets = useSafeAreaInsets();
 
-  // Generate 24 months (current month back 24 months) - memoized
+  // Group month options by year for display in the picker.
+  // Prefer availableMonths from spending data to avoid selecting months without data.
   const { monthsByYear, years } = useMemo(() => {
-    const monthsList: Array<{ month: number; year: number }> = [];
-    const now = new Date();
-    const currentMonth = now.getMonth();
-    const currentYear = now.getFullYear();
+    const monthsList: Array<{ month: number; year: number }> =
+      availableMonths && availableMonths.length > 0
+        ? availableMonths.map(({ month, year }) => ({ month, year }))
+        : (() => {
+            const fallbackMonths: Array<{ month: number; year: number }> = [];
+            const now = new Date();
+            const currentMonth = now.getMonth();
+            const currentYear = now.getFullYear();
 
-    // Generate 24 months going back from current month
-    for (let i = 0; i < 24; i++) {
-      const date = new Date(currentYear, currentMonth - i, 1);
-      monthsList.push({
-        month: date.getMonth(),
-        year: date.getFullYear(),
-      });
-    }
-
-    // Reverse to show oldest first
-    const reversedMonths = monthsList.reverse();
+            // Fallback: generate 24 months (current month back 24 months)
+            for (let i = 0; i < 24; i++) {
+              const date = new Date(currentYear, currentMonth - i, 1);
+              fallbackMonths.push({
+                month: date.getMonth(),
+                year: date.getFullYear(),
+              });
+            }
+            return fallbackMonths;
+          })();
 
     // Group months by year
     const grouped: {
       [year: number]: Array<{ month: number; year: number }>;
     } = {};
-    reversedMonths.forEach((m) => {
+    monthsList.forEach((m) => {
       if (!grouped[m.year]) {
         grouped[m.year] = [];
       }
       grouped[m.year].push(m);
+    });
+
+    // Show months chronologically within each year
+    Object.values(grouped).forEach((months) => {
+      months.sort((a, b) => a.month - b.month);
     });
 
     const yearKeys = Object.keys(grouped)
@@ -92,7 +104,7 @@ const MonthPickerModal: React.FC<MonthPickerModalProps> = ({
       monthsByYear: grouped,
       years: yearKeys,
     };
-  }, []);
+  }, [availableMonths]);
 
   // Find initial year index based on selectedYear, default to most recent (index 0)
   const initialYearIndex = useMemo(() => {

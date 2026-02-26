@@ -2,7 +2,7 @@ import React, { useState, useCallback } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import PersonalityBadge from "@/src/components/insights/PersonalityBadge";
 import SpendingBreakdown from "@/src/components/insights/SpendingBreakdown";
-import { MonthOption } from "./MonthSelector";
+import type { MonthOption } from "./MonthSelector";
 import MonthPickerModal from "@/src/components/modals/MonthPickerModal";
 import { analyzeSpendingPersonality } from "@/src/utils/analytics/personalityAnalysis";
 import { useDemoMode } from "@/src/contexts/DemoContext";
@@ -123,15 +123,14 @@ export default function SpendingSection({
         <MonthPickerModal
           visible={monthPickerVisible}
           onClose={() => setMonthPickerVisible(false)}
+          availableMonths={availableMonths}
           selectedMonth={
             selectedMonth !== undefined ? selectedMonth : new Date().getMonth()
           }
           selectedYear={
             selectedYear !== undefined ? selectedYear : new Date().getFullYear()
           }
-          onMonthSelect={(month, year) => {
-            onMonthSelect?.(month, year);
-          }}
+          onMonthSelect={onMonthSelect}
         />
       )}
     </View>

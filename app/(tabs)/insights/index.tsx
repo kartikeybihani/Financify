@@ -62,7 +62,7 @@ import {
   getUpdateLinkToken,
   openPlaidLink,
   getRecentTransactions,
-  getCurrentMonthRange,
+  getLast24MonthsRange,
   getCurrentAndLastMonthRange,
   getFilteredTransactions,
   getFilteredTransactionsCount,
@@ -291,6 +291,17 @@ export default function InsightsScreen() {
       },
     ][]
   >([]);
+  const [budgetCategoryBreakdown, setBudgetCategoryBreakdown] = useState<
+    [
+      string,
+      {
+        amount: number;
+        percentage: number;
+        color: string;
+        hasRecurringTransactions: boolean;
+      },
+    ][]
+  >([]);
   // If we loaded cache synchronously, we're not in initial load state
   const [isInitialLoad, setIsInitialLoad] = useState(!initialCache.hasCache);
   const [isLoading, setIsLoading] = useState(false);
@@ -302,6 +313,11 @@ export default function InsightsScreen() {
   const [currentMonthTransactions, setCurrentMonthTransactions] = useState<
     Transaction[]
   >([]);
+  const [budgetMonthTransactions, setBudgetMonthTransactions] = useState<
+    Transaction[]
+  >([]);
+  const [selectedCategoryTransactions, setSelectedCategoryTransactions] =
+    useState<Transaction[]>([]);
   const [categories, setCategories] = useState<string[]>(["All Categories"]);
 
   // Month selection state
@@ -1205,6 +1221,7 @@ export default function InsightsScreen() {
           setTransactions(cachedTransactions);
           processTransactionsData(cachedTransactions);
           hasData.current = true;
+          hasCachedData.current = true;
           return true;
         }
         await clearTransactionsCache(currentUserId);
@@ -1212,8 +1229,8 @@ export default function InsightsScreen() {
 
       logger.info("Insights: Loading data from Supabase...");
 
-      // Fetch current month only for spending breakdown
-      const { startDate, endDate } = getCurrentMonthRange();
+      // Fetch last 24 months for spending month picker
+      const { startDate, endDate } = getLast24MonthsRange();
       const transactions = await getRecentTransactions(currentUserId, 2000, {
         startDate,
         endDate,
@@ -1262,8 +1279,8 @@ export default function InsightsScreen() {
         return;
       }
 
-      // Fetch transactions (current month) and investment data in parallel for background refresh
-      const { startDate, endDate } = getCurrentMonthRange();
+      // Fetch transactions (last 24 months) and investment data in parallel for background refresh
+      const { startDate, endDate } = getLast24MonthsRange();
       const [transactions] = await Promise.all([
         getRecentTransactions(userId, 2000, { startDate, endDate }),
         loadInvestmentDataFromDB().catch((err) => {
@@ -1771,16 +1788,6 @@ export default function InsightsScreen() {
     };
   }, [showEnhancedFilterModal, filterOptions]);
 
-  // Memoized date calculations to avoid repeated Date object creation
-  const currentDateInfo = useMemo(() => {
-    const now = new Date();
-    return {
-      now,
-      currentMonth: now.getMonth(),
-      currentYear: now.getFullYear(),
-    };
-  }, []);
-
   // Memoized transaction processing to prevent expensive recomputations
   const processTransactionsData = useCallback(
     (
@@ -1801,20 +1808,69 @@ export default function InsightsScreen() {
       // Spending breakdown is still expenses-only
       const expenses = nonTransferTransactions.filter((tx) => tx.amount > 0);
 
-      // Filter for selected month
-      let currentMonthExpenses = filterTransactionsByMonth(
-        expenses,
-        monthToUse,
-        yearToUse,
-      );
-      let currentMonthAllTransactions = filterTransactionsByMonth(
-        nonTransferTransactions,
-        monthToUse,
-        yearToUse,
-      );
+      const buildMonthData = (month: number, year: number) => {
+        const monthExpenses = filterTransactionsByMonth(expenses, month, year);
+        const monthAllTransactions = filterTransactionsByMonth(
+          nonTransferTransactions,
+          month,
+          year,
+        );
+
+        const monthTotalSpent = monthExpenses.reduce(
+          (acc, tx) => acc + tx.amount,
+          0,
+        );
+
+        const monthCategories: CategoryBreakdown = {};
+        for (const tx of monthExpenses) {
+          const category = getDisplayCategory(tx);
+
+          if (!monthCategories[category]) {
+            monthCategories[category] = {
+              amount: 0,
+              percentage: 0,
+              color: getCategoryColor(category),
+              hasRecurringTransactions: false,
+            };
+          }
+
+          monthCategories[category].amount += tx.amount;
+
+          if (shouldShowRecurringChip(tx)) {
+            monthCategories[category].hasRecurringTransactions = true;
+          }
+        }
+
+        Object.keys(monthCategories).forEach((category) => {
+          monthCategories[category].percentage =
+            monthTotalSpent > 0
+              ? (monthCategories[category].amount / monthTotalSpent) * 100
+              : 0;
+        });
+
+        const sortedCategories = Object.entries(monthCategories).sort(
+          (a, b) => b[1].amount - a[1].amount,
+        );
+
+        const filteredCategories = sortedCategories.filter(
+          ([category]) => category !== "INTERNAL_TRANSFER",
+        );
+
+        return {
+          monthExpenses,
+          monthAllTransactions,
+          monthTotalSpent,
+          sortedCategories,
+          filteredCategories,
+        };
+      };
+
+      let effectiveMonth = monthToUse;
+      let effectiveYear = yearToUse;
+      let spendingMonthData = buildMonthData(effectiveMonth, effectiveYear);
 
       // If no data for selected month, try to find the most recent month with data
-      if (currentMonthExpenses.length === 0 && expenses.length > 0) {
+      if (spendingMonthData.monthExpenses.length === 0 && expenses.length > 0) {
         // Sort expenses by date (most recent first) - compare date strings directly
         const sortedExpenses = [...expenses].sort((a, b) => {
           // YYYY-MM-DD format sorts correctly as strings
@@ -1825,16 +1881,9 @@ export default function InsightsScreen() {
         const { year: mostRecentYear, month: mostRecentMonth } =
           parseTransactionDate(sortedExpenses[0]);
 
-        currentMonthExpenses = filterTransactionsByMonth(
-          expenses,
-          mostRecentMonth,
-          mostRecentYear,
-        );
-        currentMonthAllTransactions = filterTransactionsByMonth(
-          nonTransferTransactions,
-          mostRecentMonth,
-          mostRecentYear,
-        );
+        effectiveMonth = mostRecentMonth;
+        effectiveYear = mostRecentYear;
+        spendingMonthData = buildMonthData(effectiveMonth, effectiveYear);
 
         // Update selected month/year to match most recent month with data
         if (targetMonth === undefined && targetYear === undefined) {
@@ -1843,69 +1892,33 @@ export default function InsightsScreen() {
         }
       }
 
-      const totalSpent = currentMonthExpenses.reduce(
-        (acc, tx) => acc + tx.amount,
-        0,
-      );
+      // Budget should always use current month, independent of selected spending month
+      const now = new Date();
+      const budgetMonthData = buildMonthData(now.getMonth(), now.getFullYear());
 
-      const categoriesObj: CategoryBreakdown = {};
-      for (const tx of currentMonthExpenses) {
-        // Use the unified category display logic
-        const category = getDisplayCategory(tx);
-
-        if (!categoriesObj[category]) {
-          categoriesObj[category] = {
-            amount: 0,
-            percentage: 0,
-            color: getCategoryColor(category),
-            hasRecurringTransactions: false,
-          };
-        }
-        categoriesObj[category].amount += tx.amount;
-
-        // Check if this transaction is recurring using the unified logic
-        if (shouldShowRecurringChip(tx)) {
-          categoriesObj[category].hasRecurringTransactions = true;
-        }
-      }
-
-      // Calculate percentages
-      Object.keys(categoriesObj).forEach((category) => {
-        categoriesObj[category].percentage =
-          totalSpent > 0
-            ? (categoriesObj[category].amount / totalSpent) * 100
-            : 0;
-      });
-
-      const sortedCategories = Object.entries(categoriesObj).sort(
-        (a, b) => b[1].amount - a[1].amount,
-      );
-
-      // Filter out Internal Transfer categories
-      const filteredCategories = sortedCategories.filter(
-        ([category]) => category !== "INTERNAL_TRANSFER",
-      );
-
-      setCategoryBreakdown(filteredCategories);
-
-      // Store current month transactions for category detail modal
-      setCurrentMonthTransactions(currentMonthAllTransactions);
+      setCategoryBreakdown(spendingMonthData.filteredCategories);
+      setCurrentMonthTransactions(spendingMonthData.monthAllTransactions);
+      setBudgetCategoryBreakdown(budgetMonthData.filteredCategories);
+      setBudgetMonthTransactions(budgetMonthData.monthAllTransactions);
 
       const uniqueCategories = [
         "All Categories",
-        ...new Set(currentMonthExpenses.map((tx) => getDisplayCategory(tx))),
+        ...new Set(
+          spendingMonthData.monthExpenses.map((tx) => getDisplayCategory(tx)),
+        ),
       ].map((cat) =>
         cat === "All Categories" ? cat : formatCategoryFromHook(cat),
       );
 
       setCategories(uniqueCategories);
 
-      const topCategory = sortedCategories[0];
+      const topCategory = spendingMonthData.sortedCategories[0];
       const displayTotal =
-        totalSpent > 0
-          ? totalSpent
+        spendingMonthData.monthTotalSpent > 0
+          ? spendingMonthData.monthTotalSpent
           : expenses.reduce((acc, tx) => acc + tx.amount, 0);
-      const displayPeriod = totalSpent > 0 ? "this month" : "recently";
+      const displayPeriod =
+        spendingMonthData.monthTotalSpent > 0 ? "this month" : "recently";
 
       const newInsights: Insight[] = [
         {
@@ -1933,9 +1946,9 @@ export default function InsightsScreen() {
       // Save spending breakdown to cache for smooth UX
       if (userId) {
         const spendingCacheData = {
-          categoryBreakdown: filteredCategories,
-          currentMonthTransactions: currentMonthExpenses,
-          totalSpent,
+          categoryBreakdown: spendingMonthData.filteredCategories,
+          currentMonthTransactions: spendingMonthData.monthExpenses,
+          totalSpent: spendingMonthData.monthTotalSpent,
           displayPeriod,
         };
         saveSpendingToCache(userId, spendingCacheData).catch((error) => {
@@ -2026,16 +2039,59 @@ export default function InsightsScreen() {
 
   // Removed hardcoded getCategoryIcon - now using database version from useCategories hook
 
-  const handleCategoryPress = (
-    category: string,
-    data: { amount: number; percentage: number; color: string },
-  ) => {
-    setSelectedCategoryDetail({
-      category,
-      data: { ...data, hasRecurringTransactions: false },
-    });
-    setShowCategoryDetail(true);
-  };
+  const openCategoryDetail = useCallback(
+    (
+      category: string,
+      data: {
+        amount: number;
+        percentage: number;
+        color: string;
+        hasRecurringTransactions: boolean;
+      },
+      transactionsForCategory: Transaction[],
+    ) => {
+      setSelectedCategoryDetail({
+        category,
+        data: {
+          ...data,
+          hasRecurringTransactions: data.hasRecurringTransactions ?? false,
+        },
+      });
+      setSelectedCategoryTransactions(transactionsForCategory);
+      setShowCategoryDetail(true);
+    },
+    [],
+  );
+
+  const handleSpendingCategoryPress = useCallback(
+    (
+      category: string,
+      data: {
+        amount: number;
+        percentage: number;
+        color: string;
+        hasRecurringTransactions: boolean;
+      },
+    ) => {
+      openCategoryDetail(category, data, currentMonthTransactions);
+    },
+    [openCategoryDetail, currentMonthTransactions],
+  );
+
+  const handleBudgetCategoryPress = useCallback(
+    (
+      category: string,
+      data: {
+        amount: number;
+        percentage: number;
+        color: string;
+        hasRecurringTransactions: boolean;
+      },
+    ) => {
+      openCategoryDetail(category, data, budgetMonthTransactions);
+    },
+    [openCategoryDetail, budgetMonthTransactions],
+  );
 
   // Handle transaction click - show transaction detail modal
   const handleTransactionPress = (transaction: Transaction) => {
@@ -2469,7 +2525,7 @@ export default function InsightsScreen() {
   const spendingPageProps = useMemo(
     () => ({
       categoryBreakdown,
-      onCategoryPress: handleCategoryPress,
+      onCategoryPress: handleSpendingCategoryPress,
       formatCategoryName: formatCategoryFromHook,
       getCategoryIcon,
       availableMonths,
@@ -2485,7 +2541,7 @@ export default function InsightsScreen() {
     }),
     [
       categoryBreakdown,
-      handleCategoryPress,
+      handleSpendingCategoryPress,
       formatCategoryFromHook,
       getCategoryIcon,
       availableMonths,
@@ -2503,8 +2559,8 @@ export default function InsightsScreen() {
 
   const budgetPageProps = useMemo(
     () => ({
-      categoryBreakdown,
-      onCategoryPress: handleCategoryPress,
+      categoryBreakdown: budgetCategoryBreakdown,
+      onCategoryPress: handleBudgetCategoryPress,
       formatCategoryName: formatCategoryFromHook,
       onOpenAddCategoryModalRef: handleOpenAddCategoryModalRef,
       onRefreshBudgetRef: (refreshFn: () => Promise<void>) => {
@@ -2519,8 +2575,8 @@ export default function InsightsScreen() {
       refreshing,
     }),
     [
-      categoryBreakdown,
-      handleCategoryPress,
+      budgetCategoryBreakdown,
+      handleBudgetCategoryPress,
       formatCategoryFromHook,
       handleOpenAddCategoryModalRef,
       refreshCategories,
@@ -2697,7 +2753,7 @@ export default function InsightsScreen() {
           onClose={() => setShowCategoryDetail(false)}
           category={selectedCategoryDetail.category}
           data={selectedCategoryDetail.data}
-          transactions={currentMonthTransactions}
+          transactions={selectedCategoryTransactions}
           formatCategoryName={formatCategoryFromHook}
           formatDate={formatDate}
         />
