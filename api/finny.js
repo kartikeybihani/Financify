@@ -215,7 +215,7 @@ function countQuestionMarks(text = "") {
   return matches ? matches.length : 0;
 }
 
-function shouldOverrideAffordabilityResponse(message = "", responseText = "") {
+function detectAffordabilityContractIssues(message = "", responseText = "") {
   const amountProvided = Number.isFinite(extractMentionedAmount(message));
   const lower = String(responseText).toLowerCase();
   const asksForPrice =
@@ -228,13 +228,15 @@ function shouldOverrideAffordabilityResponse(message = "", responseText = "") {
     );
   const tooManyQuestions = countQuestionMarks(responseText) > 1;
 
-  if (amountProvided && asksForPrice) return true;
-  if (asksUserToAssessImpact) return true;
-  if (tooManyQuestions) return true;
-  return false;
+  return {
+    amountProvided,
+    asksForPrice: amountProvided && asksForPrice,
+    asksUserToAssessImpact,
+    tooManyQuestions,
+  };
 }
 
-function buildDeterministicAffordabilityResponse(
+function getAffordabilityVerdictLine(
   message = "",
   packs = {},
   profile = {},
@@ -244,8 +246,6 @@ function buildDeterministicAffordabilityResponse(
 
   const liquidAssets = Number(packs?.base?.liquidAssets);
   const liabilities = Number(packs?.base?.totalLiabilities);
-  const income = Number(profile?.monthly_income);
-
   if (!Number.isFinite(liquidAssets)) return null;
 
   const remaining = liquidAssets - amount;
@@ -256,24 +256,61 @@ function buildDeterministicAffordabilityResponse(
   } else if (Number.isFinite(liabilities) && liabilities > remaining) {
     decisionLine = "I’d only buy this if you pay cash and avoid adding debt.";
   }
+  return decisionLine;
+}
 
-  const reasons = [
-    `- After a $${amount.toLocaleString()} purchase, your liquid cash would be about $${remaining.toFixed(
-      2,
-    )}.`,
-  ];
+function applyLightAffordabilityRepair(
+  message = "",
+  responseText = "",
+  packs = {},
+  profile = {},
+) {
+  let text = String(responseText || "").trim();
+  if (!text) return text;
 
-  if (Number.isFinite(liabilities)) {
-    reasons.push(`- Your current liabilities are about $${liabilities.toFixed(2)}.`);
+  const issues = detectAffordabilityContractIssues(message, text);
+  const hasContractIssue =
+    issues.asksForPrice || issues.asksUserToAssessImpact || issues.tooManyQuestions;
+
+  if (!hasContractIssue) return text;
+
+  // 1) Remove blocked questions while preserving most of the model's original response.
+  text = text
+    .replace(
+      /(^|\n).*(price tag|what('?s| is) the price|what's the price range|how much is).*(\n|$)/gi,
+      "\n",
+    )
+    .replace(
+      /(^|\n).*(how will it impact|will it impact your|do you think it will affect).*(\n|$)/gi,
+      "\n",
+    );
+
+  // 2) If too many questions, keep at most one question sentence.
+  if (issues.tooManyQuestions) {
+    const parts = text.split(/(?<=[.?!])\s+/);
+    let questionKept = false;
+    text = parts
+      .filter((p) => {
+        if (!p.includes("?")) return true;
+        if (questionKept) return false;
+        questionKept = true;
+        return true;
+      })
+      .join(" ")
+      .trim();
   }
-  if (Number.isFinite(income) && income > 0) {
-    reasons.push(`- Your monthly income context is $${income.toFixed(0)}.`);
+
+  // 3) Ensure decision-first first line, but keep response body mostly intact.
+  const verdict = getAffordabilityVerdictLine(message, packs, profile);
+  if (verdict) {
+    const startsWithDecision =
+      /^(i('| a)m|i would|you can|you should|this purchase|i’d|i'd)/i.test(text);
+    if (!startsWithDecision) {
+      text = `${verdict}\n\n${text}`;
+    }
   }
 
-  const topReasons = reasons.slice(0, 2).join("\n");
-  return cleanResponseFormatting(
-    `${decisionLine}\n\n${topReasons}\n\n- Next step: use a 30-day wait rule, then buy only if it does not increase card balances.`,
-  );
+  return cleanResponseFormatting(text);
 }
 
 function normalizeClassificationFromContext(
@@ -3897,20 +3934,16 @@ async function handleAsk(
       cleanText = deterministicSpendAnswer;
     }
 
-    if (
-      responseContract === "affordability_decision" &&
-      shouldOverrideAffordabilityResponse(message, cleanText)
-    ) {
-      const deterministicAffordability = buildDeterministicAffordabilityResponse(
+    if (responseContract === "affordability_decision") {
+      const repaired = applyLightAffordabilityRepair(
         message,
+        cleanText,
         packs,
         context?.profile || {},
       );
-      if (deterministicAffordability) {
-        logInfo(
-          "🧭 [CONTRACT] Using deterministic affordability response override",
-        );
-        cleanText = deterministicAffordability;
+      if (repaired && repaired !== cleanText) {
+        logInfo("🧭 [CONTRACT] Applied light affordability repair");
+        cleanText = repaired;
       }
     }
 
