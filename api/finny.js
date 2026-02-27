@@ -187,6 +187,12 @@ function buildResponseContractInstructions(
     lines.push(
       `- Finny must compute affordability impact itself; do NOT ask user to evaluate impact.`,
     );
+    lines.push(
+      `- Assume linked accounts are the primary money context. Do NOT ask user to "check if they have enough savings" from linked balances.`,
+    );
+    lines.push(
+      `- If uncertainty remains, ask ONLY about off-platform cash or near-term obligations not reflected in linked accounts.`,
+    );
     lines.push(`- Ask at most ONE clarifying question, only if materially blocked.`);
     lines.push(
       amountProvided
@@ -226,12 +232,20 @@ function detectAffordabilityContractIssues(message = "", responseText = "") {
     /\b(will it impact|how will it impact|do you think it will affect)\b/.test(
       lower,
     );
+  const asksUserToCheckSavings =
+    /\b(check if you have enough savings|make sure you have enough savings|ensure you have enough savings|check your savings)\b/.test(
+      lower,
+    );
+  const hedgesKnownDebt =
+    /\b(if you have any debt|if you have debt)\b/.test(lower);
   const tooManyQuestions = countQuestionMarks(responseText) > 1;
 
   return {
     amountProvided,
     asksForPrice: amountProvided && asksForPrice,
     asksUserToAssessImpact,
+    asksUserToCheckSavings,
+    hedgesKnownDebt,
     tooManyQuestions,
   };
 }
@@ -270,7 +284,11 @@ function applyLightAffordabilityRepair(
 
   const issues = detectAffordabilityContractIssues(message, text);
   const hasContractIssue =
-    issues.asksForPrice || issues.asksUserToAssessImpact || issues.tooManyQuestions;
+    issues.asksForPrice ||
+    issues.asksUserToAssessImpact ||
+    issues.asksUserToCheckSavings ||
+    issues.hedgesKnownDebt ||
+    issues.tooManyQuestions;
 
   if (!hasContractIssue) return text;
 
@@ -282,6 +300,14 @@ function applyLightAffordabilityRepair(
     )
     .replace(
       /(^|\n).*(how will it impact|will it impact your|do you think it will affect).*(\n|$)/gi,
+      "\n",
+    )
+    .replace(
+      /(^|\n).*(check if you have enough savings|make sure you have enough savings|ensure you have enough savings|check your savings).*(\n|$)/gi,
+      "\n",
+    )
+    .replace(
+      /(^|\n).*(if you have any debt|if you have debt).*(\n|$)/gi,
       "\n",
     );
 
@@ -307,6 +333,18 @@ function applyLightAffordabilityRepair(
       /^(i('| a)m|i would|you can|you should|this purchase|i’d|i'd)/i.test(text);
     if (!startsWithDecision) {
       text = `${verdict}\n\n${text}`;
+    }
+  }
+
+  // 4) If we removed savings-check style language, inject one concise advisor-computed buffer line.
+  if (issues.asksUserToCheckSavings) {
+    const amount = extractMentionedAmount(message);
+    const liquidAssets = Number(packs?.base?.liquidAssets);
+    if (Number.isFinite(amount) && Number.isFinite(liquidAssets)) {
+      const remaining = liquidAssets - amount;
+      text = `${text}\n\n- Based on your linked balances, this would leave about $${remaining.toFixed(
+        2,
+      )} in liquid cash.`;
     }
   }
 
@@ -3934,7 +3972,20 @@ async function handleAsk(
       cleanText = deterministicSpendAnswer;
     }
 
+    let contractIssueCount = 0;
     if (responseContract === "affordability_decision") {
+      const contractIssuesBeforeRepair = detectAffordabilityContractIssues(
+        message,
+        cleanText,
+      );
+      contractIssueCount = [
+        contractIssuesBeforeRepair.asksForPrice,
+        contractIssuesBeforeRepair.asksUserToAssessImpact,
+        contractIssuesBeforeRepair.asksUserToCheckSavings,
+        contractIssuesBeforeRepair.hedgesKnownDebt,
+        contractIssuesBeforeRepair.tooManyQuestions,
+      ].filter(Boolean).length;
+
       const repaired = applyLightAffordabilityRepair(
         message,
         cleanText,
@@ -3951,6 +4002,11 @@ async function handleAsk(
 
     // Basic response validation (log warnings, don't block)
     const validationIssues = [];
+    if (contractIssueCount > 0) {
+      validationIssues.push(
+        `Contract issues detected (affordability): ${contractIssueCount}`,
+      );
+    }
 
     // Check 1: Intent fulfillment (basic check)
     if (classificationResult?.intent) {
