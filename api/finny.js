@@ -147,6 +147,158 @@ function detectAmbiguousIntent(text) {
   return false;
 }
 
+function determineResponseContract(message = "", classificationResult = {}) {
+  const lower = String(message).toLowerCase();
+  const intent = classificationResult?.intent || "ask_personalized";
+  const intentType = classificationResult?.intent_type || null;
+  const decisionRisk = classificationResult?.decision_risk || "unknown";
+
+  const affordabilityPattern =
+    /\b(can i afford|can i buy|should i buy|do u think i can buy|do you think i can buy|worth buying|worth it to buy)\b/.test(
+      lower,
+    ) || (/\b(buy|purchase)\b/.test(lower) && /\$[\d,]+/.test(lower));
+
+  if (decisionRisk === "high" && (intentType === "actionable" || intentType === "planning")) {
+    return "high_stakes_planning";
+  }
+  if (intent === "ask_personalized" && intentType === "factual") {
+    return "factual_lookup";
+  }
+  if (intent === "ask_personalized" && affordabilityPattern) {
+    return "affordability_decision";
+  }
+  if (intent === "ask_personalized" && intentType === "exploratory") {
+    return "education_explainer";
+  }
+  return "default_coach";
+}
+
+function extractMentionedAmount(message = "") {
+  const text = String(message);
+  const dollarMatch = text.match(/\$\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/);
+  if (dollarMatch?.[1]) {
+    const value = Number(dollarMatch[1].replace(/,/g, ""));
+    return Number.isFinite(value) ? value : null;
+  }
+
+  const usdMatch = text.match(
+    /\b([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(usd|dollars?)\b/i,
+  );
+  if (usdMatch?.[1]) {
+    const value = Number(usdMatch[1].replace(/,/g, ""));
+    return Number.isFinite(value) ? value : null;
+  }
+  return null;
+}
+
+function buildResponseContractInstructions(
+  contract,
+  { message = "", classificationResult = {}, packs = {}, profile = {} } = {},
+) {
+  const amount = extractMentionedAmount(message);
+  const amountProvided = Number.isFinite(amount);
+  const lines = [];
+
+  lines.push(`RESPONSE_CONTRACT: ${contract}`);
+
+  if (contract === "affordability_decision") {
+    lines.push(`- Output format: Decision -> Why (max 2 bullets) -> One next step.`);
+    lines.push(`- Lead with the decision in the first sentence.`);
+    lines.push(
+      `- Use only necessary money context; do NOT dump full balances or account summaries.`,
+    );
+    lines.push(
+      `- Finny must compute affordability impact itself; do NOT ask user to evaluate impact.`,
+    );
+    lines.push(`- Ask at most ONE clarifying question, only if materially blocked.`);
+    lines.push(
+      amountProvided
+        ? `- Purchase amount is already provided (${amount}); NEVER ask for price again.`
+        : `- Purchase amount is missing; ask exactly one question for price and stop.`,
+    );
+  } else if (contract === "factual_lookup") {
+    lines.push(`- Output format: Direct answer first -> brief supporting math.`);
+    lines.push(`- No coaching questions unless answer is truly blocked.`);
+  } else if (contract === "high_stakes_planning") {
+    lines.push(
+      `- Output format: brief framing -> 1-2 principles -> 1-3 targeted clarifying questions.`,
+    );
+    lines.push(`- Do not provide tactical step-by-step plan yet.`);
+  } else if (contract === "education_explainer") {
+    lines.push(`- Output format: direct explanation -> short example -> one practical takeaway.`);
+  } else {
+    lines.push(`- Keep response concise, personalized, and directly actionable.`);
+  }
+
+  return lines.join("\n");
+}
+
+function countQuestionMarks(text = "") {
+  const matches = String(text).match(/\?/g);
+  return matches ? matches.length : 0;
+}
+
+function shouldOverrideAffordabilityResponse(message = "", responseText = "") {
+  const amountProvided = Number.isFinite(extractMentionedAmount(message));
+  const lower = String(responseText).toLowerCase();
+  const asksForPrice =
+    /\b(how much is|what('?s| is) the price|price tag|what's the price range)\b/.test(
+      lower,
+    );
+  const asksUserToAssessImpact =
+    /\b(will it impact|how will it impact|do you think it will affect)\b/.test(
+      lower,
+    );
+  const tooManyQuestions = countQuestionMarks(responseText) > 1;
+
+  if (amountProvided && asksForPrice) return true;
+  if (asksUserToAssessImpact) return true;
+  if (tooManyQuestions) return true;
+  return false;
+}
+
+function buildDeterministicAffordabilityResponse(
+  message = "",
+  packs = {},
+  profile = {},
+) {
+  const amount = extractMentionedAmount(message);
+  if (!Number.isFinite(amount)) return null;
+
+  const liquidAssets = Number(packs?.base?.liquidAssets);
+  const liabilities = Number(packs?.base?.totalLiabilities);
+  const income = Number(profile?.monthly_income);
+
+  if (!Number.isFinite(liquidAssets)) return null;
+
+  const remaining = liquidAssets - amount;
+  let decisionLine = "This purchase is possible, but it’s not a clean yes.";
+
+  if (remaining < 1000) {
+    decisionLine = "I’d hold off right now on this purchase.";
+  } else if (Number.isFinite(liabilities) && liabilities > remaining) {
+    decisionLine = "I’d only buy this if you pay cash and avoid adding debt.";
+  }
+
+  const reasons = [
+    `- After a $${amount.toLocaleString()} purchase, your liquid cash would be about $${remaining.toFixed(
+      2,
+    )}.`,
+  ];
+
+  if (Number.isFinite(liabilities)) {
+    reasons.push(`- Your current liabilities are about $${liabilities.toFixed(2)}.`);
+  }
+  if (Number.isFinite(income) && income > 0) {
+    reasons.push(`- Your monthly income context is $${income.toFixed(0)}.`);
+  }
+
+  const topReasons = reasons.slice(0, 2).join("\n");
+  return cleanResponseFormatting(
+    `${decisionLine}\n\n${topReasons}\n\n- Next step: use a 30-day wait rule, then buy only if it does not increase card balances.`,
+  );
+}
+
 function normalizeClassificationFromContext(
   classificationResult,
   packs = {},
@@ -3761,6 +3913,19 @@ async function handleAsk(
         `${userId}:${context?.chat_id || ""}:${message}`,
         0.5,
       );
+    const responseContract = determineResponseContract(
+      message,
+      classificationResult,
+    );
+    const responseContractHeader = buildResponseContractInstructions(
+      responseContract,
+      {
+        message,
+        classificationResult,
+        packs,
+        profile: context?.profile || {},
+      },
+    );
 
     const coachingRuntimeFlags = [
       `COACHING_FLAGS:`,
@@ -3770,6 +3935,7 @@ async function handleAsk(
       `- user_refused_to_answer: ${userRefused}`,
       `- decision_risk: ${decisionRisk}`,
       `- info_sufficiency: ${infoSufficiency}`,
+      `- response_contract: ${responseContract}`,
       `- missing_numeric_inputs: [${insufficiencyState.missing_numeric_inputs.join(", ")}]`,
       `- missing_decision_context: [${insufficiencyState.missing_decision_context.join(", ")}]`,
     ].join("\n");
@@ -3789,6 +3955,7 @@ async function handleAsk(
     const runtimeHeader = [
       contextHeader,
       classificationHeader,
+      responseContractHeader,
       coachingRuntimeFlags,
     ]
       .filter(Boolean)
@@ -3991,6 +4158,23 @@ async function handleAsk(
         "🧮 [ARITHMETIC] Using deterministic category-exclusion spend answer",
       );
       cleanText = deterministicSpendAnswer;
+    }
+
+    if (
+      responseContract === "affordability_decision" &&
+      shouldOverrideAffordabilityResponse(message, cleanText)
+    ) {
+      const deterministicAffordability = buildDeterministicAffordabilityResponse(
+        message,
+        packs,
+        context?.profile || {},
+      );
+      if (deterministicAffordability) {
+        logInfo(
+          "🧭 [CONTRACT] Using deterministic affordability response override",
+        );
+        cleanText = deterministicAffordability;
+      }
     }
 
     // Memory saving will happen after topic detection (see below)
