@@ -29,9 +29,7 @@ import {
   detectUserState,
   buildContextAwarePromptDetailed,
 } from "../lib/prompt_engine.js";
-import {
-  buildMainAskMessages,
-} from "../lib/llm/promptLogging.js";
+import { buildMainAskMessages } from "../lib/llm/promptLogging.js";
 import {
   checkRateLimit,
   formatRetryAfterSeconds,
@@ -133,16 +131,20 @@ function determineResponseContract(message = "", classificationResult = {}) {
   const affordabilityPattern =
     /\b(can i afford|can i buy|should i buy|do u think i can buy|do you think i can buy|worth buying|worth it to buy)\b/.test(
       lower,
-    ) || (/\b(buy|purchase)\b/.test(lower) && /\$[\d,]+/.test(lower));
+    ) ||
+    (/\b(buy|purchase)\b/.test(lower) && /\$[\d,]+/.test(lower));
 
-  if (decisionRisk === "high" && (intentType === "actionable" || intentType === "planning")) {
-    return "high_stakes_planning";
+  if (intent === "ask_personalized" && affordabilityPattern) {
+    return "affordability_decision";
   }
   if (intent === "ask_personalized" && intentType === "factual") {
     return "factual_lookup";
   }
-  if (intent === "ask_personalized" && affordabilityPattern) {
-    return "affordability_decision";
+  if (
+    decisionRisk === "high" &&
+    (intentType === "actionable" || intentType === "planning")
+  ) {
+    return "high_stakes_planning";
   }
   if (intent === "ask_personalized" && intentType === "exploratory") {
     return "education_explainer";
@@ -179,8 +181,16 @@ function buildResponseContractInstructions(
   lines.push(`RESPONSE_CONTRACT: ${contract}`);
 
   if (contract === "affordability_decision") {
-    lines.push(`- Output format: Decision -> Why (max 2 bullets) -> One next step.`);
+    lines.push(
+      `- Output format: Decision -> Why (max 2 bullets) -> One next step.`,
+    );
     lines.push(`- Lead with the decision in the first sentence.`);
+    lines.push(
+      `- Financial context (if needed) must be 2-3 short bullets, not a long paragraph.`,
+    );
+    lines.push(
+      `- Prefer purchase-impact and debt context; avoid listing net worth/investments unless directly necessary.`,
+    );
     lines.push(
       `- Use only necessary money context; do NOT dump full balances or account summaries.`,
     );
@@ -193,14 +203,18 @@ function buildResponseContractInstructions(
     lines.push(
       `- If uncertainty remains, ask ONLY about off-platform cash or near-term obligations not reflected in linked accounts.`,
     );
-    lines.push(`- Ask at most ONE clarifying question, only if materially blocked.`);
+    lines.push(
+      `- Ask at most ONE clarifying question, only if materially blocked.`,
+    );
     lines.push(
       amountProvided
         ? `- Purchase amount is already provided (${amount}); NEVER ask for price again.`
         : `- Purchase amount is missing; ask exactly one question for price and stop.`,
     );
   } else if (contract === "factual_lookup") {
-    lines.push(`- Output format: Direct answer first -> brief supporting math.`);
+    lines.push(
+      `- Output format: Direct answer first -> brief supporting math.`,
+    );
     lines.push(`- No coaching questions unless answer is truly blocked.`);
   } else if (contract === "high_stakes_planning") {
     lines.push(
@@ -208,9 +222,13 @@ function buildResponseContractInstructions(
     );
     lines.push(`- Do not provide tactical step-by-step plan yet.`);
   } else if (contract === "education_explainer") {
-    lines.push(`- Output format: direct explanation -> short example -> one practical takeaway.`);
+    lines.push(
+      `- Output format: direct explanation -> short example -> one practical takeaway.`,
+    );
   } else {
-    lines.push(`- Keep response concise, personalized, and directly actionable.`);
+    lines.push(
+      `- Keep response concise, personalized, and directly actionable.`,
+    );
   }
 
   return lines.join("\n");
@@ -236,8 +254,9 @@ function detectAffordabilityContractIssues(message = "", responseText = "") {
     /\b(check if you have enough savings|make sure you have enough savings|ensure you have enough savings|check your savings)\b/.test(
       lower,
     );
-  const hedgesKnownDebt =
-    /\b(if you have any debt|if you have debt)\b/.test(lower);
+  const hedgesKnownDebt = /\b(if you have any debt|if you have debt)\b/.test(
+    lower,
+  );
   const tooManyQuestions = countQuestionMarks(responseText) > 1;
 
   return {
@@ -250,11 +269,7 @@ function detectAffordabilityContractIssues(message = "", responseText = "") {
   };
 }
 
-function getAffordabilityVerdictLine(
-  message = "",
-  packs = {},
-  profile = {},
-) {
+function getAffordabilityVerdictLine(message = "", packs = {}, profile = {}) {
   const amount = extractMentionedAmount(message);
   if (!Number.isFinite(amount)) return null;
 
@@ -306,8 +321,9 @@ function applyLightAffordabilityRepair(
       /(^|\n).*(check if you have enough savings|make sure you have enough savings|ensure you have enough savings|check your savings).*(\n|$)/gi,
       "\n",
     )
+    .replace(/(^|\n).*(if you have any debt|if you have debt).*(\n|$)/gi, "\n")
     .replace(
-      /(^|\n).*(if you have any debt|if you have debt).*(\n|$)/gi,
+      /(^|\n).*(net worth.*liquid assets.*investment assets.*)(\n|$)/gi,
       "\n",
     );
 
@@ -330,7 +346,9 @@ function applyLightAffordabilityRepair(
   const verdict = getAffordabilityVerdictLine(message, packs, profile);
   if (verdict) {
     const startsWithDecision =
-      /^(i('| a)m|i would|you can|you should|this purchase|i’d|i'd)/i.test(text);
+      /^(i('| a)m|i would|you can|you should|this purchase|i’d|i'd)/i.test(
+        text,
+      );
     if (!startsWithDecision) {
       text = `${verdict}\n\n${text}`;
     }
@@ -346,6 +364,20 @@ function applyLightAffordabilityRepair(
         2,
       )} in liquid cash.`;
     }
+  }
+
+  // 5) Normalize verbose summary phrasing into concise bullet line.
+  const amount = extractMentionedAmount(message);
+  const liquidAssets = Number(packs?.base?.liquidAssets);
+  if (
+    Number.isFinite(amount) &&
+    Number.isFinite(liquidAssets) &&
+    !/cash after purchase|would leave about \$/.test(text.toLowerCase())
+  ) {
+    const remaining = liquidAssets - amount;
+    text = `${text}\n\n- Cash after this purchase would be about $${remaining.toFixed(
+      2,
+    )}.`;
   }
 
   return cleanResponseFormatting(text);
@@ -442,95 +474,12 @@ function looksLikeFactualLookup(message = "") {
 
 // canonicalizeIntentType moved to service
 
-function forceFactualClassificationForLookup(text, out) {
-  if (!out || typeof out !== "object") return out;
-  if (out.intent !== "ask_personalized") return out;
-  if (!looksLikeFactualLookup(text)) return out;
-
-  out.intent_type = "factual";
-  if (!out.decision_risk || out.decision_risk === "unknown") {
-    out.decision_risk = "low";
-  }
-  if (!out.info_sufficiency || out.info_sufficiency === "unknown") {
-    out.info_sufficiency = "sufficient";
-  }
-  out.needs_clarification = false;
-  out.missing_fields = [];
-  return out;
-}
-
-function canonicalizeDataRequirements(dataRequirements, needsUserData, message) {
-  if (!needsUserData) return null;
-
-  const dr =
-    dataRequirements && typeof dataRequirements === "object"
-      ? { ...dataRequirements }
-      : {};
-
-  const required = Array.isArray(dr.required_packs) ? dr.required_packs : [];
-  const optional = Array.isArray(dr.optional_packs) ? dr.optional_packs : [];
-  const allowedPacks = new Set([
-    "summary_min",
-    "spend_total",
-    "category_details",
-    "merchant_breakdown",
-    "invest_holdings",
-    "goals_overview",
-  ]);
-
-  const normalizedRequired = Array.from(
-    new Set(required.filter((p) => allowedPacks.has(p))),
-  );
-  if (!normalizedRequired.includes("summary_min")) {
-    normalizedRequired.unshift("summary_min");
-  }
-
-  const normalizedOptional = Array.from(
-    new Set(optional.filter((p) => allowedPacks.has(p))),
-  ).filter((p) => !normalizedRequired.includes(p));
-
-  const allowedGranularity = new Set([
-    "summary_level",
-    "transaction_level",
-    "category_level",
-  ]);
-  const granularity = allowedGranularity.has(dr.granularity)
-    ? dr.granularity
-    : "summary_level";
-
-  const allowedTimeRange = new Set([
-    "current",
-    "1_month",
-    "3_months",
-    "6_months",
-    "1_year",
-    "all_time",
-  ]);
-  const time_range = allowedTimeRange.has(dr.time_range)
-    ? dr.time_range
-    : looksLikeFactualLookup(message)
-      ? "1_month"
-      : "current";
-
-  const filters = dr.filters && typeof dr.filters === "object" ? dr.filters : {};
-  const period = normalizePeriodFilter(filters.period || null, time_range);
-
-  return {
-    required_packs: normalizedRequired,
-    optional_packs: normalizedOptional,
-    filters: {
-      merchant:
-        typeof filters.merchant === "string" ? filters.merchant.trim() : null,
-      category:
-        typeof filters.category === "string" ? filters.category.trim() : null,
-      period: period || null,
-    },
-    granularity,
-    time_range,
-  };
-}
-
-function buildInsufficiencyState(message, classificationResult, packs, profile) {
+function buildInsufficiencyState(
+  message,
+  classificationResult,
+  packs,
+  profile,
+) {
   const lower = String(message || "").toLowerCase();
   const base = packs?.base || {};
   const missing_numeric_inputs = [];
@@ -561,7 +510,9 @@ function buildInsufficiencyState(message, classificationResult, packs, profile) 
     ) {
       missing_decision_context.push("purchase_purpose");
     }
-    if (!/\b(in \d+ months?|by \d{4}|this year|next year|timeline)\b/.test(lower)) {
+    if (
+      !/\b(in \d+ months?|by \d{4}|this year|next year|timeline)\b/.test(lower)
+    ) {
       missing_decision_context.push("timeline");
     }
   }
@@ -593,7 +544,9 @@ function buildHighRiskClarificationResponse(
     questions.push("What is your current monthly take-home income?");
   }
   if (numeric.includes("current_savings")) {
-    questions.push("How much cash is available today for down payment and buffer?");
+    questions.push(
+      "How much cash is available today for down payment and buffer?",
+    );
   }
 
   const finalQuestions = questions.slice(0, 3);
@@ -732,7 +685,8 @@ function buildDeterministicCategoryExclusionAnswer(message, basePack = {}) {
     .map((c) => String(c?.category || c?.name || "").toLowerCase())
     .filter(Boolean);
 
-  const exclusionRegex = /\b(?:besides|excluding|except)\s+([a-z][a-z\s]{1,30})/i;
+  const exclusionRegex =
+    /\b(?:besides|excluding|except)\s+([a-z][a-z\s]{1,30})/i;
   const match = lower.match(exclusionRegex);
   if (!match) return null;
 
@@ -780,10 +734,13 @@ function buildDeterministicCategoryExclusionAnswer(message, basePack = {}) {
     excludedAmount?.category || excludedAmount?.name || requested;
 
   return [
-    `This month, excluding ${excludedDisplay}, you've spent $${includedTotal.toLocaleString(undefined, {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
-    })}.`,
+    `This month, excluding ${excludedDisplay}, you've spent $${includedTotal.toLocaleString(
+      undefined,
+      {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2,
+      },
+    )}.`,
     "",
     ...lines,
     "",
@@ -973,11 +930,6 @@ function generateClassificationCacheKey(message) {
 // Get cached classification result
 function getCachedClassification(message) {
   return classificationService.getCached(message);
-}
-
-// Set cached classification result
-function setCachedClassification(message, result) {
-  classificationService.setCached(message, result);
 }
 
 // Generate a cache key for memory search (user-specific)
@@ -2640,7 +2592,10 @@ async function enhanceSearchQuery(message, context) {
 
     // Fetch user's investment holdings
     const { data: holdings, error } =
-      await dataFetchService.getInvestmentHoldingsDetailed(context.user_id, 3000);
+      await dataFetchService.getInvestmentHoldingsDetailed(
+        context.user_id,
+        3000,
+      );
 
     if (error || !holdings || holdings.length === 0) {
       console.log("⚠️ [ENHANCE] No holdings found or error:", error?.message);
@@ -2724,12 +2679,7 @@ async function handleAsk(
       if (!userId || !resolvedChatId) return;
       if (!assistantText) return;
       try {
-        appendConversationTurns(
-          userId,
-          resolvedChatId,
-          message,
-          assistantText,
-        );
+        appendConversationTurns(userId, resolvedChatId, message, assistantText);
       } catch (e) {
         // Non-fatal; never break the ask flow for history.
         logDebug("⚠️ [HISTORY] Failed to record turns:", e?.message);
@@ -2759,10 +2709,11 @@ async function handleAsk(
     }
 
     // Select data packs from classification (with keyword fallback)
-    const packSelection = contextPlanningService.selectDataPacksFromClassification(
-      classificationResult,
-      message,
-    );
+    const packSelection =
+      contextPlanningService.selectDataPacksFromClassification(
+        classificationResult,
+        message,
+      );
 
     // Extract keyword-based slots for backward compatibility
     const keywordSlots = contextPlanningService.extractSlots(message);
@@ -2989,8 +2940,27 @@ async function handleAsk(
 
     // Decision risk and info sufficiency are used for runtime coaching flags
     // passed to the LLM (not for early returns - LLM handles all clarifications)
-    const decisionRisk = classificationResult?.decision_risk || "unknown";
+    let decisionRisk = classificationResult?.decision_risk || "unknown";
     const infoSufficiency = classificationResult?.info_sufficiency || "unknown";
+
+    const runtimeContract = determineResponseContract(
+      message,
+      classificationResult,
+    );
+    const amountMentioned = extractMentionedAmount(message);
+    const hasLiquidContext = Number.isFinite(Number(packs?.base?.liquidAssets));
+    if (
+      runtimeContract === "affordability_decision" &&
+      decisionRisk === "high" &&
+      Number.isFinite(amountMentioned) &&
+      hasLiquidContext
+    ) {
+      decisionRisk = "medium";
+      if (classificationResult) classificationResult.decision_risk = "medium";
+      logInfo(
+        "🧭 [RISK] Downgraded affordability decision_risk high->medium (amount + liquid context available)",
+      );
+    }
 
     const insufficiencyState = buildInsufficiencyState(
       message,
@@ -3360,9 +3330,8 @@ async function handleAsk(
                   queryUsed,
                 };
               }
-              const snapshot = await stockAnalysisService.fetchStockSnapshot(
-                ticker,
-              );
+              const snapshot =
+                await stockAnalysisService.fetchStockSnapshot(ticker);
               return { ...snapshot, ticker, queryUsed };
             },
             false,
@@ -3725,10 +3694,7 @@ async function handleAsk(
         `${userId}:${context?.chat_id || ""}:${message}`,
         0.5,
       );
-    const responseContract = determineResponseContract(
-      message,
-      classificationResult,
-    );
+    const responseContract = runtimeContract;
     const responseContractHeader = buildResponseContractInstructions(
       responseContract,
       {
@@ -3830,7 +3796,13 @@ async function handleAsk(
     let memoryExtraction = [];
 
     async function callMainLLM(model, options = {}) {
-      const messages = buildMainAskMessages({ system, recentTurns, userMessage });
+      const messages = buildMainAskMessages({
+        system,
+        recentTurns,
+        userMessage,
+      });
+      const modelTemperature =
+        responseContract === "factual_lookup" ? 0.2 : 0.35;
 
       const resp = await fetch(
         "https://openrouter.ai/api/v1/chat/completions",
@@ -3843,8 +3815,8 @@ async function handleAsk(
           signal: options.signal,
           body: JSON.stringify({
             model,
-            temperature: 0.4,
-            max_tokens: 10000,
+            temperature: modelTemperature,
+            max_tokens: 6000,
             stream: false,
             reasoning: { effort: "minimal", exclude: true }, // Disable reasoning output, only return actual response
             messages,
@@ -3860,14 +3832,24 @@ async function handleAsk(
     }
 
     // For ask_personalized: Use reasoning model (meta-llama/llama-4-scout) as primary, STANDARD_MODEL as fallback
-    const llmModels = [
-      REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout",
-      STANDARD_MODEL,
-      TERTIARY_MODEL,
-    ];
+    const fastFirstContracts = new Set([
+      "factual_lookup",
+      "affordability_decision",
+    ]);
+    const llmModels = fastFirstContracts.has(responseContract)
+      ? [
+          STANDARD_MODEL,
+          REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout",
+          TERTIARY_MODEL,
+        ]
+      : [
+          REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout",
+          STANDARD_MODEL,
+          TERTIARY_MODEL,
+        ];
 
     let resp;
-    let usedModel = REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
+    let usedModel = llmModels[0];
     try {
       const llmResult = await llmService.callWithFallback(
         llmModels,
@@ -5487,11 +5469,7 @@ async function cacheOperationData(operation, data) {
 
 // Helper function to check if all contexts are cached (silently)
 async function areAllContextsCached(userId) {
-  const commonContexts = [
-    "summary_min",
-    "invest_holdings",
-    "goals_overview",
-  ];
+  const commonContexts = ["summary_min", "invest_holdings", "goals_overview"];
 
   for (const need of commonContexts) {
     const cacheType = NEED_CONFIG[need]?.cacheType || need;
@@ -5522,11 +5500,7 @@ async function handlePrebuildContext(userId, silent = false) {
   try {
     // Check if context is already cached and fresh (within 50 minute TTL)
     // Skip entirely when all packs are cached - no API work needed
-    const commonContexts = [
-      "summary_min",
-      "invest_holdings",
-      "goals_overview",
-    ];
+    const commonContexts = ["summary_min", "invest_holdings", "goals_overview"];
 
     const cachedContexts = {};
     let allCached = true;
@@ -5877,15 +5851,10 @@ async function handleOffTopic(
             userId,
             messageText,
             MEMORY_LOAD_TIMEOUT_MS,
-          ).catch(
-            (error) => {
-              console.log(
-                "⚠️ [OFF_TOPIC] Error loading memory:",
-                error?.message,
-              );
-              return { memories: [], totalCount: 0 };
-            },
-          ),
+          ).catch((error) => {
+            console.log("⚠️ [OFF_TOPIC] Error loading memory:", error?.message);
+            return { memories: [], totalCount: 0 };
+          }),
           fetchSupermemoryProfileWithTimeout(
             userId,
             MEMORY_LOAD_TIMEOUT_MS,
@@ -6589,17 +6558,8 @@ async function generateFallbackStockAnalysis(
   userProfile,
   userMemory,
 ) {
-  return stockAnalysisService.generateFallbackStockAnalysis(ticker, userMessage);
-}
-
-async function generateStockAnalysisFromWebData(
-  ticker,
-  webResults,
-  userMessage,
-) {
-  return stockAnalysisService.generateStockAnalysisFromWebData(
+  return stockAnalysisService.generateFallbackStockAnalysis(
     ticker,
-    webResults,
     userMessage,
   );
 }
