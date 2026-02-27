@@ -233,6 +233,91 @@ function deterministicChance(seed, probability = 0.5) {
   }
 }
 
+function normalizePeriodFilter(periodFilter, timeRange = "current") {
+  if (!periodFilter) return null;
+
+  const now = new Date();
+  const toIso = (d) => d.toISOString().split("T")[0];
+
+  // Already structured period
+  if (
+    typeof periodFilter === "object" &&
+    periodFilter !== null &&
+    periodFilter.start &&
+    periodFilter.end
+  ) {
+    return {
+      start: periodFilter.start,
+      end: periodFilter.end,
+      ...(Number.isFinite(Number(periodFilter.months))
+        ? { months: Number(periodFilter.months) }
+        : {}),
+    };
+  }
+
+  // Convert month-only objects to concrete dates
+  if (
+    typeof periodFilter === "object" &&
+    periodFilter !== null &&
+    Number.isFinite(Number(periodFilter.months))
+  ) {
+    const months = Number(periodFilter.months);
+    const startDate = new Date(now.getFullYear(), now.getMonth() - months, 1);
+    return {
+      start: toIso(startDate),
+      end: toIso(now),
+      months,
+    };
+  }
+
+  // Natural language period string from classifier
+  if (typeof periodFilter === "string") {
+    const p = periodFilter.toLowerCase().trim();
+
+    if (p.includes("this month") || p === "current") {
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      return { start: toIso(first), end: toIso(now) };
+    }
+    if (p.includes("last month")) {
+      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const last = new Date(now.getFullYear(), now.getMonth(), 0);
+      return { start: toIso(first), end: toIso(last), months: 1 };
+    }
+    if (p.includes("last 30") || p.includes("past 30")) {
+      const start = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      return { start: toIso(start), end: toIso(now), months: 1 };
+    }
+    const match = p.match(/(\d+)\s+months?/);
+    if (match) {
+      const months = Number(match[1]);
+      const startDate = new Date(now.getFullYear(), now.getMonth() - months, 1);
+      return { start: toIso(startDate), end: toIso(now), months };
+    }
+  }
+
+  // Fallback from classification time_range
+  if (typeof timeRange === "string") {
+    if (timeRange === "1_month") {
+      const first = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      return { start: toIso(first), end: toIso(now), months: 1 };
+    }
+    if (timeRange === "3_months") {
+      const first = new Date(now.getFullYear(), now.getMonth() - 3, 1);
+      return { start: toIso(first), end: toIso(now), months: 3 };
+    }
+    if (timeRange === "6_months") {
+      const first = new Date(now.getFullYear(), now.getMonth() - 6, 1);
+      return { start: toIso(first), end: toIso(now), months: 6 };
+    }
+    if (timeRange === "1_year") {
+      const first = new Date(now.getFullYear() - 1, now.getMonth(), 1);
+      return { start: toIso(first), end: toIso(now), months: 12 };
+    }
+  }
+
+  return null;
+}
+
 async function callWithFallback(models, callFn, timeoutMs, label = "LLM") {
   let lastErr = null;
   const tried = [];
@@ -2433,13 +2518,17 @@ async function handleAsk(
 
     // Extract keyword-based slots for backward compatibility
     const keywordSlots = extractSlots(message);
+    const normalizedClassificationPeriod = normalizePeriodFilter(
+      packSelection.filters.period,
+      classificationResult?.data_requirements?.time_range || "current",
+    );
 
     // Classification filters ALWAYS override keyword-based slots
     const slots = {
       ...keywordSlots, // Keep for backward compat
       merchant: packSelection.filters.merchant || keywordSlots.merchant,
       category: packSelection.filters.category || keywordSlots.category,
-      period: packSelection.filters.period || keywordSlots.period,
+      period: normalizedClassificationPeriod || keywordSlots.period,
       useMerchantRPC: packSelection.useMerchantRPC, // Flag for merchant RPC usage
       time_range: classificationResult?.data_requirements?.time_range || null, // Store time_range for default period creation
     };
@@ -4568,9 +4657,12 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
     };
   };
 
+  const needsCategoryTransactions =
+    needs.includes("category_details") || needs.includes("txns_by_category");
+
   // Check if we need merchant-specific transactions (use merchant RPC)
   // If period is missing but merchant exists, create default period from time_range
-  if (slots?.useMerchantRPC && slots?.merchant) {
+  if (needsCategoryTransactions && slots?.useMerchantRPC && slots?.merchant) {
     let period = slots.period;
 
     // If no period provided, create default based on time_range from slots or default to 30 days
@@ -4643,7 +4735,7 @@ async function createOptimizedFetchOperations(userId, needs, slots) {
   }
   // Category transactions (existing logic)
   // If period is missing but category exists, create default period from time_range
-  else if (slots?.category) {
+  else if (needsCategoryTransactions && slots?.category) {
     let period = slots.period;
 
     // If no period provided, create default based on time_range from slots or default to 30 days
@@ -6224,6 +6316,12 @@ async function handleClassify(message, context) {
     ]);
 
     out.needs_clarification = !!out.needs_clarification;
+    if (typeof out.intent_type === "string") {
+      const normalizedIntentType = out.intent_type.toLowerCase().trim();
+      if (normalizedIntentType === "explorative") {
+        out.intent_type = "exploratory";
+      }
+    }
     out.info_sufficiency = allowedInfo.has(out.info_sufficiency)
       ? out.info_sufficiency
       : "unknown";
