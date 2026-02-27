@@ -149,6 +149,76 @@ function detectAmbiguousIntent(text) {
   return false;
 }
 
+function normalizeClassificationFromContext(
+  classificationResult,
+  packs = {},
+  profile = {},
+) {
+  if (!classificationResult || typeof classificationResult !== "object") {
+    return classificationResult;
+  }
+
+  const out = { ...classificationResult };
+  const base = packs.base || {};
+
+  const hasBaseContext =
+    Number.isFinite(Number(base.netWorth)) ||
+    Number.isFinite(Number(base.liquidAssets)) ||
+    Number.isFinite(Number(base.totalLiabilities)) ||
+    (Array.isArray(base.accounts) && base.accounts.length > 0);
+
+  const hasSpendFromBase =
+    (Array.isArray(base.spendByCategoryCurrentMonth) &&
+      base.spendByCategoryCurrentMonth.length > 0) ||
+    (Array.isArray(base.spendByCategoryLastMonth) &&
+      base.spendByCategoryLastMonth.length > 0) ||
+    (Array.isArray(base.spendByCategory) && base.spendByCategory.length > 0);
+
+  const hasSpendFromPack =
+    !!packs.spend &&
+    (Number.isFinite(Number(packs.spend.total)) ||
+      Number.isFinite(Number(packs.spend.count)) ||
+      (Array.isArray(packs.spend.transactions) &&
+        packs.spend.transactions.length > 0));
+
+  const hasIncome = Number(profile?.monthly_income) > 0;
+  const hasDebtSignal =
+    Number.isFinite(Number(base.totalLiabilities)) ||
+    (Array.isArray(base.accounts) &&
+      base.accounts.some((acc) => acc?.type === "credit"));
+
+  if (!Array.isArray(out.missing_fields)) out.missing_fields = [];
+
+  out.missing_fields = out.missing_fields.filter((field) => {
+    if (
+      (field === "income_takehome" || field === "income_gross") &&
+      hasIncome
+    ) {
+      return false;
+    }
+    if (field === "current_savings" && hasBaseContext) return false;
+    if (field === "debt_balances" && hasDebtSignal) return false;
+    return true;
+  });
+
+  const hasActionableContext =
+    hasBaseContext || hasSpendFromBase || hasSpendFromPack || hasIncome;
+
+  if (hasActionableContext && out.missing_fields.length === 0) {
+    out.info_sufficiency = "sufficient";
+    out.needs_clarification = false;
+  }
+
+  if (out.decision_risk === "unknown") {
+    out.decision_risk =
+      out.intent_type === "planning" || out.intent_type === "actionable"
+        ? "medium"
+        : "low";
+  }
+
+  return out;
+}
+
 function deterministicChance(seed, probability = 0.5) {
   try {
     const p = typeof probability === "number" ? probability : 0.5;
@@ -255,6 +325,10 @@ const SMALLER_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
 const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
 // Tertiary model for resilience
 const TERTIARY_MODEL = "mistralai/mistral-small-3.1-24b-instruct";
+const MEMORY_LOAD_TIMEOUT_MS = Math.max(
+  Number(process.env.FINNY_MEMORY_TIMEOUT_MS || 5200),
+  1000,
+);
 
 // Classification cache - in-memory cache for classification results
 const classificationCache = new Map();
@@ -1514,7 +1588,7 @@ export default async function handler(req, res) {
           const loadedMemory = await loadUserMemoryWithTimeout(
             finalUserId,
             message,
-            2000,
+            MEMORY_LOAD_TIMEOUT_MS,
           );
           // Always cache the result (even if empty) to avoid repeated API calls for same query
           // loadUserMemoryWithTimeout always returns { memories: [], totalCount: 0 } on error/timeout, so it's safe
@@ -2572,6 +2646,12 @@ async function handleAsk(
     logInfo("📦 [FINNY] Context packs built:", Object.keys(packs));
     logInfo("⚠️ [FINNY] Data gaps:", gaps);
 
+    classificationResult = normalizeClassificationFromContext(
+      classificationResult,
+      packs,
+      context?.profile,
+    );
+
     // Decision risk and info sufficiency are used for runtime coaching flags
     // passed to the LLM (not for early returns - LLM handles all clarifications)
     const decisionRisk = classificationResult?.decision_risk || "unknown";
@@ -2723,7 +2803,11 @@ async function handleAsk(
         // Use cached memory from context if available, otherwise load with 5s timeout (non-blocking)
         const userMemory =
           context.memory ||
-          (await loadUserMemoryWithTimeout(userId, message || null, 2000));
+          (await loadUserMemoryWithTimeout(
+            userId,
+            message || null,
+            MEMORY_LOAD_TIMEOUT_MS,
+          ));
         const userProfile = context.profile || { name: null, age: null };
 
         // Get investment holdings from context packs if available
@@ -3188,8 +3272,16 @@ async function handleAsk(
 
     const financialDataForState = {
       base: packs.base,
-      cashflow: packs.cashflow,
-      spend: packs.spend,
+      spend:
+        packs.spend ||
+        ((Array.isArray(packs.base?.spendByCategoryCurrentMonth) &&
+          packs.base.spendByCategoryCurrentMonth.length > 0) ||
+        (Array.isArray(packs.base?.spendByCategoryLastMonth) &&
+          packs.base.spendByCategoryLastMonth.length > 0) ||
+        (Array.isArray(packs.base?.spendByCategory) &&
+          packs.base.spendByCategory.length > 0)
+          ? { source: "summary_min" }
+          : null),
       invest: packs.invest, // Investment holdings
       goals: packs.goals, // Financial goals
       profileMonthlyIncome: context?.profile?.monthly_income || null,
@@ -3201,7 +3293,7 @@ async function handleAsk(
 
     logInfo(`🔍 [FINANCIAL_DATA] Building financialDataForState:`, {
       hasBase: !!packs.base,
-      hasSpend: !!packs.spend,
+      hasSpend: !!financialDataForState.spend,
       hasCategoryDetails: !!packs.categoryDetails,
       categoryDetailsTransactionCount:
         packs.categoryDetails?.transactions?.length || 0,
@@ -3905,12 +3997,12 @@ function selectDataPacksFromClassification(classificationResult, message) {
     merchant_breakdown: "category_details", // Same pack, different filter
     invest_holdings: "invest_holdings",
     goals_overview: "goals_overview",
-    cashflow_monthly: "cashflow_monthly",
   };
 
   // Add required packs (ensure summary_min for context + base_packs logging)
   if (Array.isArray(dr.required_packs)) {
     dr.required_packs.forEach((pack) => {
+      if (pack === "cashflow_monthly") return;
       const need = packMapping[pack] || pack;
       if (!needs.includes(need)) {
         needs.push(need);
@@ -3924,6 +4016,7 @@ function selectDataPacksFromClassification(classificationResult, message) {
   // Add optional packs (only if not already included)
   if (Array.isArray(dr.optional_packs)) {
     dr.optional_packs.forEach((pack) => {
+      if (pack === "cashflow_monthly") return;
       const need = packMapping[pack] || pack;
       if (!needs.includes(need)) {
         needs.push(need);
@@ -3971,8 +4064,8 @@ function planNeeds(slots, message) {
       needs.push("invest_holdings");
       break;
     case "goals":
-      // HARD GUARDRAIL: For goals questions, ALWAYS include both goals_overview and cashflow_monthly
-      needs.push("goals_overview", "cashflow_monthly");
+      // HARD GUARDRAIL: For goals questions, ALWAYS include goals_overview
+      needs.push("goals_overview");
       break;
   }
 
@@ -3993,9 +4086,8 @@ function planNeeds(slots, message) {
     message.toLowerCase().includes("save") ||
     message.toLowerCase().includes("target")
   ) {
-    // For any goals question, ensure we have both goals and cashflow
+    // For any goals question, ensure we have goals context
     if (!needs.includes("goals_overview")) needs.push("goals_overview");
-    if (!needs.includes("cashflow_monthly")) needs.push("cashflow_monthly");
   }
 
   return needs;
@@ -5376,7 +5468,6 @@ async function areAllContextsCached(userId) {
     "summary_min",
     "invest_holdings",
     "goals_overview",
-    "cashflow_monthly",
   ];
 
   for (const need of commonContexts) {
@@ -5412,7 +5503,6 @@ async function handlePrebuildContext(userId, silent = false) {
       "summary_min",
       "invest_holdings",
       "goals_overview",
-      "cashflow_monthly",
     ];
 
     const cachedContexts = {};
@@ -5505,7 +5595,7 @@ async function handlePrebuildContext(userId, silent = false) {
       logInfo("✅ [PREBUILD] Base context already cached, skipping build");
     }
 
-    // Build invest, goals, cashflow, spend in parallel (only if not cached)
+    // Build invest, goals, spend in parallel (only if not cached)
     const backgroundBuilds = [];
 
     if (!cachedContexts.invest_holdings) {
@@ -5567,36 +5657,6 @@ async function handlePrebuildContext(userId, silent = false) {
       );
     }
 
-    if (!cachedContexts.cashflow_monthly) {
-      backgroundBuilds.push(
-        (async () => {
-          try {
-            const cashflowContext = await buildContextPacks(
-              userId,
-              ["cashflow_monthly"],
-              {},
-            );
-            const cashflowPack =
-              cashflowContext?.packs?.[NEED_CONFIG.cashflow_monthly.packKey] ||
-              null;
-            if (cashflowContext && cashflowContext.packs && cashflowPack) {
-              await setCachedUserData(
-                NEED_CONFIG.cashflow_monthly.cacheType,
-                userId,
-                cashflowPack,
-                { ttl: 50 * 60 * 1000 },
-              );
-              logInfo("✅ [PREBUILD] Cashflow context cached");
-            } else {
-              logWarn("❌ [PREBUILD] Cashflow context failed to build");
-            }
-          } catch (error) {
-            logError("❌ [PREBUILD] Cashflow context failed:", error);
-          }
-        })(),
-      );
-    }
-
     if (!cachedContexts.spend_total) {
       backgroundBuilds.push(
         (async () => {
@@ -5644,7 +5704,6 @@ async function handlePrebuildContext(userId, silent = false) {
         "summary_min",
         "invest_holdings",
         "goals_overview",
-        "cashflow_monthly",
         "spend_total",
       ],
       buildTime: totalTime,
@@ -6516,7 +6575,11 @@ async function handleOffTopic(
         // Load memory and profile in parallel with 5s timeout (non-blocking)
         // Using wrapper functions that automatically fallback to defaults on timeout
         const [loadedMemory, loadedProfile] = await Promise.all([
-          loadUserMemoryWithTimeout(userId, messageText, 2000).catch(
+          loadUserMemoryWithTimeout(
+            userId,
+            messageText,
+            MEMORY_LOAD_TIMEOUT_MS,
+          ).catch(
             (error) => {
               console.log(
                 "⚠️ [OFF_TOPIC] Error loading memory:",
@@ -6525,7 +6588,10 @@ async function handleOffTopic(
               return { memories: [], totalCount: 0 };
             },
           ),
-          fetchSupermemoryProfileWithTimeout(userId, 2000).catch((error) => {
+          fetchSupermemoryProfileWithTimeout(
+            userId,
+            MEMORY_LOAD_TIMEOUT_MS,
+          ).catch((error) => {
             console.log(
               "⚠️ [OFF_TOPIC] Error loading profile:",
               error?.message,
