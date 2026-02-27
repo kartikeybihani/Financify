@@ -318,6 +318,89 @@ function normalizePeriodFilter(periodFilter, timeRange = "current") {
   return null;
 }
 
+function buildDeterministicCategoryExclusionAnswer(message, basePack = {}) {
+  if (!message || !basePack) return null;
+  const lower = String(message).toLowerCase();
+  if (
+    !lower.includes("this month") ||
+    (!lower.includes("besides") &&
+      !lower.includes("excluding") &&
+      !lower.includes("except"))
+  ) {
+    return null;
+  }
+
+  const categories = Array.isArray(basePack.spendByCategoryCurrentMonth)
+    ? basePack.spendByCategoryCurrentMonth
+    : [];
+  if (categories.length === 0) return null;
+
+  const categoryNames = categories
+    .map((c) => String(c?.category || c?.name || "").toLowerCase())
+    .filter(Boolean);
+
+  const exclusionRegex = /\b(?:besides|excluding|except)\s+([a-z][a-z\s]{1,30})/i;
+  const match = lower.match(exclusionRegex);
+  if (!match) return null;
+
+  const requested = match[1].trim();
+  const excludedName =
+    categoryNames.find(
+      (name) => requested.includes(name) || name.includes(requested),
+    ) || null;
+  if (!excludedName) return null;
+
+  const normalizedExcluded = excludedName.toLowerCase();
+  const included = categories.filter(
+    (c) =>
+      String(c?.category || c?.name || "").toLowerCase() !== normalizedExcluded,
+  );
+  if (included.length === 0) return null;
+
+  const asNumber = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  const includedTotal = included.reduce(
+    (sum, c) => sum + asNumber(c?.total_spend ?? c?.amount),
+    0,
+  );
+  const excludedAmount = categories.find(
+    (c) =>
+      String(c?.category || c?.name || "").toLowerCase() === normalizedExcluded,
+  );
+  const excludedTotal = asNumber(
+    excludedAmount?.total_spend ?? excludedAmount?.amount,
+  );
+
+  const lines = included.map((c) => {
+    const category = c?.category || c?.name || "Unknown";
+    const total = asNumber(c?.total_spend ?? c?.amount);
+    return `- ${category}: $${total.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}`;
+  });
+
+  const excludedDisplay =
+    excludedAmount?.category || excludedAmount?.name || requested;
+
+  return [
+    `This month, excluding ${excludedDisplay}, you've spent $${includedTotal.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}.`,
+    "",
+    ...lines,
+    "",
+    `${excludedDisplay} itself is $${excludedTotal.toLocaleString(undefined, {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })}.`,
+  ].join("\n");
+}
+
 async function callWithFallback(models, callFn, timeoutMs, label = "LLM") {
   let lastErr = null;
   const tried = [];
@@ -3649,7 +3732,7 @@ async function handleAsk(
       logWarn("⚠️ [LLM] Model may be using reasoning tokens despite exclusion");
     }
 
-    const cleanText =
+    let cleanText =
       responseMessage.content || "I'm not sure yet. Ask me again?";
 
     logInfo("📝 [LLM] Response length:", cleanText?.length || 0, "chars");
@@ -3664,6 +3747,19 @@ async function handleAsk(
           "⚠️ [LLM] Response was cut off - consider using a non-reasoning model or increasing max_tokens further",
         );
       }
+    }
+
+    // Deterministic arithmetic override for "besides/excluding <category> this month"
+    // to prevent LLM math drift on category totals.
+    const deterministicSpendAnswer = buildDeterministicCategoryExclusionAnswer(
+      message,
+      packs.base || {},
+    );
+    if (deterministicSpendAnswer) {
+      logInfo(
+        "🧮 [ARITHMETIC] Using deterministic category-exclusion spend answer",
+      );
+      cleanText = deterministicSpendAnswer;
     }
 
     // Memory saving will happen after topic detection (see below)
