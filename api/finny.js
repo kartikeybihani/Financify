@@ -40,8 +40,6 @@ import {
 } from "../lib/prompt_engine.js";
 import {
   buildMainAskMessages,
-  formatMainAskPromptLog,
-  shouldLogLLMPrompt,
 } from "../lib/llm/promptLogging.js";
 import {
   checkRateLimit,
@@ -3449,22 +3447,8 @@ async function handleAsk(
     // Memory extraction removed - migrating to Supermemory
     let memoryExtraction = [];
 
-    let didLogMainAskPrompt = false;
-
     async function callMainLLM(model, options = {}) {
       const messages = buildMainAskMessages({ system, recentTurns, userMessage });
-
-      if (!didLogMainAskPrompt && shouldLogLLMPrompt()) {
-        didLogMainAskPrompt = true;
-        console.log(
-          formatMainAskPromptLog({
-            model,
-            systemBuild,
-            recentTurns,
-            userMessage,
-          }),
-        );
-      }
 
       const resp = await fetch(
         "https://openrouter.ai/api/v1/chat/completions",
