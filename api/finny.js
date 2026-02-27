@@ -214,7 +214,214 @@ function normalizeClassificationFromContext(
         : "low";
   }
 
+  if (out.intent === "ask_personalized" && out.intent_type === "factual") {
+    if (out.decision_risk !== "high") out.decision_risk = "low";
+    if (out.info_sufficiency === "unknown") {
+      out.info_sufficiency = hasBaseContext ? "sufficient" : "unknown";
+    }
+    if (out.info_sufficiency === "missing") out.info_sufficiency = "unknown";
+    out.needs_clarification = false;
+    out.missing_fields = [];
+  }
+
   return out;
+}
+
+function looksLikeFactualLookup(message = "") {
+  const lower = String(message).toLowerCase();
+  return (
+    /\b(how much|how many|what is my|what's my|show me|did i spend|spent this month|spent last month)\b/.test(
+      lower,
+    ) && !/\b(should i|can i afford|worth it|help me decide)\b/.test(lower)
+  );
+}
+
+function canonicalizeIntentType(intentType, message = "") {
+  if (intentType == null) {
+    return looksLikeFactualLookup(message) ? "factual" : null;
+  }
+
+  const normalized = String(intentType).toLowerCase().trim();
+  const aliasMap = {
+    explorative: "exploratory",
+    exploratory: "exploratory",
+    factual: "factual",
+    actionable: "actionable",
+    emotional_support: "emotional_support",
+    crisis: "crisis",
+    planning: "planning",
+  };
+
+  if (aliasMap[normalized]) return aliasMap[normalized];
+  return looksLikeFactualLookup(message) ? "factual" : null;
+}
+
+function forceFactualClassificationForLookup(text, out) {
+  if (!out || typeof out !== "object") return out;
+  if (out.intent !== "ask_personalized") return out;
+  if (!looksLikeFactualLookup(text)) return out;
+
+  out.intent_type = "factual";
+  if (!out.decision_risk || out.decision_risk === "unknown") {
+    out.decision_risk = "low";
+  }
+  if (!out.info_sufficiency || out.info_sufficiency === "unknown") {
+    out.info_sufficiency = "sufficient";
+  }
+  out.needs_clarification = false;
+  out.missing_fields = [];
+  return out;
+}
+
+function canonicalizeDataRequirements(dataRequirements, needsUserData, message) {
+  if (!needsUserData) return null;
+
+  const dr =
+    dataRequirements && typeof dataRequirements === "object"
+      ? { ...dataRequirements }
+      : {};
+
+  const required = Array.isArray(dr.required_packs) ? dr.required_packs : [];
+  const optional = Array.isArray(dr.optional_packs) ? dr.optional_packs : [];
+  const allowedPacks = new Set([
+    "summary_min",
+    "spend_total",
+    "category_details",
+    "merchant_breakdown",
+    "invest_holdings",
+    "goals_overview",
+  ]);
+
+  const normalizedRequired = Array.from(
+    new Set(required.filter((p) => allowedPacks.has(p))),
+  );
+  if (!normalizedRequired.includes("summary_min")) {
+    normalizedRequired.unshift("summary_min");
+  }
+
+  const normalizedOptional = Array.from(
+    new Set(optional.filter((p) => allowedPacks.has(p))),
+  ).filter((p) => !normalizedRequired.includes(p));
+
+  const allowedGranularity = new Set([
+    "summary_level",
+    "transaction_level",
+    "category_level",
+  ]);
+  const granularity = allowedGranularity.has(dr.granularity)
+    ? dr.granularity
+    : "summary_level";
+
+  const allowedTimeRange = new Set([
+    "current",
+    "1_month",
+    "3_months",
+    "6_months",
+    "1_year",
+    "all_time",
+  ]);
+  const time_range = allowedTimeRange.has(dr.time_range)
+    ? dr.time_range
+    : looksLikeFactualLookup(message)
+      ? "1_month"
+      : "current";
+
+  const filters = dr.filters && typeof dr.filters === "object" ? dr.filters : {};
+  const period = normalizePeriodFilter(filters.period || null, time_range);
+
+  return {
+    required_packs: normalizedRequired,
+    optional_packs: normalizedOptional,
+    filters: {
+      merchant:
+        typeof filters.merchant === "string" ? filters.merchant.trim() : null,
+      category:
+        typeof filters.category === "string" ? filters.category.trim() : null,
+      period: period || null,
+    },
+    granularity,
+    time_range,
+  };
+}
+
+function buildInsufficiencyState(message, classificationResult, packs, profile) {
+  const lower = String(message || "").toLowerCase();
+  const base = packs?.base || {};
+  const missing_numeric_inputs = [];
+  const missing_decision_context = [];
+
+  const highRisk = classificationResult?.decision_risk === "high";
+
+  if (highRisk) {
+    if (!(Number(profile?.monthly_income) > 0)) {
+      missing_numeric_inputs.push("income_takehome");
+    }
+    if (!Number.isFinite(Number(base.liquidAssets))) {
+      missing_numeric_inputs.push("current_savings");
+    }
+    if (!Number.isFinite(Number(base.totalLiabilities))) {
+      missing_numeric_inputs.push("debt_balances");
+    }
+  }
+
+  const houseLike =
+    /\b(house|home|mortgage|property|condo|real estate)\b/.test(lower) &&
+    /\b(buy|purchase|afford|should)\b/.test(lower);
+  if (houseLike && highRisk) {
+    if (
+      !/\b(investment|rental|primary|first home|vacation|luxury|live in)\b/.test(
+        lower,
+      )
+    ) {
+      missing_decision_context.push("purchase_purpose");
+    }
+    if (!/\b(in \d+ months?|by \d{4}|this year|next year|timeline)\b/.test(lower)) {
+      missing_decision_context.push("timeline");
+    }
+  }
+
+  return {
+    missing_numeric_inputs: Array.from(new Set(missing_numeric_inputs)),
+    missing_decision_context: Array.from(new Set(missing_decision_context)),
+  };
+}
+
+function buildHighRiskClarificationResponse(
+  insufficiency,
+  classificationResult,
+  message,
+) {
+  const numeric = insufficiency?.missing_numeric_inputs || [];
+  const decision = insufficiency?.missing_decision_context || [];
+  const questions = [];
+
+  if (decision.includes("purchase_purpose")) {
+    questions.push(
+      "Is this purchase for a primary home, investment/rental, vacation, or luxury use?",
+    );
+  }
+  if (decision.includes("timeline")) {
+    questions.push("What timeline are you targeting for this purchase?");
+  }
+  if (numeric.includes("income_takehome")) {
+    questions.push("What is your current monthly take-home income?");
+  }
+  if (numeric.includes("current_savings")) {
+    questions.push("How much cash is available today for down payment and buffer?");
+  }
+
+  const finalQuestions = questions.slice(0, 3);
+  return {
+    type: "assistant",
+    message: cleanResponseFormatting(
+      [
+        "This is a high-stakes decision, so I won’t guess and give a fake-precise recommendation.",
+        "",
+        ...finalQuestions.map((q, idx) => `${idx + 1}. ${q}`),
+      ].join("\n"),
+    ),
+    hideActions: true,
+  };
 }
 
 function deterministicChance(seed, probability = 0.5) {
@@ -1624,11 +1831,12 @@ export default async function handler(req, res) {
   // Build safe context that overrides any client-provided user_id
   // But fall back to client-provided user_id if no JWT token is present (for testing)
   const finalUserId = serverUserId || context?.user_id;
-  const chatId = bodyChatId ?? body.chat_id ?? context?.chat_id ?? null;
-  if (!chatId && !shouldSuppressLogs) {
-    logWarn(
-      "⚠️ [FINNY] chat_id missing from request body - conversation_logs.chat_id will be null",
-    );
+  const chatIdRaw = bodyChatId ?? body.chat_id ?? context?.chat_id ?? null;
+  const chatId =
+    chatIdRaw ||
+    (finalUserId && action === "ask" ? `chat_${finalUserId}` : null);
+  if (!chatIdRaw && chatId && !shouldSuppressLogs) {
+    logInfo(`ℹ️ [FINNY] chat_id missing - using fallback chat_id=${chatId}`);
   }
 
   // Re-check with finalUserId (more secure) - always use server-verified userId when available
@@ -2554,14 +2762,16 @@ async function handleAsk(
   try {
     // 1) Get user_id from context
     const userId = context?.user_id;
+    const resolvedChatId =
+      context?.chat_id || (userId ? `chat_${userId}` : null);
 
     const recordConversationTurns = (assistantText) => {
-      if (!userId || !context?.chat_id) return;
+      if (!userId || !resolvedChatId) return;
       if (!assistantText) return;
       try {
         appendConversationTurns(
           userId,
-          context.chat_id,
+          resolvedChatId,
           message,
           assistantText,
         );
@@ -2826,6 +3036,25 @@ async function handleAsk(
     // passed to the LLM (not for early returns - LLM handles all clarifications)
     const decisionRisk = classificationResult?.decision_risk || "unknown";
     const infoSufficiency = classificationResult?.info_sufficiency || "unknown";
+
+    const insufficiencyState = buildInsufficiencyState(
+      message,
+      classificationResult,
+      packs,
+      context?.profile,
+    );
+    const hasCriticalGaps =
+      insufficiencyState.missing_numeric_inputs.length > 0 ||
+      insufficiencyState.missing_decision_context.length > 0;
+    const shouldHardClarify = decisionRisk === "high" && hasCriticalGaps;
+
+    if (shouldHardClarify) {
+      return buildHighRiskClarificationResponse(
+        insufficiencyState,
+        classificationResult,
+        message,
+      );
+    }
 
     // Ambiguous-intent clarification flag: passed to LLM via runtime coaching flags
     // The LLM will decide whether to ask clarification questions based on context
@@ -3541,6 +3770,8 @@ async function handleAsk(
       `- user_refused_to_answer: ${userRefused}`,
       `- decision_risk: ${decisionRisk}`,
       `- info_sufficiency: ${infoSufficiency}`,
+      `- missing_numeric_inputs: [${insufficiencyState.missing_numeric_inputs.join(", ")}]`,
+      `- missing_decision_context: [${insufficiencyState.missing_decision_context.join(", ")}]`,
     ].join("\n");
 
     const classificationHeader = classificationResult
@@ -3567,7 +3798,7 @@ async function handleAsk(
     // Now uses database for persistence across serverless instances
     const recentTurns = await getRecentConversationTurns(
       userId,
-      context?.chat_id,
+      resolvedChatId,
       {
         maxMessages: 8,
         maxChars: 6000,
@@ -3575,17 +3806,17 @@ async function handleAsk(
     );
 
     // Debug logging for recent turns
-    if (!context?.chat_id) {
+    if (!resolvedChatId) {
       console.log("⚠️ [RECENT_TURNS] chat_id is missing:", {
         userId,
-        chat_id: context?.chat_id,
+        chat_id: resolvedChatId,
         hasContext: !!context,
       });
     } else if (recentTurns.length === 0) {
       console.log("⚠️ [RECENT_TURNS] No recent turns found:", {
         userId,
-        chat_id: context?.chat_id,
-        cacheKey: `${userId}:${context?.chat_id}`,
+        chat_id: resolvedChatId,
+        cacheKey: `${userId}:${resolvedChatId}`,
       });
     } else {
       console.log(`✅ [RECENT_TURNS] Found ${recentTurns.length} recent turns`);
@@ -4128,6 +4359,31 @@ function detectWebSearchNeeded(message) {
  * Returns: { needs: string[], filters: object, useMerchantRPC: boolean }
  */
 function selectDataPacksFromClassification(classificationResult, message) {
+  const lower = String(message || "").toLowerCase();
+  const slotsForMessage = extractSlots(message);
+  const isFactual = classificationResult?.intent_type === "factual";
+
+  // Deterministic factual routing (separate from style generation)
+  if (isFactual && classificationResult?.needs_user_data !== false) {
+    const needs = ["summary_min"];
+    if (slotsForMessage.topic === "spend" || /\bspend|spent|expenses?\b/.test(lower)) {
+      if (!needs.includes("spend_total")) needs.push("spend_total");
+    }
+    if (slotsForMessage.category || slotsForMessage.merchant) {
+      if (!needs.includes("category_details")) needs.push("category_details");
+    }
+
+    return {
+      needs,
+      filters: {
+        merchant: slotsForMessage.merchant || null,
+        category: slotsForMessage.category || null,
+        period: slotsForMessage.period || null,
+      },
+      useMerchantRPC: !!slotsForMessage.merchant,
+    };
+  }
+
   // Fallback to keyword-based if no data_requirements
   if (
     !classificationResult ||
@@ -6033,6 +6289,16 @@ async function handleClassify(message, context) {
           cachedResult = null;
           // Fall through to LLM
         } else {
+          cachedResult.intent_type = canonicalizeIntentType(
+            cachedResult.intent_type,
+            text,
+          );
+          cachedResult.data_requirements = canonicalizeDataRequirements(
+            cachedResult.data_requirements,
+            cachedResult.needs_user_data === true,
+            text,
+          );
+          cachedResult = forceFactualClassificationForLookup(text, cachedResult);
           return cachedResult;
         }
       }
@@ -6392,6 +6658,15 @@ async function handleClassify(message, context) {
     // Normalize/defend new routing fields (LLMs sometimes ignore constraints)
     const allowedInfo = new Set(["sufficient", "missing", "unknown"]);
     const allowedRisk = new Set(["low", "medium", "high", "unknown"]);
+    const allowedIntentTypes = new Set([
+      "factual",
+      "exploratory",
+      "actionable",
+      "emotional_support",
+      "crisis",
+      "planning",
+      null,
+    ]);
     const allowedMissingFields = new Set([
       "income_takehome",
       "income_gross",
@@ -6412,12 +6687,11 @@ async function handleClassify(message, context) {
     ]);
 
     out.needs_clarification = !!out.needs_clarification;
-    if (typeof out.intent_type === "string") {
-      const normalizedIntentType = out.intent_type.toLowerCase().trim();
-      if (normalizedIntentType === "explorative") {
-        out.intent_type = "exploratory";
-      }
+    out.intent_type = canonicalizeIntentType(out.intent_type, text);
+    if (!allowedIntentTypes.has(out.intent_type)) {
+      out.intent_type = looksLikeFactualLookup(text) ? "factual" : null;
     }
+
     out.info_sufficiency = allowedInfo.has(out.info_sufficiency)
       ? out.info_sufficiency
       : "unknown";
@@ -6428,6 +6702,27 @@ async function handleClassify(message, context) {
     out.missing_fields = Array.from(
       new Set(out.missing_fields.filter((f) => allowedMissingFields.has(f))),
     ).slice(0, 5);
+
+    // Canonical data-requirements contract (strict)
+    out.data_requirements = canonicalizeDataRequirements(
+      out.data_requirements,
+      out.needs_user_data === true,
+      text,
+    );
+
+    // Factual lookups should be deterministic/low-risk defaults.
+    if (out.intent === "ask_personalized" && out.intent_type === "factual") {
+      if (out.decision_risk === "unknown") out.decision_risk = "low";
+      if (!out.info_sufficiency || out.info_sufficiency === "unknown") {
+        out.info_sufficiency = "sufficient";
+      }
+      if (out.info_sufficiency === "missing") out.info_sufficiency = "unknown";
+    }
+
+    // Consistency invariant
+    if (out.info_sufficiency === "missing") {
+      out.needs_clarification = true;
+    }
 
     // Confidence clamp
     if (
@@ -6447,6 +6742,8 @@ async function handleClassify(message, context) {
       if (out.intent_type === "goal_conversation")
         out.intent_type = "actionable";
     }
+
+    out = forceFactualClassificationForLookup(text, out);
 
     console.log("🔍 [FINNY] Validated classification result:", out);
 
@@ -6480,64 +6777,6 @@ async function handleClassify(message, context) {
       };
     } else if (out.needs_user_data === false) {
       out.data_requirements = null;
-    }
-
-    // Final date recalculation pass (ensure all dates are current)
-    if (out.data_requirements?.filters?.period) {
-      const period = out.data_requirements.filters.period;
-      if (period.months) {
-        const now = new Date();
-        const monthsAgo = period.months;
-        const startDate = new Date(
-          now.getFullYear(),
-          now.getMonth() - monthsAgo,
-          1,
-        );
-        const endDate = new Date(
-          now.getFullYear(),
-          now.getMonth(),
-          now.getDate(),
-        );
-
-        period.start = startDate.toISOString().split("T")[0];
-        period.end = endDate.toISOString().split("T")[0];
-      } else if (period.start || period.end) {
-        // Check if dates are old (before 2025)
-        const periodStart = period.start ? new Date(period.start) : null;
-        const periodEnd = period.end ? new Date(period.end) : null;
-        const year2025 = new Date("2025-01-01");
-
-        if (
-          (periodStart && periodStart < year2025) ||
-          (periodEnd && periodEnd < year2025)
-        ) {
-          const timeRange = out.data_requirements.time_range;
-          let monthsAgo = 1;
-          if (timeRange === "3_months") monthsAgo = 3;
-          else if (timeRange === "6_months") monthsAgo = 6;
-          else if (timeRange === "1_year") monthsAgo = 12;
-          else if (timeRange === "1_month") monthsAgo = 1;
-          else if (timeRange === "current") monthsAgo = 0;
-
-          if (monthsAgo > 0) {
-            const now = new Date();
-            const startDate = new Date(
-              now.getFullYear(),
-              now.getMonth() - monthsAgo,
-              1,
-            );
-            const endDate = new Date(
-              now.getFullYear(),
-              now.getMonth(),
-              now.getDate(),
-            );
-
-            period.start = startDate.toISOString().split("T")[0];
-            period.end = endDate.toISOString().split("T")[0];
-            period.months = monthsAgo;
-          }
-        }
-      }
     }
 
     // Log data_requirements for debugging
