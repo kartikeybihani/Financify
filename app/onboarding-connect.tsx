@@ -459,7 +459,7 @@ export default function AccountConnectionScreen() {
           );
           logOnboardingEvent({ stage: "plaid", action: "success" });
 
-          // Refresh link token for next connection
+          // Refresh link token for next connections
           const newToken = await fetchLinkToken();
           setLinkToken(newToken ?? null);
         },
