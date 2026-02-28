@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
-import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Ionicons } from "@expo/vector-icons";
 import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid/plaid";
 import { BlurView } from "expo-blur";
 import * as WebBrowser from "expo-web-browser";
@@ -74,7 +74,11 @@ export default function AccountConnectionScreen() {
   const [isFirstConnection, setIsFirstConnection] = useState(true);
   const [monthlyIncomeInput, setMonthlyIncomeInput] = useState("");
   const [isSavingIncome, setIsSavingIncome] = useState(false);
+  const [isAiDisclosureOpen, setIsAiDisclosureOpen] = useState(false);
+  const [hasAcceptedAiDisclosure, setHasAcceptedAiDisclosure] = useState(false);
   const finnyCardOpacity = React.useRef(new Animated.Value(0)).current;
+  const aiDisclosureAnimation = React.useRef(new Animated.Value(0)).current;
+  const [aiDisclosureContentHeight, setAiDisclosureContentHeight] = useState(0);
 
   const formatDate = (d: Date) => {
     const y = d.getFullYear();
@@ -391,6 +395,14 @@ export default function AccountConnectionScreen() {
   };
 
   const handleConnect = async () => {
+    if (!hasAcceptedAiDisclosure) {
+      Alert.alert(
+        "Permission Required",
+        "Please review and accept how Finny tailors your guidance before connecting your accounts.",
+      );
+      return;
+    }
+
     if (!linkToken) {
       Alert.alert(
         "Not Ready",
@@ -510,6 +522,16 @@ export default function AccountConnectionScreen() {
     }
   };
 
+  const toggleAiDisclosure = () => {
+    const nextValue = !isAiDisclosureOpen;
+    setIsAiDisclosureOpen(nextValue);
+    Animated.timing(aiDisclosureAnimation, {
+      toValue: nextValue ? 1 : 0,
+      duration: 220,
+      useNativeDriver: false,
+    }).start();
+  };
+
   const handleContinue = async () => {
     try {
       const trimmedIncome = monthlyIncomeInput.replace(/[^0-9.]/g, "").trim();
@@ -518,7 +540,7 @@ export default function AccountConnectionScreen() {
         if (!Number.isFinite(parsedIncome) || parsedIncome <= 0) {
           Alert.alert(
             "Invalid income",
-            "Please enter a valid monthly income amount."
+            "Please enter a valid monthly income amount.",
           );
           return;
         }
@@ -668,7 +690,12 @@ export default function AccountConnectionScreen() {
                   enterDemoMode();
                 }}
               >
-                <Text style={styles.skipButtonText}>Skip</Text>
+                <Text style={styles.skipButtonText}>
+                  Skip:{" "}
+                  <Text style={{ textDecorationLine: "underline" }}>
+                    Connect later
+                  </Text>
+                </Text>
               </TouchableOpacity>
             </View>
             <ScrollView
@@ -683,119 +710,177 @@ export default function AccountConnectionScreen() {
                 >
                   Add your accounts to get started
                 </Text>
+                <Text style={styles.preConnectSupportText}>
+                  See spending patterns, subscriptions, and cash flow in under a
+                  minute.
+                </Text>
               </View>
 
-              {/* Transparency - What we can/cannot do */}
               <View style={styles.transparencySection}>
-                <Text style={styles.sectionLabel}>HOW IT WORKS</Text>
-                <View style={styles.transparencyCard}>
-                  <View style={styles.dataFlowRow}>
-                    <View style={styles.dataFlowItem}>
-                      <MaterialCommunityIcons
-                        name="bank"
-                        size={18}
-                        color="#fff"
-                      />
-                      <Text style={styles.dataFlowLabel}>Your Bank</Text>
+                <Text style={styles.sectionLabel}>TRUST AND SAFETY</Text>
+                <LinearGradient
+                  colors={[
+                    "rgba(24, 31, 42, 0.96)",
+                    "rgba(19, 26, 38, 0.98)",
+                    "rgba(14, 20, 32, 0.98)",
+                  ]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.transparencyCard}
+                >
+                  <View style={styles.trustPlaidRow}>
+                    <View style={styles.trustPlaidBadge}>
+                      <Text style={styles.trustPlaidBadgeText}>Plaid</Text>
                     </View>
-                    <Ionicons
-                      name="arrow-forward"
-                      size={14}
-                      color="rgba(255,255,255,0.4)"
-                    />
-                    <View style={styles.dataFlowItem}>
-                      <View style={styles.plaidBadge}>
-                        <Text style={styles.plaidBadgeText}>Plaid</Text>
-                      </View>
-                      <Text style={styles.dataFlowLabel}>Encrypted</Text>
-                    </View>
-                    <Ionicons
-                      name="arrow-forward"
-                      size={14}
-                      color="rgba(255,255,255,0.4)"
-                    />
-                    <View style={styles.dataFlowItem}>
-                      {/* <Text style={styles.finnyEmoji}>🐬</Text> */}
-                      <Image
-                        source={require("../assets/images/appicon.png")}
-                        style={styles.finnyAvatar1}
-                      />
-                      <Text style={styles.dataFlowLabel}>Read-only</Text>
-                    </View>
+                    <Text style={styles.trustPlaidText}>
+                      Used by 12,000+ apps, including Venmo and Robinhood
+                    </Text>
                   </View>
-
                   <View style={styles.permissionsList}>
                     <View style={styles.permissionRow}>
                       <Ionicons
-                        name="checkmark-circle"
-                        size={14}
+                        name="shield-checkmark"
+                        size={16}
                         color="#00D4AA"
                       />
                       <Text style={styles.permissionText}>
-                        Finny can see transaction history & balances
+                        Read-only access
                       </Text>
                     </View>
                     <View style={styles.permissionRow}>
-                      <Ionicons name="close-circle" size={14} color="#FF6B6B" />
+                      <Ionicons name="close-circle" size={16} color="#00D4AA" />
                       <Text style={styles.permissionText}>
-                        Finny cannot move money or make payments
+                        Finny can't move money
                       </Text>
                     </View>
                     <View style={styles.permissionRow}>
-                      <Ionicons name="close-circle" size={14} color="#FF6B6B" />
+                      <Ionicons name="lock-closed" size={16} color="#00D4AA" />
                       <Text style={styles.permissionText}>
-                        Finny never sees your bank credentials
+                        Your bank credentials are never stored
+                      </Text>
+                    </View>
+                    <View style={styles.permissionRow}>
+                      <Ionicons name="link" size={16} color="#00D4AA" />
+                      <Text style={styles.permissionText}>
+                        You can disconnect anytime
                       </Text>
                     </View>
                   </View>
-                </View>
+                </LinearGradient>
               </View>
 
               {/* AI disclosure for account connection */}
               <View style={styles.aiDisclosureSection}>
-                <View style={styles.aiDisclosureCard}>
-                  <Text style={styles.aiDisclosureTitle}>AI Data Use</Text>
-                  <Text style={styles.aiDisclosureText}>
-                    By connecting you allow Finny to use your data with AI to
-                    generate personalized insights.
-                  </Text>
-                  <Text style={styles.aiDisclosureText}>
-                    We take your information seriously and handle it with care.
-                    Read our{" "}
-                    <Text
-                      style={styles.aiDisclosureTextLink}
-                      onPress={handlePrivacyPolicy}
+                <LinearGradient
+                  colors={[
+                    "rgba(27, 35, 48, 0.96)",
+                    "rgba(21, 28, 41, 0.98)",
+                    "rgba(16, 22, 34, 0.98)",
+                  ]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={styles.aiDisclosureCard}
+                >
+                  <View style={styles.aiDisclosureHeaderRow}>
+                    <TouchableOpacity
+                      style={styles.aiDisclosureCheckbox}
+                      onPress={() =>
+                        setHasAcceptedAiDisclosure((current) => !current)
+                      }
+                      activeOpacity={0.8}
                     >
-                      safety commitment
-                    </Text>{" "}
-                    for more information.
-                  </Text>
-                </View>
-              </View>
-
-              {/* Plaid credibility - Emphasized */}
-              <View style={styles.plaidSection}>
-                <View style={styles.plaidCard}>
-                  <View style={styles.plaidHeader}>
-                    <View style={styles.plaidLogoBadge}>
-                      <Text style={styles.plaidLogoText}>Plaid</Text>
-                    </View>
-                    <View style={styles.plaidVerified}>
                       <Ionicons
-                        name="shield-checkmark"
-                        size={11}
-                        color="#00D4AA"
+                        name={
+                          hasAcceptedAiDisclosure
+                            ? "checkbox"
+                            : "square-outline"
+                        }
+                        size={22}
+                        color={hasAcceptedAiDisclosure ? "#00D4AA" : "#9BB6DB"}
                       />
-                      <Text style={styles.plaidVerifiedText}>
-                        Verified Partner
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.aiDisclosureToggle}
+                      onPress={toggleAiDisclosure}
+                      activeOpacity={0.8}
+                    >
+                      <View style={styles.aiDisclosureTitleBlock}>
+                        <Text style={styles.aiDisclosureTitle}>
+                          Permission to tailor your guidance
+                        </Text>
+                        <Text style={styles.aiDisclosureSummary}>
+                          Data used only to personalize your insights. Never
+                          sold or used for ads.
+                        </Text>
+                      </View>
+                      <Animated.View
+                        style={[
+                          styles.aiDisclosureChevron,
+                          {
+                            transform: [
+                              {
+                                rotate: aiDisclosureAnimation.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: ["0deg", "180deg"],
+                                }),
+                              },
+                            ],
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name="chevron-down"
+                          size={18}
+                          color="rgba(255,255,255,0.85)"
+                        />
+                      </Animated.View>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Animated.View
+                    style={[
+                      styles.aiDisclosureAnimatedContainer,
+                      {
+                        height: aiDisclosureAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, aiDisclosureContentHeight || 1],
+                        }),
+                        opacity: aiDisclosureAnimation,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={styles.aiDisclosureContent}
+                      onLayout={(event) => {
+                        const nextHeight = event.nativeEvent.layout.height;
+                        if (
+                          nextHeight > 0 &&
+                          nextHeight !== aiDisclosureContentHeight
+                        ) {
+                          setAiDisclosureContentHeight(nextHeight);
+                        }
+                      }}
+                    >
+                      <Text style={styles.aiDisclosureText}>
+                        To personalize your financial guidance, Finny shares
+                        transaction details such as account balances,
+                        transaction amounts, merchant names, spending
+                        categories, and transaction dates with OpenRouter and
+                        the AI model provider used to generate your insights.
+                        This data is used only to generate your insights and is
+                        never sold or used for advertising or training.
+                      </Text>
+                      <Text style={styles.aiDisclosureText}>
+                        <Text
+                          style={styles.aiDisclosureTextLink}
+                          onPress={handlePrivacyPolicy}
+                        >
+                          View Privacy Policy
+                        </Text>
                       </Text>
                     </View>
-                  </View>
-                  <Text style={styles.plaidDescription}>
-                    Plaid powers bank connections for Venmo, Robinhood,
-                    Coinbase, and 8,000+ apps.
-                  </Text>
-                </View>
+                  </Animated.View>
+                </LinearGradient>
               </View>
             </ScrollView>
             <View style={styles.preConnectFooter}>
@@ -805,10 +890,11 @@ export default function AccountConnectionScreen() {
                 <TouchableOpacity
                   style={[
                     styles.connectButton,
-                    isLoading && styles.connectButtonDisabled,
+                    (isLoading || !hasAcceptedAiDisclosure) &&
+                      styles.connectButtonDisabled,
                   ]}
                   onPress={handleConnect}
-                  disabled={isLoading}
+                  disabled={isLoading || !hasAcceptedAiDisclosure}
                 >
                   {isLoading ? (
                     <ActivityIndicator color="#fff" />
@@ -1121,6 +1207,12 @@ const styles = StyleSheet.create({
     marginTop: 12,
     fontWeight: "600",
   },
+  preConnectSupportText: {
+    marginTop: 10,
+    fontSize: 14,
+    lineHeight: 20,
+    color: "rgba(255, 255, 255, 0.78)",
+  },
   // Section label style
   sectionLabel: {
     fontSize: 11,
@@ -1166,50 +1258,40 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   transparencyCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.055)",
     borderRadius: 13,
     padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.12)",
+    borderColor: "rgba(255, 255, 255, 0.1)",
   },
-  dataFlowRow: {
+  trustPlaidRow: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
-    paddingVertical: 10,
-    paddingHorizontal: 6,
+    gap: 10,
     marginBottom: 12,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.08)",
   },
-  dataFlowItem: {
-    alignItems: "center",
-    gap: 6,
+  trustPlaidBadge: {
+    backgroundColor: "rgba(255, 255, 255, 0.92)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
   },
-  dataFlowLabel: {
-    fontSize: 10,
-    color: "rgba(255, 255, 255, 0.72)",
-    fontWeight: "500",
+  trustPlaidBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#101318",
+    letterSpacing: 0.2,
   },
-  plaidBadge: {
-    backgroundColor: "rgb(255, 255, 255)",
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 4,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.14)",
-  },
-  plaidBadgeText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "rgba(0, 0, 0, 0.96)",
-  },
-  finnyEmoji: {
-    fontSize: 18,
+  trustPlaidText: {
+    flex: 1,
+    fontSize: 11,
+    lineHeight: 15,
+    color: "rgba(255, 255, 255, 0.68)",
   },
   permissionsList: {
     gap: 9,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.12)",
-    paddingTop: 12,
   },
   permissionRow: {
     flexDirection: "row",
@@ -1225,17 +1307,55 @@ const styles = StyleSheet.create({
     marginTop: 14,
   },
   aiDisclosureCard: {
-    backgroundColor: "rgba(52, 102, 176, 0.2)",
     borderRadius: 12,
     padding: 14,
     borderWidth: 1,
-    borderColor: "rgba(134, 184, 255, 0.35)",
+    borderColor: "rgba(255, 255, 255, 0.1)",
     gap: 8,
+  },
+  aiDisclosureHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  aiDisclosureCheckbox: {
+    paddingTop: 2,
+  },
+  aiDisclosureToggle: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  aiDisclosureTitleBlock: {
+    flex: 1,
+    flexShrink: 1,
+    gap: 4,
   },
   aiDisclosureTitle: {
     fontSize: 14,
     fontWeight: "600",
     color: "#fff",
+  },
+  aiDisclosureSummary: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: "rgba(255, 255, 255, 0.72)",
+  },
+  aiDisclosureChevron: {
+    width: 18,
+    alignItems: "center",
+    marginTop: 2,
+  },
+  aiDisclosureAnimatedContainer: {
+    overflow: "hidden",
+  },
+  aiDisclosureContent: {
+    paddingTop: 8,
+    paddingLeft: 32,
+    gap: 6,
   },
   aiDisclosureText: {
     fontSize: 11,
@@ -1245,50 +1365,6 @@ const styles = StyleSheet.create({
   aiDisclosureTextLink: {
     color: "#4A90E2",
     textDecorationLine: "underline",
-  },
-  // Plaid credibility section
-  plaidSection: {
-    marginBottom: 10,
-    marginTop: 10,
-  },
-  plaidCard: {
-    backgroundColor: "rgba(255, 255, 255, 0.055)",
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.12)",
-  },
-  plaidHeader: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 8,
-  },
-  plaidLogoBadge: {
-    backgroundColor: "#fff",
-    paddingHorizontal: 4,
-    paddingVertical: 2,
-    borderRadius: 6,
-  },
-  plaidLogoText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#000",
-  },
-  plaidVerified: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  plaidVerifiedText: {
-    fontSize: 10,
-    color: "#72E7CC",
-    fontWeight: "500",
-  },
-  plaidDescription: {
-    fontSize: 11,
-    color: "rgba(255, 255, 255, 0.8)",
-    lineHeight: 16,
   },
   // Time estimate
   timeEstimate: {
