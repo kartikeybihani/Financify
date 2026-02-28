@@ -17,7 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import AppStorage from "@/src/utils/storage/storage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import { Ionicons } from "@expo/vector-icons";
+import { Entypo, Ionicons } from "@expo/vector-icons";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
@@ -41,7 +41,6 @@ interface CategoryBreakdown {
   amount: number;
   percentage: number;
   count: number;
-  icon?: string;
   categoryId?: string;
 }
 
@@ -284,7 +283,7 @@ export default function FinalScreen() {
               resizeMode="contain"
               style={styles.firstReadMascot}
             />
-            <Text style={styles.firstReadKicker}>FIRST READ</Text>
+            <Text style={styles.firstReadKicker}>FIRST LOOK</Text>
           </View>
           <Text style={styles.firstReadHero}>Preparing your first read…</Text>
           <View style={styles.firstReadRule}>
@@ -304,7 +303,7 @@ export default function FinalScreen() {
             resizeMode="contain"
             style={styles.firstReadMascot}
           />
-          <Text style={styles.firstReadKicker}>FIRST READ</Text>
+          <Text style={styles.firstReadKicker}>FIRST LOOK</Text>
         </View>
         <Text
           style={[
@@ -388,7 +387,7 @@ export default function FinalScreen() {
       const { data: transactions, error: txError } = await supabase
         .from("transactions")
         .select(
-          "date, amount, merchant_name, name, category, top_category, new_category, category_id, categories(id, name, icon)",
+          "date, amount, merchant_name, name, category, top_category, new_category, category_id",
         )
         .eq("user_id", user.id)
         .gte("date", startDateStr)
@@ -626,7 +625,6 @@ export default function FinalScreen() {
         [key: string]: {
           amount: number;
           count: number;
-          icon?: string;
           categoryId?: string;
         };
       } = {};
@@ -641,8 +639,7 @@ export default function FinalScreen() {
           categoryMap[category] = {
             amount: 0,
             count: 0,
-            icon: tx.categories?.icon,
-            categoryId: tx.categories?.id || tx.category_id,
+            categoryId: tx.category_id,
           };
         }
         categoryMap[category].amount += amount;
@@ -655,7 +652,6 @@ export default function FinalScreen() {
           amount: data.amount,
           percentage: (data.amount / totalSpent) * 100,
           count: data.count,
-          icon: data.icon,
           categoryId: data.categoryId,
         }))
         .sort((a, b) => b.amount - a.amount);
@@ -1083,18 +1079,8 @@ export default function FinalScreen() {
                 .slice(0, 3)
                 .map((cat: CategoryBreakdown, i: number) => {
                   // Use three distinct colors based on index
-                  const boxColors = ["#6B8DD6", "#00D4AA", "#FF6B6B"];
+                  const boxColors = ["#4A68AE", "#008C72", "#C84E4E"];
                   const boxColor = boxColors[i] || "#607D8B";
-
-                  // Helper to determine if icon is emoji or Ionicons
-                  const isEmoji = (icon: string) => {
-                    const emojiRegex =
-                      /[\u{1F300}-\u{1F9FF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]/u;
-                    return emojiRegex.test(icon);
-                  };
-
-                  const iconValue = cat.icon || "💳";
-                  const isIconEmoji = isEmoji(iconValue);
 
                   return (
                     <View key={i} style={styles.categoryBox}>
@@ -1104,19 +1090,6 @@ export default function FinalScreen() {
                           { backgroundColor: boxColor },
                         ]}
                       >
-                        <View style={styles.categoryBoxIconContainer}>
-                          {isIconEmoji ? (
-                            <Text style={styles.categoryBoxIconEmoji}>
-                              {iconValue}
-                            </Text>
-                          ) : (
-                            <Ionicons
-                              name={iconValue as any}
-                              size={18}
-                              color="#fff"
-                            />
-                          )}
-                        </View>
                         <Text style={styles.categoryBoxName}>
                           {cat.category}
                         </Text>
@@ -1291,18 +1264,8 @@ export default function FinalScreen() {
                       !isButtonEnabled && styles.buttonTextDisabled,
                     ]}
                   >
-                    Let's Explore and Grow
+                    Let's get started
                   </Text>
-                  <Animated.View
-                    style={{ transform: [{ translateY: rocketAnimation }] }}
-                  >
-                    <Ionicons
-                      name="rocket-outline"
-                      size={18}
-                      color={isButtonEnabled ? "#fff" : "rgba(255,255,255,0.5)"}
-                      style={styles.buttonIcon}
-                    />
-                  </Animated.View>
                 </LinearGradient>
               </TouchableOpacity>
             </Animated.View>
@@ -1485,65 +1448,53 @@ const styles = StyleSheet.create({
   },
   categoryBoxes: {
     flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
+    justifyContent: "space-between",
+    alignItems: "stretch",
     width: "100%",
     marginTop: 12,
-    // paddingHorizontal: 4,
-    gap: 12,
+    gap: 3,
   },
   categoryBox: {
-    alignItems: "center",
-    flex: 1,
-    maxWidth: width * 0.3,
+    alignItems: "stretch",
+    minWidth: 0,
   },
   categoryBoxContent: {
     borderRadius: 20,
-    padding: 12,
-    paddingVertical: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 18,
     width: "100%",
     alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.12)",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
+    shadowOpacity: 0.22,
     shadowRadius: 8,
     elevation: 6,
   },
-  categoryBoxIconContainer: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(255, 255, 255, 0.24)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 6,
-  },
-  categoryBoxIconEmoji: {
-    fontSize: 16,
-  },
   categoryBoxName: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "600",
     color: "#fff",
     textAlign: "center",
-    marginBottom: 4,
-    lineHeight: 14,
+    marginBottom: 8,
+    lineHeight: 16,
     flexWrap: "wrap",
   },
   categoryBoxAmount: {
-    fontSize: 13,
+    fontSize: 15,
     fontWeight: "700",
     color: "#fff",
-    marginBottom: 4,
+    marginBottom: 6,
   },
   categoryBoxPercentage: {
-    backgroundColor: "rgba(255, 255, 255, 0.24)",
-    paddingHorizontal: 6,
-    paddingVertical: 3,
-    borderRadius: 10,
+    backgroundColor: "rgba(0, 0, 0, 0.22)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
   },
   categoryBoxPercentageText: {
-    fontSize: 10,
+    fontSize: 11,
     fontWeight: "600",
     color: "#fff",
   },
@@ -1607,6 +1558,7 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "700",
+    fontFamily: "Manrope",
   },
   buttonIcon: {
     marginLeft: 8,

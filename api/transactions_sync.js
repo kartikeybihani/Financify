@@ -19,7 +19,7 @@ import {
   getDateRangeLast6Months,
   getLast6MonthKeys,
   isLikelyInternalOrPayment,
-  selectTopTwoPatternsForLLM,
+  selectTopPatternsForLLM,
   formatDate,
 } from "../lib/early_insights.js";
 import {
@@ -2567,7 +2567,7 @@ export default async function handler(req, res) {
               transactions: filtered,
               months,
             });
-            const topTwoPatterns = selectTopTwoPatternsForLLM(patternPayload);
+            const topPatterns = selectTopPatternsForLLM(patternPayload, 5);
 
             console.log("[TRANSACTIONS_SYNC] early_insights: patterns", {
               userId,
@@ -2575,12 +2575,12 @@ export default async function handler(req, res) {
               afterFiltering: filtered.length,
               patternsGenerated: patternPayload?.meta?.patternsGenerated,
               patternsReturned: patternPayload?.meta?.patternsReturned,
-              topTwo: topTwoPatterns.length,
-              topType: topTwoPatterns[0]?.type,
-              topKey: topTwoPatterns[0]?.key,
+              selectedForLlm: topPatterns.length,
+              topType: topPatterns[0]?.type,
+              topKey: topPatterns[0]?.key,
             });
 
-            if (topTwoPatterns.length === 0) {
+            if (topPatterns.length === 0) {
               console.log(
                 "[TRANSACTIONS_SYNC] early_insights: no patterns (skipping)",
                 { userId },
@@ -2591,19 +2591,19 @@ export default async function handler(req, res) {
                 { userId },
               );
 
-              // Extract last 30 days of raw transactions for the LLM to
-              // cross-reference pattern categories against actual merchant names.
-              const thirtyDaysAgo = new Date();
-              thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-              const thirtyDayCutoff = thirtyDaysAgo.toISOString().slice(0, 10);
+              // Extract last 60 days of raw transactions for the LLM to
+              // cross-reference pattern categories and short-term rhythms.
+              const sixtyDaysAgo = new Date();
+              sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+              const sixtyDayCutoff = sixtyDaysAgo.toISOString().slice(0, 10);
               const recentTransactions = filtered.filter(
-                (tx) => tx.date >= thirtyDayCutoff,
+                (tx) => tx.date >= sixtyDayCutoff,
               );
 
               const llmResult = await callOnboardingLLM({
                 openRouterApiKey,
                 fetchFn: fetch,
-                patterns: topTwoPatterns,
+                patterns: topPatterns,
                 analysisWindow: "last 6 months",
                 userProfile: profile || null,
                 recentTransactions,
