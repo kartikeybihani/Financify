@@ -2579,6 +2579,22 @@ export default async function handler(req, res) {
               topType: topPatterns[0]?.type,
               topKey: topPatterns[0]?.key,
             });
+            console.log(
+              "[TRANSACTIONS_SYNC] early_insights: top_patterns_for_llm",
+              JSON.stringify(
+                topPatterns.map((pattern, index) => ({
+                  rank: index + 1,
+                  type: pattern?.type || null,
+                  key: pattern?.key || null,
+                  title: pattern?.title || null,
+                  description: pattern?.description || null,
+                  confidence: pattern?.confidence ?? null,
+                  evidence: pattern?.evidence || null,
+                })),
+                null,
+                2,
+              ),
+            );
 
             if (topPatterns.length === 0) {
               console.log(
