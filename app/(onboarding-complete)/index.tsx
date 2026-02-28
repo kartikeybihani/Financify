@@ -996,7 +996,13 @@ export default function FinalScreen() {
     if (isPremium) {
       await completeOnboarding();
     } else {
-      showPaywall({ onConvert: () => completeOnboarding() });
+      showPaywall({
+        onConvert: () => completeOnboarding(),
+        onDismiss: () => {
+          refreshNavigationState();
+          router.replace("/(onboarding-complete)" as any);
+        },
+      });
     }
   };
 
