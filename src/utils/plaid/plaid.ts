@@ -127,7 +127,13 @@ export const fetchLinkToken = async (institution_id?: string) => {
 export const handlePlaidConnect = async (
   linkToken: string,
   onSuccess: (itemId: string, institution?: { name: string; id: string }) => void,
-  onExit?: (error?: any) => void
+  onExit?: (error?: any) => void,
+  options?: {
+    onProgress?: (
+      stage: "exchange" | "accounts" | "transactions" | "finalizing",
+      institution?: { name: string; id: string },
+    ) => void;
+  }
 ) => {
   if (!linkToken) return;
 
@@ -185,6 +191,15 @@ export const handlePlaidConnect = async (
           }) : [],
         } : null;
 
+        const institution = linkMetadata?.institution
+          ? {
+              name: linkMetadata.institution.name || "Your bank",
+              id: linkMetadata.institution.institution_id || "unknown",
+            }
+          : undefined;
+
+        options?.onProgress?.("exchange", institution);
+
         logger.info("📡 Making API call to exchange_public_token", {
           hasMetadata: !!linkMetadata,
           institutionId: linkMetadata?.institution?.institution_id,
@@ -227,6 +242,7 @@ export const handlePlaidConnect = async (
         
         // 🏦 Immediately fetch and store accounts
         try {
+          options?.onProgress?.("accounts", institution);
           logger.info("🔄 Fetching and storing accounts...");
           await storeAccounts(item_id);
           logger.info("✅ Accounts stored successfully");
@@ -237,6 +253,7 @@ export const handlePlaidConnect = async (
         
         // 💸 Trigger initial transaction sync (includes Finny recurring analysis after tx write)
         try {
+          options?.onProgress?.("transactions", institution);
           logger.info("🔄 Syncing initial transactions...");
           await syncTransactions(item_id);
           logger.info("✅ Initial transaction sync completed");
@@ -245,12 +262,7 @@ export const handlePlaidConnect = async (
           // Don't fail the whole connection if initial sync fails
         }
 
-        const institution = linkMetadata?.institution
-          ? {
-              name: linkMetadata.institution.name || "Bank",
-              id: linkMetadata.institution.institution_id || "unknown",
-            }
-          : undefined;
+        options?.onProgress?.("finalizing", institution);
         onSuccess(item_id, institution);
       } catch (error) {
         logger.error("❌ Token exchange failed:", error);

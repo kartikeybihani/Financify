@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
-import { Ionicons } from "@expo/vector-icons";
+import { FontAwesome, Ionicons } from "@expo/vector-icons";
 import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid/plaid";
 import { BlurView } from "expo-blur";
 import * as WebBrowser from "expo-web-browser";
@@ -56,6 +56,7 @@ interface AccountAnalysisResult {
 }
 
 export default function AccountConnectionScreen() {
+  const CONNECTION_DOT_COUNT = 8;
   const params = useLocalSearchParams();
   const router = useRouter();
   const { enterDemoMode } = useDemoMode();
@@ -76,9 +77,73 @@ export default function AccountConnectionScreen() {
   const [isSavingIncome, setIsSavingIncome] = useState(false);
   const [isAiDisclosureOpen, setIsAiDisclosureOpen] = useState(false);
   const [hasAcceptedAiDisclosure, setHasAcceptedAiDisclosure] = useState(false);
+  const [connectionStage, setConnectionStage] = useState<
+    "exchange" | "accounts" | "transactions" | "finalizing" | "closing" | null
+  >(null);
   const finnyCardOpacity = React.useRef(new Animated.Value(0)).current;
   const aiDisclosureAnimation = React.useRef(new Animated.Value(0)).current;
   const [aiDisclosureContentHeight, setAiDisclosureContentHeight] = useState(0);
+  const connectionWaveProgress = React.useRef(new Animated.Value(0)).current;
+  const connectionCardTranslate = React.useRef(new Animated.Value(20)).current;
+  const connectionCardOpacity = React.useRef(new Animated.Value(0)).current;
+
+  const showConnectionAnimation = isConnecting || isClosingPlaid;
+  const hasConsentGranted = hasAcceptedAiDisclosure || hasConnectedBank;
+
+  useEffect(() => {
+    if (!showConnectionAnimation) {
+      connectionWaveProgress.stopAnimation();
+      connectionCardOpacity.setValue(0);
+      connectionCardTranslate.setValue(20);
+      return;
+    }
+
+    Animated.parallel([
+      Animated.spring(connectionCardTranslate, {
+        toValue: 0,
+        damping: 20,
+        stiffness: 220,
+        useNativeDriver: true,
+      }),
+      Animated.timing(connectionCardOpacity, {
+        toValue: 1,
+        duration: 220,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    connectionWaveProgress.setValue(0);
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(connectionWaveProgress, {
+          toValue: 1,
+          duration: 1400,
+          useNativeDriver: true,
+        }),
+        Animated.timing(connectionWaveProgress, {
+          toValue: 0,
+          duration: 1,
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+    loop.start();
+
+    return () => loop.stop();
+  }, [showConnectionAnimation]);
+
+  const connectionSubtitle =
+    connectionStage === "exchange"
+      ? "Securing your connection..."
+      : connectionStage === "accounts"
+        ? "Loading your accounts..."
+        : connectionStage === "transactions"
+          ? "Syncing your recent activity..."
+          : connectionStage === "finalizing"
+            ? "Preparing your Finny experience..."
+            : connectionStage === "closing"
+              ? "Wrapping things up..."
+              : "Working with Plaid...";
 
   const formatDate = (d: Date) => {
     const y = d.getFullYear();
@@ -233,6 +298,7 @@ export default function AccountConnectionScreen() {
         const accounts = await fetchConnectedAccounts(user.id);
         if (accounts.length > 0) {
           setHasConnectedBank(true);
+          setHasAcceptedAiDisclosure(true);
           setConnectedAccounts(accounts);
           // If accounts already exist, this is not the first connection
           setIsFirstConnection(false);
@@ -395,7 +461,7 @@ export default function AccountConnectionScreen() {
   };
 
   const handleConnect = async () => {
-    if (!hasAcceptedAiDisclosure) {
+    if (!hasConsentGranted) {
       Alert.alert(
         "Permission Required",
         "Please review and accept how Finny tailors your guidance before connecting your accounts.",
@@ -416,10 +482,6 @@ export default function AccountConnectionScreen() {
       await handlePlaidConnect(
         linkToken,
         async (itemId: string) => {
-          setIsLoading(false);
-          setIsClosingPlaid(true);
-          setIsConnecting(true);
-
           // Wait a bit for accounts to be stored in the database
           await new Promise((resolve) => setTimeout(resolve, 1500));
 
@@ -432,6 +494,7 @@ export default function AccountConnectionScreen() {
             const previousAccountCount = connectedAccounts.length;
             setConnectedAccounts(accounts);
             setHasConnectedBank(true);
+            setHasAcceptedAiDisclosure(true);
 
             // Log a clean preview of what transactions look like (last 30 days), once.
             // This is for onboarding/debugging visibility only.
@@ -451,27 +514,34 @@ export default function AccountConnectionScreen() {
             }
           }
 
-          setIsConnecting(false);
-          setIsClosingPlaid(false);
-
           logger.info(
             "✅ AccountConnectionScreen: Successfully connected account",
           );
           logOnboardingEvent({ stage: "plaid", action: "success" });
 
-          // Refresh link token for next connection
+          setConnectionStage("finalizing");
+
+          // Refresh link token for next connections
           const newToken = await fetchLinkToken();
           setLinkToken(newToken ?? null);
+
+          setTimeout(() => {
+            setIsConnecting(false);
+            setIsClosingPlaid(false);
+            setConnectionStage(null);
+          }, 350);
         },
         // onExit:
         (error?: any) => {
           setIsLoading(false);
+          setConnectionStage("closing");
           setIsClosingPlaid(true);
 
           // Reset after a short delay to allow the closing animation
           setTimeout(() => {
             setIsClosingPlaid(false);
             setIsConnecting(false);
+            setConnectionStage(null);
           }, 500);
 
           logger.info("❌ Plaid connection error:", error);
@@ -505,6 +575,14 @@ export default function AccountConnectionScreen() {
               { text: "OK" },
             ]);
           }
+        },
+        {
+          onProgress: (stage) => {
+            setIsLoading(false);
+            setIsClosingPlaid(false);
+            setIsConnecting(true);
+            setConnectionStage(stage);
+          },
         },
       );
     } catch (error) {
@@ -890,11 +968,11 @@ export default function AccountConnectionScreen() {
                 <TouchableOpacity
                   style={[
                     styles.connectButton,
-                    (isLoading || !hasAcceptedAiDisclosure) &&
+                    (isLoading || !hasConsentGranted) &&
                       styles.connectButtonDisabled,
                   ]}
                   onPress={handleConnect}
-                  disabled={isLoading || !hasAcceptedAiDisclosure}
+                  disabled={isLoading || !hasConsentGranted}
                 >
                   {isLoading ? (
                     <ActivityIndicator color="#fff" />
@@ -969,13 +1047,10 @@ export default function AccountConnectionScreen() {
                     style={[styles.finnyCard, { opacity: finnyCardOpacity }]}
                   >
                     <View style={styles.finnyCardHeader}>
-                      <View style={styles.finnyAvatar}>
-                        <Ionicons
-                          name="chatbubble-ellipses"
-                          size={20}
-                          color="#4A90E2"
-                        />
-                      </View>
+                      <Image
+                        source={require("../assets/images/finnylap1.png")}
+                        style={styles.finnyAvatar}
+                      />
                       <Text style={styles.finnyLabel}>Finny</Text>
                     </View>
                     <Text style={styles.finnyMessage}>
@@ -989,7 +1064,11 @@ export default function AccountConnectionScreen() {
               {isAnalyzing && (
                 <View style={styles.finnyCard}>
                   <View style={styles.finnyCardHeader}>
-                    <View style={styles.finnyAvatar}>
+                    <Image
+                      source={require("../assets/images/finnylap1.png")}
+                      style={styles.finnyAvatar}
+                    />
+                    <View style={styles.finnyLoadingBadge}>
                       <ActivityIndicator size="small" color="#4A90E2" />
                     </View>
                     <Text style={styles.finnyLabel}>Finny</Text>
@@ -1021,7 +1100,7 @@ export default function AccountConnectionScreen() {
                   Quick one: what is your monthly income?
                 </Text>
                 <Text style={styles.incomeAskSubtitle}>
-                  Optional, but it helps Finny personalize insights faster.
+                  Optional, but it helps Finny learn faster.
                 </Text>
                 <View style={styles.incomeInputRow}>
                   <Text style={styles.incomeDollar}>$</Text>
@@ -1071,7 +1150,7 @@ export default function AccountConnectionScreen() {
               ))}
             </ScrollView>
 
-            <View style={styles.buttonContainer}>
+            <View style={[styles.buttonContainer, styles.postConnectFooter]}>
               <TouchableOpacity
                 style={[
                   styles.addAccountButton,
@@ -1118,16 +1197,83 @@ export default function AccountConnectionScreen() {
               tint="dark"
               style={StyleSheet.absoluteFill}
             />
-            <View style={styles.loadingContent}>
-              <ActivityIndicator size="large" color="#4A90E2" />
-              <Text style={styles.loadingText}>
-                {isClosingPlaid
-                  ? "Closing Plaid..."
-                  : isConnecting
-                    ? "Loading your accounts..."
-                    : "Working with Plaid..."}
-              </Text>
-            </View>
+            {isConnecting || isClosingPlaid ? (
+              <Animated.View
+                style={[
+                  styles.connectionStatusCard,
+                  {
+                    opacity: connectionCardOpacity,
+                    transform: [{ translateY: connectionCardTranslate }],
+                  },
+                ]}
+              >
+                <LinearGradient
+                  colors={["#0d0f14", "#171b23", "#11151d"]}
+                  style={StyleSheet.absoluteFill}
+                />
+                <Text style={styles.connectionStatusTitle}>
+                  Connecting your account
+                </Text>
+                <View style={styles.connectionStatusRow}>
+                  <Image
+                    source={require("../assets/images/finnylap1.png")}
+                    style={styles.connectionStatusFinny}
+                  />
+                  <View style={styles.connectionDotsWrap}>
+                    <View style={styles.connectionDotsRow}>
+                      {Array.from(
+                        { length: CONNECTION_DOT_COUNT },
+                        (_, index) => {
+                          const center = (index + 0.5) / CONNECTION_DOT_COUNT;
+                          const spread = 0.12;
+                          const low = Math.max(0, center - spread);
+                          const high = Math.min(1, center + spread);
+                          const dotOpacity = connectionWaveProgress.interpolate(
+                            {
+                              inputRange: [low, center, high],
+                              outputRange: [0.28, 1, 0.28],
+                              extrapolate: "clamp",
+                            },
+                          );
+                          const dotScale = connectionWaveProgress.interpolate({
+                            inputRange: [low, center, high],
+                            outputRange: [0.82, 1.35, 0.82],
+                            extrapolate: "clamp",
+                          });
+
+                          return (
+                            <Animated.View
+                              key={index}
+                              style={[
+                                styles.connectionDot,
+                                {
+                                  opacity: dotOpacity,
+                                  transform: [{ scale: dotScale }],
+                                },
+                              ]}
+                            />
+                          );
+                        },
+                      )}
+                    </View>
+                  </View>
+                  <View style={styles.connectionStatusBank}>
+                    <FontAwesome name="bank" size={26} color="#7FB6FF" />
+                    <Text style={styles.connectionStatusBankText}>
+                      Your bank
+                    </Text>
+                  </View>
+                </View>
+                <Text style={styles.connectionStatusSubtitle}>
+                  {connectionSubtitle}
+                </Text>
+              </Animated.View>
+            ) : (
+              <View style={styles.loadingContent}>
+                <ActivityIndicator size="large" color="#4A90E2" />
+                <Text style={styles.loadingText}>Working with Plaid...</Text>
+              </View>
+            )}
           </View>
         )}
       </SafeAreaView>
@@ -1178,7 +1324,7 @@ const styles = StyleSheet.create({
   },
   header: {
     marginBottom: 24,
-    marginTop: 8,
+    marginTop: 2,
   },
   title: {
     fontSize: 26,
@@ -1187,6 +1333,7 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     textAlign: "left",
     lineHeight: 32,
+    fontFamily: "Manrope",
   },
   subtitle: {
     fontSize: 18,
@@ -1438,13 +1585,13 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   accountsListContent: {
-    gap: 16,
-    paddingBottom: 16,
+    gap: 12,
+    paddingBottom: 12,
   },
   accountCard: {
     backgroundColor: "rgba(255, 255, 255, 0.06)",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 14,
+    padding: 13,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.12)",
     shadowColor: "#000",
@@ -1455,7 +1602,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 8,
     elevation: 4,
-    minHeight: 100,
+    minHeight: 84,
   },
   cardHeader: {
     flexDirection: "row",
@@ -1468,18 +1615,18 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   institutionName: {
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: "700",
     color: "#fff",
-    marginBottom: 2,
+    marginBottom: 1,
   },
   accountName: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "500",
     color: "rgba(255, 255, 255, 0.9)",
   },
   accountType: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "400",
     color: "rgba(255, 255, 255, 0.6)",
     textTransform: "capitalize",
@@ -1496,7 +1643,7 @@ const styles = StyleSheet.create({
     letterSpacing: 0.5,
   },
   balanceAmount: {
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
     color: "#00D4AA",
   },
@@ -1506,14 +1653,19 @@ const styles = StyleSheet.create({
     color: "rgba(255, 255, 255, 0.7)",
   },
   addMoreText: {
-    fontSize: 14,
+    fontSize: 13,
     color: "rgba(255, 255, 255, 0.7)",
     textAlign: "left",
-    marginTop: 5,
+    marginTop: 3,
   },
   buttonContainer: {
     gap: 12,
     marginTop: 20,
+  },
+  postConnectFooter: {
+    marginTop: 1,
+    gap: 10,
+    paddingTop: 2,
   },
   preConnectFooter: {
     paddingHorizontal: 24,
@@ -1543,24 +1695,27 @@ const styles = StyleSheet.create({
   addAccountButton: {
     backgroundColor: "rgba(74, 144, 226, 0.22)",
     borderRadius: 26,
-    padding: 16,
+    paddingVertical: 10,
+    paddingHorizontal: 16,
     alignItems: "center",
-    width: "100%",
+    alignSelf: "center",
+    minWidth: 190,
     flexDirection: "row",
     justifyContent: "center",
-    gap: 8,
+    gap: 6,
     borderWidth: 1,
     borderColor: "rgba(135, 187, 255, 0.4)",
   },
   addAccountButtonText: {
     color: "#9BC4FF",
-    fontSize: 16,
+    fontSize: 14,
     fontWeight: "600",
   },
   continueButton: {
     backgroundColor: "#4A90E2",
     borderRadius: 26,
-    padding: 16,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
     alignItems: "center",
     width: "100%",
     flexDirection: "row",
@@ -1616,6 +1771,83 @@ const styles = StyleSheet.create({
     gap: 16,
     padding: 24,
   },
+  connectionStatusCard: {
+    width: "86%",
+    maxWidth: 360,
+    borderRadius: 28,
+    paddingHorizontal: 22,
+    paddingTop: 24,
+    paddingBottom: 22,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.08)",
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 12,
+    },
+    shadowOpacity: 0.28,
+    shadowRadius: 24,
+    elevation: 8,
+  },
+  connectionStatusTitle: {
+    fontSize: 22,
+    fontWeight: "600",
+    color: "#fff",
+    textAlign: "center",
+    marginBottom: 20,
+    fontFamily: "Manrope",
+  },
+  connectionStatusRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    width: "100%",
+    marginBottom: 18,
+  },
+  connectionStatusFinny: {
+    width: 58,
+    height: 58,
+    borderRadius: 29,
+  },
+  connectionDotsWrap: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  connectionDotsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  connectionDot: {
+    width: 5,
+    height: 5,
+    borderRadius: 3,
+    backgroundColor: "#4A90E2",
+  },
+  connectionStatusBank: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.12)",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 4,
+  },
+  connectionStatusBankText: {
+    fontSize: 11,
+    color: "rgba(255,255,255,0.72)",
+    fontWeight: "500",
+  },
+  connectionStatusSubtitle: {
+    fontSize: 14,
+    color: "#8E8E93",
+    textAlign: "center",
+    lineHeight: 20,
+    minHeight: 20,
+  },
   loadingText: {
     color: "#fff",
     fontSize: 16,
@@ -1623,40 +1855,47 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   finnyCard: {
-    backgroundColor: "rgba(61, 122, 212, 0.18)",
+    backgroundColor: "rgba(14, 22, 36, 0.94)",
     borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    borderWidth: 1.5,
-    borderColor: "rgba(137, 188, 255, 0.36)",
-    shadowColor: "#5A9EF0",
+    padding: 15,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: "rgba(96, 137, 186, 0.26)",
+    shadowColor: "#08111E",
     shadowOffset: {
       width: 0,
       height: 4,
     },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 4,
+    shadowOpacity: 0.24,
+    shadowRadius: 14,
+    elevation: 3,
   },
   finnyCardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 14,
-    gap: 12,
+    marginBottom: 10,
+    gap: 10,
   },
   finnyAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: "rgba(61, 122, 212, 0.34)",
-    justifyContent: "center",
-    alignItems: "center",
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+  },
+  finnyLoadingBadge: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    marginLeft: -10,
+    marginTop: 14,
+    backgroundColor: "rgba(10, 18, 29, 0.92)",
     borderWidth: 1,
-    borderColor: "rgba(147, 194, 255, 0.45)",
+    borderColor: "rgba(125, 177, 244, 0.28)",
+    alignItems: "center",
+    justifyContent: "center",
   },
   finnyAvatar1: {
-    width: 23,
-    height: 23,
+    width: 18,
+    height: 18,
     borderRadius: 18,
     // backgroundColor: "rgba(74, 144, 226, 0.25)",
     justifyContent: "center",
@@ -1669,7 +1908,6 @@ const styles = StyleSheet.create({
     fontFamily: "ManropeSemiBold",
     color: "#fff",
     letterSpacing: 1,
-    textTransform: "uppercase",
   },
   finnyMessage: {
     fontSize: 15,
