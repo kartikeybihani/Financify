@@ -41,7 +41,10 @@ export default function SettingsScreen() {
   const { userName } = useLocalSearchParams();
   const { clearAllCache } = useAuthNavigation();
   const { isDemoMode } = useDemoMode();
-  const { isPremium } = useSubscription();
+  const {
+    isPremium,
+    isLoading: isSubscriptionLoading,
+  } = useSubscription();
   const [userData, setUserData] = useState<any>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(true);
@@ -52,6 +55,8 @@ export default function SettingsScreen() {
   const [isSyncingTransactions, setIsSyncingTransactions] = useState(false);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const [isOpeningSubscriptionManager, setIsOpeningSubscriptionManager] =
+    useState(false);
 
   useEffect(() => {
     const fetchAndSetUserData = async () => {
@@ -218,7 +223,46 @@ export default function SettingsScreen() {
       );
       return;
     }
+
+    if (isSubscriptionLoading) {
+      Alert.alert(
+        "Please Wait",
+        "We're still loading your subscription details. Try again in a moment.",
+      );
+      return;
+    }
+
+    if (isOpeningSubscriptionManager) {
+      return;
+    }
+
     try {
+      setIsOpeningSubscriptionManager(true);
+
+      const subscriptionManagementUrls = [
+        "itms-apps://apps.apple.com/account/subscriptions",
+        "https://apps.apple.com/account/subscriptions",
+      ];
+
+      for (const url of subscriptionManagementUrls) {
+        const supported = await Linking.canOpenURL(url);
+        if (supported) {
+          await Linking.openURL(url);
+          logger.info("[SettingsIndex] Opened subscription management URL", {
+            url,
+            isPremium,
+          });
+          return;
+        }
+      }
+
+      // Fall back to RevenueCat's native bridge if the App Store deep link
+      // isn't available for any reason.
+      const configured = await Purchases.isConfigured();
+      if (!configured) {
+        throw new Error("Subscription management is not available right now.");
+      }
+
       await Purchases.showManageSubscriptions();
     } catch (error: any) {
       logger.error("Error showing manage subscriptions:", error);
@@ -227,6 +271,8 @@ export default function SettingsScreen() {
         error?.message ||
           "Unable to open subscription management. Please try again.",
       );
+    } finally {
+      setIsOpeningSubscriptionManager(false);
     }
   };
 
@@ -579,13 +625,15 @@ export default function SettingsScreen() {
               "Manage Subscription",
               handleManageSubscription,
               false,
-              isPremium ? (
+              isOpeningSubscriptionManager ? (
+                <ActivityIndicator size="small" color="#4A90E2" />
+              ) : isPremium ? (
                 <View style={styles.premiumBadge}>
                   <Text style={styles.premiumBadgeText}>PRO</Text>
                 </View>
               ) : undefined,
-              isDemoMode || Platform.OS !== "ios",
-              isDemoMode || Platform.OS !== "ios",
+              isDemoMode || Platform.OS !== "ios" || isSubscriptionLoading,
+              isDemoMode || Platform.OS !== "ios" || isSubscriptionLoading,
             )}
           </>,
         )}
