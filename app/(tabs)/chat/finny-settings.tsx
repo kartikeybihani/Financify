@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
-import { useRouter } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import IconButton from "@/src/components/shared/IconButton";
 import DetailedMemoriesScreen from "@/app/(tabs)/chat/detailed-memories";
@@ -223,6 +223,7 @@ const SettingItem: React.FC<SettingItemProps> = ({
 export default function FinnySettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const params = useLocalSearchParams<{ open?: string }>();
   const { session } = useAuthNavigation();
   const { clearChat } = useChatContext();
   const [showMemories, setShowMemories] = useState(false);
@@ -306,6 +307,13 @@ export default function FinnySettingsScreen() {
     loadSettings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (params.open === "memories" && !showMemories) {
+      openMemories();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [params.open, showMemories]);
 
   const openMemories = () => {
     setShowMemories(true);

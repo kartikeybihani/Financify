@@ -15,6 +15,8 @@ import {
   ListRenderItem,
   Dimensions,
   ActivityIndicator,
+  Modal,
+  StyleSheet,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -45,6 +47,9 @@ import { useDemoMode } from "@/src/contexts/DemoContext";
 import { useSubscription } from "@/src/contexts/SubscriptionContext";
 import { useFreeMessageLimit } from "@/src/hooks/useFreeMessageLimit";
 import logger from "@/src/utils/core/logger";
+import * as WebBrowser from "expo-web-browser";
+
+const CHAT_MEMORY_CONSENT_KEY = "chat_memory_consent_v1";
 
 interface Suggestion {
   text: string;
@@ -101,9 +106,65 @@ function ChatScreenContent() {
   const [showFeedbackNotification, setShowFeedbackNotification] =
     useState(false);
   const [isInputFocused, setIsInputFocused] = useState(false);
+  const [hasAcceptedMemoryConsent, setHasAcceptedMemoryConsent] =
+    useState(false);
+  const [hasPriorChatHistory, setHasPriorChatHistory] = useState<
+    boolean | null
+  >(null);
+  const [showMemoryConsentModal, setShowMemoryConsentModal] = useState(false);
+  const [hasDismissedMemoryConsent, setHasDismissedMemoryConsent] =
+    useState(false);
   const atBottomRef = useRef(true);
   const contentHeights = useRef({ content: 0, view: 0 });
   const inputFocusAnimation = useRef(new Animated.Value(0)).current;
+
+  const getMemoryConsentKey = useCallback(
+    (id: string) => `${CHAT_MEMORY_CONSENT_KEY}:${id}`,
+    [],
+  );
+
+  const handlePrivacyPolicy = useCallback(async () => {
+    try {
+      await WebBrowser.openBrowserAsync("https://www.usefinny.com/privacy", {
+        presentationStyle: WebBrowser.WebBrowserPresentationStyle.FORM_SHEET,
+      });
+    } catch (error) {
+      logger.error("Failed to open privacy policy:", error);
+    }
+  }, []);
+
+  const openMemoryConsentModal = useCallback(() => {
+    Keyboard.dismiss();
+    setShowMemoryConsentModal(true);
+  }, []);
+
+  const closeMemoryConsentModal = useCallback(() => {
+    setShowMemoryConsentModal(false);
+    setHasDismissedMemoryConsent(true);
+  }, []);
+
+  const openMemorySettings = useCallback(() => {
+    setShowMemoryConsentModal(false);
+    setHasDismissedMemoryConsent(true);
+    router.push({
+      pathname: "/(tabs)/chat/finny-settings",
+      params: { open: "memories" },
+    });
+  }, [router]);
+
+  const acceptMemoryConsent = useCallback(() => {
+    if (!userId) {
+      setHasAcceptedMemoryConsent(true);
+      setHasDismissedMemoryConsent(false);
+      setShowMemoryConsentModal(false);
+      return;
+    }
+
+    AppStorage.setItemSync(getMemoryConsentKey(userId), "accepted");
+    setHasAcceptedMemoryConsent(true);
+    setHasDismissedMemoryConsent(false);
+    setShowMemoryConsentModal(false);
+  }, [getMemoryConsentKey, userId]);
 
   // Handle orientation changes
   useEffect(() => {
@@ -175,6 +236,11 @@ function ChatScreenContent() {
     updateUserName,
   } = useChatContext();
 
+  const hasUserMessage = React.useMemo(
+    () => chatMessages.some((msg) => msg.sender === "user"),
+    [chatMessages],
+  );
+
   // Fetch user's first name and update welcome message; keep userId for free message limit
   useEffect(() => {
     const fetchUserName = async () => {
@@ -184,6 +250,11 @@ function ChatScreenContent() {
         } = await supabase.auth.getUser();
         if (user?.id) {
           setUserId(user.id);
+          const consentState = AppStorage.getItemSync(
+            getMemoryConsentKey(user.id),
+          );
+          setHasAcceptedMemoryConsent(consentState === "accepted");
+          setHasDismissedMemoryConsent(false);
           const { data: profile } = await supabase
             .from("profiles")
             .select("first_name")
@@ -195,13 +266,60 @@ function ChatScreenContent() {
           }
         } else {
           setUserId(null);
+          setHasAcceptedMemoryConsent(false);
+          setHasPriorChatHistory(null);
+          setHasDismissedMemoryConsent(false);
         }
       } catch (error) {
         logger.debug("Could not fetch user first name:", error);
       }
     };
     fetchUserName();
-  }, [updateUserName]);
+  }, [getMemoryConsentKey, updateUserName]);
+
+  const evaluateMemoryConsentEligibility = useCallback(async () => {
+    if (!userId || isDemoMode) return;
+
+    if (hasUserMessage) {
+      setHasPriorChatHistory(true);
+      setShowMemoryConsentModal(false);
+      return;
+    }
+
+    try {
+      const { count, error } = await supabase
+        .from("chat_sessions")
+        .select("id", { count: "exact", head: true })
+        .eq("user_id", userId);
+
+      if (error) {
+        logger.warn("Could not check chat history for memory consent:", error);
+        setHasPriorChatHistory(false);
+        return;
+      }
+
+      const hasHistory = (count || 0) > 0;
+      setHasPriorChatHistory(hasHistory);
+
+      if (
+        !hasHistory &&
+        !hasAcceptedMemoryConsent &&
+        !hasDismissedMemoryConsent
+      ) {
+        openMemoryConsentModal();
+      }
+    } catch (error) {
+      logger.warn("Could not evaluate chat memory consent:", error);
+      setHasPriorChatHistory(false);
+    }
+  }, [
+    hasAcceptedMemoryConsent,
+    hasDismissedMemoryConsent,
+    hasUserMessage,
+    isDemoMode,
+    openMemoryConsentModal,
+    userId,
+  ]);
 
   // Auto-scroll to bottom when user comes to this screen (every time)
   useFocusEffect(
@@ -240,7 +358,13 @@ function ChatScreenContent() {
       })();
 
       return () => clearTimeout(timer);
-    }, [handleUserMessage]),
+    }, [handleUserMessage, isDemoMode]),
+  );
+
+  useFocusEffect(
+    useCallback(() => {
+      evaluateMemoryConsentEligibility();
+    }, [evaluateMemoryConsentEligibility]),
   );
 
   const [suggestions] = useState<Suggestion[]>(() => {
@@ -304,11 +428,6 @@ function ChatScreenContent() {
 
     return data;
   }, [chatMessages, showNudges, isTyping, progressStatus]);
-
-  const hasUserMessage = React.useMemo(
-    () => chatMessages.some((msg) => msg.sender === "user"),
-    [chatMessages],
-  );
 
   // Auto-scroll to bottom when new messages are added
   useEffect(() => {
@@ -476,6 +595,15 @@ function ChatScreenContent() {
 
     // Demo mode: send button does nothing
     if (isDemoMode) {
+      return;
+    }
+
+    if (
+      !hasAcceptedMemoryConsent &&
+      !hasUserMessage &&
+      hasPriorChatHistory !== true
+    ) {
+      openMemoryConsentModal();
       return;
     }
 
@@ -1071,6 +1199,65 @@ function ChatScreenContent() {
             onClose={() => setShowFeedbackNotification(false)}
           />
         )}
+
+        <Modal
+          visible={showMemoryConsentModal}
+          transparent
+          animationType="fade"
+          onRequestClose={closeMemoryConsentModal}
+        >
+          <View style={memoryConsentStyles.overlay}>
+            <TouchableOpacity
+              style={memoryConsentStyles.backdrop}
+              activeOpacity={1}
+              onPress={closeMemoryConsentModal}
+            />
+            <View style={memoryConsentStyles.sheet}>
+              <View style={memoryConsentStyles.handle} />
+              <TouchableOpacity
+                style={memoryConsentStyles.closeButton}
+                onPress={closeMemoryConsentModal}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
+              </TouchableOpacity>
+              <Text style={memoryConsentStyles.title}>Personalize Finny</Text>
+              <Text style={memoryConsentStyles.body}>
+                Finny can remember helpful details from your chats to make
+                future advice more personal.
+              </Text>
+              <Text style={memoryConsentStyles.body}>
+                You can edit or delete memories anytime in Settings.
+              </Text>
+              <View style={memoryConsentStyles.linkRow}>
+                <TouchableOpacity
+                  onPress={handlePrivacyPolicy}
+                  activeOpacity={0.7}
+                >
+                  <Text style={memoryConsentStyles.linkText}>
+                    Privacy Policy
+                  </Text>
+                </TouchableOpacity>
+                <Text style={memoryConsentStyles.dot}>•</Text>
+                <TouchableOpacity
+                  onPress={openMemorySettings}
+                  activeOpacity={0.7}
+                >
+                  <Text style={memoryConsentStyles.linkText}>
+                    Open Settings
+                  </Text>
+                </TouchableOpacity>
+              </View>
+              <TouchableOpacity
+                style={memoryConsentStyles.acceptButton}
+                onPress={acceptMemoryConsent}
+                activeOpacity={0.85}
+              >
+                <Text style={memoryConsentStyles.acceptButtonText}>Accept</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -1079,3 +1266,81 @@ function ChatScreenContent() {
 export default function ChatScreen() {
   return <ChatScreenContent />;
 }
+
+const memoryConsentStyles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(3, 8, 15, 0.38)",
+  },
+  backdrop: {
+    flex: 1,
+  },
+  sheet: {
+    marginHorizontal: 12,
+    marginBottom: 12,
+    paddingTop: 14,
+    paddingHorizontal: 16,
+    paddingBottom: 16,
+    borderRadius: 20,
+    backgroundColor: "rgba(16, 22, 34, 0.98)",
+    borderWidth: 1,
+    borderColor: "rgba(93, 141, 201, 0.24)",
+  },
+  handle: {
+    alignSelf: "center",
+    width: 34,
+    height: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.16)",
+    marginBottom: 12,
+  },
+  closeButton: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  title: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginBottom: 8,
+  },
+  body: {
+    fontSize: 14,
+    lineHeight: 20,
+    color: "rgba(255,255,255,0.8)",
+    marginBottom: 6,
+  },
+  linkRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  linkText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#7AB7FF",
+  },
+  dot: {
+    marginHorizontal: 8,
+    color: "rgba(255,255,255,0.35)",
+  },
+  acceptButton: {
+    alignSelf: "flex-start",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 999,
+    backgroundColor: "#4A90E2",
+  },
+  acceptButtonText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+});
