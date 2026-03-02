@@ -53,7 +53,6 @@ import CreditCardInstitutionModal from "@/src/components/modals/CreditCardInstit
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
 import { addNewBankAccount } from "@/src/utils/plaid/plaid";
 import { supabase } from "@/src/lib/supabase/supabase";
-import InvestmentsScreen from "@/app/investments";
 import {
   syncAllUserTransactions,
   refreshBothBalancesAndTransactions,
@@ -72,13 +71,6 @@ import {
   getDisplayCategory,
   shouldShowRecurringChip,
 } from "@/src/utils/categories/transactionCategory";
-import {
-  getSnaptradeHoldingsFromDB,
-  getSnaptradeOptionsFromDB,
-  getSnaptradeBalancesFromDB,
-  getSnaptradeConnectionsFromDB,
-  syncSnaptradeInvestments,
-} from "@/src/utils/integrations/snaptrade";
 import logger from "@/src/utils/core/logger";
 import { useCategories } from "@/src/hooks/useCategories";
 import { OptimisticUpdateManager } from "@/src/shared/utils/optimisticUpdates";
@@ -91,31 +83,17 @@ import {
   CachedRecurringData,
 } from "@/src/shared/utils/recurringCache";
 import {
-  loadInvestmentFromCache,
-  saveInvestmentToCache,
-  clearInvestmentCache,
-  hasValidInvestmentCache,
-  CachedInvestmentData,
-} from "@/src/shared/utils/investmentCache";
-import {
   loadTransactionsFromCache,
   saveTransactionsToCache,
   clearTransactionsCache,
   hasValidTransactionsCache,
 } from "@/src/shared/utils/transactionCache";
-import AppStorage from "@/src/utils/storage/storage";
-import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 import {
-  loadSpendingFromCache,
   saveSpendingToCache,
   clearSpendingCache,
-  CachedSpendingData,
 } from "@/src/shared/utils/spendingCache";
 import {
   LoadingIndicator,
-  ErrorState,
-  EmptyState,
-  RefreshStatus as RefreshStatusComponent,
 } from "@/src/shared/components/LoadingStates";
 import {
   Transaction,
@@ -124,6 +102,7 @@ import {
   Insight,
 } from "@/src/types/plaid";
 import {
+  BudgetSectionMode,
   InsightsSection,
   ReAuthItem,
   RecurringData,
@@ -136,8 +115,6 @@ import { useDemoMode } from "@/src/contexts/DemoContext";
 import {
   demoTransactions,
   demoAccounts,
-  demoInvestmentHoldings,
-  demoInvestmentBalances,
 } from "@/src/data/demo";
 import {
   getUserIdSync,
@@ -160,22 +137,18 @@ import DemoBanner from "@/src/components/demo/DemoBanner";
 import InsightsFAB from "@/src/components/insights/InsightsFAB";
 import RecurringPage from "@/src/components/insights/pages/RecurringPage";
 import TransactionsPage from "@/src/components/insights/pages/TransactionsPage";
-import SpendingPage from "@/src/components/insights/pages/SpendingPage";
 import BudgetPage from "@/src/components/insights/pages/BudgetPage";
-import InvestmentsPage from "@/src/components/insights/pages/InvestmentsPage";
 import CashFlowPage from "@/src/components/insights/pages/CashFlowPage";
 
 // Canonical sections model - single source of truth
 const SECTIONS: SectionConfig[] = [
-  { key: "recurring", label: "Recurring" },
   { key: "transactions", label: "Transactions" },
-  { key: "spending", label: "Spending" },
   { key: "budget", label: "Budget" },
-  { key: "investments", label: "Investments" },
+  { key: "recurring", label: "Recurring" },
   // { key: "cashflow", label: "Cash Flow" },
 ] as const;
 
-// Default to "spending" section (index 2)
+// Default to merged "budget" section (index 2)
 const DEFAULT_SECTION_INDEX = 2;
 
 // Shape demo transactions for insights (add account info like getRecentTransactions)
@@ -381,6 +354,8 @@ export default function InsightsScreen() {
   const openAddCategoryModalRef = useRef<(() => void) | null>(null);
   const [hasOpenAddCategoryModal, setHasOpenAddCategoryModal] = useState(false);
   const refreshBudgetRef = useRef<(() => Promise<void>) | null>(null);
+  const [budgetSectionMode, setBudgetSectionMode] =
+    useState<BudgetSectionMode>("budget");
 
   // Wrapper function that calls the ref
   const openAddCategoryModal = useCallback(() => {
@@ -402,14 +377,6 @@ export default function InsightsScreen() {
     [],
   );
 
-  // Investment data state
-  // Initialize investment data with cached data if available
-  const [investmentHoldings, setInvestmentHoldings] = useState<any[]>([]);
-  const [investmentOptions, setInvestmentOptions] = useState<any[]>([]);
-  const [investmentBalances, setInvestmentBalances] = useState<any[]>([]);
-  const [investmentConnections, setInvestmentConnections] = useState<any[]>([]);
-  const [isInvestmentDataLoading, setIsInvestmentDataLoading] = useState(false);
-
   // Top bar section state - use index instead of string key
   const [activeIndex, setActiveIndex] = useState<number>(DEFAULT_SECTION_INDEX);
   const activeSectionKey = SECTIONS[activeIndex]?.key as
@@ -422,7 +389,9 @@ export default function InsightsScreen() {
   const navigateToSection = useCallback(
     (sectionKey?: string, opts?: { clearQueryParam?: boolean }) => {
       if (!sectionKey) return;
-      const idx = SECTIONS.findIndex((s) => s.key === sectionKey);
+      const normalizedSectionKey =
+        sectionKey === "spending" ? "budget" : sectionKey;
+      const idx = SECTIONS.findIndex((s) => s.key === normalizedSectionKey);
       if (idx < 0) return;
 
       setActiveIndex(idx);
@@ -437,12 +406,13 @@ export default function InsightsScreen() {
     [],
   );
 
-  // Handle deep-link to a specific section (e.g. Home: ?section=investments)
+  // Handle deep-link to a specific section within Insights
   const { section: sectionParam } = useLocalSearchParams<{
     section?: string;
   }>();
   useFocusEffect(
     useCallback(() => {
+      setBudgetSectionMode("budget");
       if (!sectionParam) return;
       navigateToSection(sectionParam, { clearQueryParam: true });
     }, [sectionParam, navigateToSection]),
@@ -501,8 +471,8 @@ export default function InsightsScreen() {
     visitOrder: string[];
   }>({
     sectionVisits: {},
-    lastVisited: "spending",
-    visitOrder: ["spending"],
+    lastVisited: "budget",
+    visitOrder: ["budget"],
   });
 
   // Use ref to store latest processTransactionsData to avoid re-subscription
@@ -513,13 +483,8 @@ export default function InsightsScreen() {
 
   // Use refs to track current section and recurring data state for event listeners
   const activeSectionRef = useRef<
-    | "investments"
-    | "spending"
-    | "budget"
-    | "transactions"
-    | "recurring"
-    | "cashflow"
-  >("spending");
+    "budget" | "transactions" | "recurring" | "cashflow"
+  >("budget");
   const recurringDataRef = useRef<typeof recurringData>(null);
 
   // Use ref to store latest loadRecurringTransactions function to avoid re-subscription
@@ -653,10 +618,7 @@ export default function InsightsScreen() {
       if (!currentUserId) return;
 
       // Check caches before registering preloaders (skip if already cached)
-      const [hasRecurringCache, hasInvestmentCache] = await Promise.all([
-        hasValidRecurringCache(currentUserId),
-        hasValidInvestmentCache(currentUserId),
-      ]);
+      const hasRecurringCache = await hasValidRecurringCache(currentUserId);
 
       // Register preload tasks (transactions uses in-memory filter cache, not transaction cache)
       SmartPreloader.registerTask({
@@ -686,26 +648,6 @@ export default function InsightsScreen() {
         );
       }
 
-      if (!hasInvestmentCache) {
-        SmartPreloader.registerTask({
-          id: "investments",
-          priority: "medium",
-          execute: async () => {
-            await loadInvestmentData();
-            return {
-              holdings: investmentHoldings,
-              options: investmentOptions,
-              balances: investmentBalances,
-              connections: investmentConnections,
-            };
-          },
-        });
-      } else {
-        logger.debug(
-          "⏭️ [PRELOADER] Skipping investments preload - cache exists",
-        );
-      }
-
       // Accounts preload - always register (no cache check needed, uses unified cache)
       SmartPreloader.registerTask({
         id: "accounts",
@@ -725,7 +667,7 @@ export default function InsightsScreen() {
     setupPreloaders();
   }, [userId, activeSectionKey]);
 
-  // When in demo mode, set transactions, accounts, and investment data immediately (no async)
+  // When in demo mode, set transactions and accounts immediately (no async)
   useEffect(() => {
     if (isDemoMode) {
       setAccountsLoaded(true);
@@ -749,20 +691,6 @@ export default function InsightsScreen() {
       unfilteredTransactionsRef.current = demoTx;
       hasData.current = true;
       hasCachedData.current = true;
-      setInvestmentHoldings(demoInvestmentHoldings);
-      setInvestmentOptions([]);
-      setInvestmentBalances(demoInvestmentBalances);
-      setInvestmentConnections([
-        {
-          account_id: demoInvestmentBalances[0]?.account_id ?? "demo",
-          brokerage_name: "Chase",
-          account_name: "Plaid IRA",
-          last_synced_at: new Date().toISOString(),
-          connection_status: "active",
-          is_active: true,
-          provider: "plaid",
-        },
-      ]);
     }
   }, [isDemoMode]);
 
@@ -813,16 +741,6 @@ export default function InsightsScreen() {
             processTransactionsDataRef.current(cachedTransactions);
           }
           // If ref not set yet, normal initialization will handle it
-        }
-
-        // Load cached investment data
-        const cachedInvestmentData = await loadInvestmentFromCache(userId);
-        if (cachedInvestmentData) {
-          logger.info("📦 Loading cached investment data on mount");
-          setInvestmentHoldings(cachedInvestmentData.holdings);
-          setInvestmentOptions(cachedInvestmentData.options);
-          setInvestmentBalances(cachedInvestmentData.balances);
-          setInvestmentConnections(cachedInvestmentData.connections);
         }
 
         // Load cached recurring data
@@ -952,49 +870,6 @@ export default function InsightsScreen() {
       };
     }, [getUserId, isDemoMode]),
   );
-
-  // Auto-refresh stale investment data (>24 hours old)
-  useEffect(() => {
-    const checkAndAutoSyncInvestments = async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) return;
-
-        const connections = await getSnaptradeConnectionsFromDB();
-        if (!connections || connections.length === 0) return;
-
-        // Check if any connection has stale data (>24 hours)
-        const now = new Date();
-        const staleConnections = connections.filter((conn: any) => {
-          if (!conn.last_synced_at) return true; // Never synced
-          const lastSynced = new Date(conn.last_synced_at);
-          const hoursSinceSync =
-            (now.getTime() - lastSynced.getTime()) / (1000 * 60 * 60);
-          return hoursSinceSync > 24;
-        });
-
-        if (staleConnections.length > 0) {
-          // Sync silently in background - don't show loading UI
-          for (const conn of staleConnections) {
-            try {
-              await syncSnaptradeInvestments(user.id, conn.account_id);
-            } catch (error) {
-              // Silently handle errors - don't show to user
-            }
-          }
-        }
-      } catch (error) {
-        // Silently handle errors - don't show to user
-        logger.error("Auto-refresh check failed silently:", error);
-      }
-    };
-
-    // Run check after component mounts, with a small delay to not block initial render
-    const timeoutId = setTimeout(checkAndAutoSyncInvestments, 1000);
-    return () => clearTimeout(timeoutId);
-  }, []);
 
   // Post-first-frame: check re-auth needs without blocking initial render
   useEffect(() => {
@@ -1165,19 +1040,6 @@ export default function InsightsScreen() {
       } else {
         logger.info("📦 Recurring data already loaded, skipping reload");
       }
-    } else if (activeSectionKey === "investments") {
-      // Only load investment data if we don't have any data yet
-      const hasInvestmentData =
-        investmentHoldings.length > 0 ||
-        investmentOptions.length > 0 ||
-        investmentBalances.length > 0 ||
-        investmentConnections.length > 0;
-
-      if (!hasInvestmentData) {
-        loadInvestmentData();
-      } else {
-        logger.info("📦 Investment data already loaded, skipping reload");
-      }
     }
 
     // Trigger smart preloading for likely next sections
@@ -1279,15 +1141,12 @@ export default function InsightsScreen() {
         return;
       }
 
-      // Fetch transactions (last 24 months) and investment data in parallel for background refresh
+      // Fetch transactions (last 24 months) for background refresh
       const { startDate, endDate } = getLast24MonthsRange();
-      const [transactions] = await Promise.all([
-        getRecentTransactions(userId, 2000, { startDate, endDate }),
-        loadInvestmentDataFromDB().catch((err) => {
-          logger.error("Background investment refresh failed:", err);
-          return false;
-        }),
-      ]);
+      const transactions = await getRecentTransactions(userId, 2000, {
+        startDate,
+        endDate,
+      });
 
       if (fetchCancelledRef.current) return;
 
@@ -1772,13 +1631,10 @@ export default function InsightsScreen() {
 
           // Reload from DB; don't clear budget cache so Budget section keeps showing stale until refresh
           await clearRecurringCache();
-          await clearInvestmentCache();
           await clearTransactionsCache();
           await clearSpendingCache();
           // Also reload recurring transactions from database when data changes
           await loadRecurringTransactions();
-          // Also reload investment data if financial data changes
-          await loadInvestmentData();
         }
       },
     );
@@ -2006,12 +1862,6 @@ export default function InsightsScreen() {
   const onRefresh = async () => {
     setRefreshing(true);
     try {
-      // Investments tab: only re-fetch from database (holdings, options, balances, connections)
-      if (activeSectionKey === "investments") {
-        await loadInvestmentDataFromDB();
-        return;
-      }
-
       if (!hasData.current) return;
       // Don't clear section caches - show stale cache and update in background (same as Home)
       clearCache();
@@ -2126,132 +1976,6 @@ export default function InsightsScreen() {
     },
     [activeIndex],
   );
-
-  // Load investment data with AsyncStorage cache
-  const loadInvestmentData = async () => {
-    setIsInvestmentDataLoading(true);
-    try {
-      const currentUserId = userId || (await getUserId());
-      if (!currentUserId) {
-        logger.error("No authenticated user loading investment data");
-        return false;
-      }
-
-      logger.info("Insights: Loading investment data...");
-
-      // First, try to load from cache
-      const cachedData = await loadInvestmentFromCache(currentUserId);
-      if (cachedData) {
-        logger.info("📦 Using cached investment data");
-        setInvestmentHoldings(cachedData.holdings);
-        setInvestmentOptions(cachedData.options);
-        setInvestmentBalances(cachedData.balances);
-        setInvestmentConnections(cachedData.connections);
-
-        // Load fresh data in background and update cache (no loading state)
-        // But don't await it - let it update the state when it completes
-        loadInvestmentDataFromDB().catch((err) =>
-          logger.error("Background investment data refresh failed:", err),
-        );
-        return true;
-      }
-
-      // No cache available, load from database
-      return await loadInvestmentDataFromDB();
-    } catch (err) {
-      logger.error("Failed to load investment data:", err);
-      return false;
-    } finally {
-      setIsInvestmentDataLoading(false);
-    }
-  };
-
-  // Load investment data from database and update cache
-  const loadInvestmentDataFromDB = async () => {
-    try {
-      if (isDemoMode) {
-        setInvestmentHoldings(demoInvestmentHoldings);
-        setInvestmentOptions([]);
-        setInvestmentBalances(demoInvestmentBalances);
-        setInvestmentConnections([
-          {
-            account_id: demoInvestmentBalances[0]?.account_id ?? "demo",
-            brokerage_name: "Chase",
-            account_name: "Plaid IRA",
-            last_synced_at: new Date().toISOString(),
-            connection_status: "active",
-            is_active: true,
-            provider: "plaid",
-          },
-        ]);
-        return true;
-      }
-      logger.info("Insights: Loading investment data from Supabase...");
-
-      const userId = await getUserId();
-      if (!userId) {
-        logger.error("No authenticated user loading investment data");
-        return false;
-      }
-
-      const [holdings, options, balances, connections] = await Promise.all([
-        getSnaptradeHoldingsFromDB(),
-        getSnaptradeOptionsFromDB(),
-        getSnaptradeBalancesFromDB(),
-        getSnaptradeConnectionsFromDB(),
-      ]);
-
-      const hasAnyData =
-        (holdings && holdings.length > 0) ||
-        (options && options.length > 0) ||
-        (balances && balances.length > 0) ||
-        (connections && connections.length > 0);
-
-      const investmentData = {
-        holdings: holdings || [],
-        options: options || [],
-        balances: balances || [],
-        connections: connections || [],
-      };
-
-      if (hasAnyData) {
-        logger.info(
-          `Insights: Loaded investment data from Supabase - Holdings: ${
-            holdings?.length || 0
-          }, Options: ${options?.length || 0}, Balances: ${
-            balances?.length || 0
-          }, Connections: ${connections?.length || 0}`,
-        );
-        setInvestmentHoldings(investmentData.holdings);
-        setInvestmentOptions(investmentData.options);
-        setInvestmentBalances(investmentData.balances);
-        setInvestmentConnections(investmentData.connections);
-
-        // Save to cache for future use
-        const currentUserId = userId || (await getUserId());
-        if (currentUserId) {
-          await saveInvestmentToCache(currentUserId, investmentData);
-        }
-        return true;
-      }
-
-      logger.info("Insights: No investment data found");
-      setInvestmentHoldings([]);
-      setInvestmentOptions([]);
-      setInvestmentBalances([]);
-      setInvestmentConnections([]);
-
-      // Save empty data to cache to avoid repeated DB calls
-      const currentUserId = userId || (await getUserId());
-      if (currentUserId) {
-        await saveInvestmentToCache(currentUserId, investmentData);
-      }
-      return false;
-    } catch (err) {
-      logger.error("Failed to load investment data:", err);
-      return false;
-    }
-  };
 
   // Check for re-auth needs (both database flags and API errors)
   const checkForReAuthNeedsWrapper = async () => {
@@ -2379,9 +2103,6 @@ export default function InsightsScreen() {
         fetchFreshData,
         loadFilteredTransactions,
         loadRecurringTransactions,
-        loadInvestmentData: async () => {
-          await loadInvestmentData();
-        },
         setReAuthItems,
         searchQuery,
       });
@@ -2392,7 +2113,6 @@ export default function InsightsScreen() {
       fetchFreshData,
       loadFilteredTransactions,
       loadRecurringTransactions,
-      loadInvestmentData,
       setReAuthItems,
     ],
   );
@@ -2417,9 +2137,6 @@ export default function InsightsScreen() {
         fetchFreshData,
         loadFilteredTransactions,
         loadRecurringTransactions,
-        loadInvestmentData: async () => {
-          await loadInvestmentData();
-        },
         searchQuery,
       },
     );
@@ -2430,7 +2147,6 @@ export default function InsightsScreen() {
     fetchFreshData,
     loadFilteredTransactions,
     loadRecurringTransactions,
-    loadInvestmentData,
     setReAuthItems,
   ]);
 
@@ -2522,11 +2238,18 @@ export default function InsightsScreen() {
     ],
   );
 
-  const spendingPageProps = useMemo(
+  const budgetPageProps = useMemo(
     () => ({
-      categoryBreakdown,
-      onCategoryPress: handleSpendingCategoryPress,
+      budgetCategoryBreakdown,
+      onBudgetCategoryPress: handleBudgetCategoryPress,
       formatCategoryName: formatCategoryFromHook,
+      onOpenAddCategoryModalRef: handleOpenAddCategoryModalRef,
+      onRefreshBudgetRef: (refreshFn: (() => Promise<void>) | null) => {
+        refreshBudgetRef.current = refreshFn;
+      },
+      refreshCategories,
+      categoryBreakdown,
+      onSpendingCategoryPress: handleSpendingCategoryPress,
       getCategoryIcon,
       availableMonths,
       selectedMonth,
@@ -2538,11 +2261,17 @@ export default function InsightsScreen() {
       onDismissReAuth: dismissReAuthBannerWrapper,
       onRefresh,
       refreshing,
+      mode: budgetSectionMode,
+      onModeChange: setBudgetSectionMode,
     }),
     [
+      budgetCategoryBreakdown,
+      handleBudgetCategoryPress,
+      formatCategoryFromHook,
+      handleOpenAddCategoryModalRef,
+      refreshCategories,
       categoryBreakdown,
       handleSpendingCategoryPress,
-      formatCategoryFromHook,
       getCategoryIcon,
       availableMonths,
       selectedMonth,
@@ -2554,69 +2283,7 @@ export default function InsightsScreen() {
       dismissReAuthBannerWrapper,
       onRefresh,
       refreshing,
-    ],
-  );
-
-  const budgetPageProps = useMemo(
-    () => ({
-      categoryBreakdown: budgetCategoryBreakdown,
-      onCategoryPress: handleBudgetCategoryPress,
-      formatCategoryName: formatCategoryFromHook,
-      onOpenAddCategoryModalRef: handleOpenAddCategoryModalRef,
-      onRefreshBudgetRef: (refreshFn: () => Promise<void>) => {
-        refreshBudgetRef.current = refreshFn;
-      },
-      refreshCategories,
-      refreshStatus,
-      reAuthItems,
-      onReAuth: handleReAuthWrapper,
-      onDismissReAuth: dismissReAuthBannerWrapper,
-      onRefresh,
-      refreshing,
-    }),
-    [
-      budgetCategoryBreakdown,
-      handleBudgetCategoryPress,
-      formatCategoryFromHook,
-      handleOpenAddCategoryModalRef,
-      refreshCategories,
-      refreshStatus,
-      reAuthItems,
-      handleReAuthWrapper,
-      dismissReAuthBannerWrapper,
-      onRefresh,
-      refreshing,
-    ],
-  );
-
-  const investmentsPageProps = useMemo(
-    () => ({
-      preloadedData: {
-        holdings: investmentHoldings,
-        options: investmentOptions,
-        balances: investmentBalances,
-        connections: investmentConnections,
-      },
-      isInvestmentDataLoading: isInvestmentDataLoading,
-      refreshStatus,
-      reAuthItems,
-      onReAuth: handleReAuthWrapper,
-      onDismissReAuth: dismissReAuthBannerWrapper,
-      onRefresh,
-      refreshing,
-    }),
-    [
-      investmentHoldings,
-      investmentOptions,
-      investmentBalances,
-      investmentConnections,
-      isInvestmentDataLoading,
-      refreshStatus,
-      reAuthItems,
-      handleReAuthWrapper,
-      dismissReAuthBannerWrapper,
-      onRefresh,
-      refreshing,
+      budgetSectionMode,
     ],
   );
 
@@ -2647,12 +2314,8 @@ export default function InsightsScreen() {
           return <RecurringPage {...recurringPageProps} />;
         case "transactions":
           return <TransactionsPage {...transactionsPageProps} />;
-        case "spending":
-          return <SpendingPage {...spendingPageProps} />;
         case "budget":
           return <BudgetPage {...budgetPageProps} />;
-        case "investments":
-          return <InvestmentsPage {...investmentsPageProps} />;
         case "cashflow":
           return <CashFlowPage {...cashFlowPageProps} />;
         default:
@@ -2662,9 +2325,7 @@ export default function InsightsScreen() {
     [
       recurringPageProps,
       transactionsPageProps,
-      spendingPageProps,
       budgetPageProps,
-      investmentsPageProps,
       cashFlowPageProps,
     ]
   );
@@ -2846,7 +2507,9 @@ export default function InsightsScreen() {
       />
 
       {/* Floating Action Button for Adding Category - Fixed to screen, only visible in budget section */}
-      {activeSectionKey === "budget" && hasOpenAddCategoryModal && (
+      {activeSectionKey === "budget" &&
+        budgetSectionMode === "budget" &&
+        hasOpenAddCategoryModal && (
         <InsightsFAB onPress={openAddCategoryModal} />
       )}
     </SafeAreaView>

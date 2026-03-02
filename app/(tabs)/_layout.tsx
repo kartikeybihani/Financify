@@ -142,6 +142,12 @@ export default function TabLayout() {
       iconCategory: "Ionicons",
     },
     {
+      name: "investments",
+      label: "Investments",
+      icon: "trending-up-outline",
+      iconCategory: "Ionicons",
+    },
+    {
       name: "goals",
       label: "Goals",
       icon: "target",
@@ -172,6 +178,15 @@ export default function TabLayout() {
           <NativeTabs.Trigger name="insights">
             <Label>Insights</Label>
             <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
+          </NativeTabs.Trigger>
+          <NativeTabs.Trigger name="investments">
+            <Label>Investments</Label>
+            <Icon
+              sf={{
+                default: "chart.line.uptrend.xyaxis",
+                selected: "chart.line.uptrend.xyaxis",
+              }}
+            />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="goals">
             <Label>Goals</Label>

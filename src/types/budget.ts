@@ -138,6 +138,7 @@ export interface BudgetViewProps {
   refreshBudget?: () => Promise<void>;
   refreshCategories?: () => void; // Refresh categories hook when category name changes
   onEditMonthlyBudget?: () => void;
+  onViewPersonality?: () => void;
 }
 
 export interface CategoryBudgetCardProps {

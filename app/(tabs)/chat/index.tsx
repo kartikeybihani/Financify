@@ -47,9 +47,10 @@ import { useDemoMode } from "@/src/contexts/DemoContext";
 import { useSubscription } from "@/src/contexts/SubscriptionContext";
 import { useFreeMessageLimit } from "@/src/hooks/useFreeMessageLimit";
 import logger from "@/src/utils/core/logger";
+import { persistChatAiConsent } from "@/src/utils/chat/chatConsent";
 import * as WebBrowser from "expo-web-browser";
 
-const CHAT_MEMORY_CONSENT_KEY = "chat_memory_consent_v1";
+const CHAT_MEMORY_CONSENT_KEY = "chat_memory_consent_v2";
 
 interface Suggestion {
   text: string;
@@ -108,12 +109,13 @@ function ChatScreenContent() {
   const [isInputFocused, setIsInputFocused] = useState(false);
   const [hasAcceptedMemoryConsent, setHasAcceptedMemoryConsent] =
     useState(false);
-  const [hasPriorChatHistory, setHasPriorChatHistory] = useState<
-    boolean | null
-  >(null);
   const [showMemoryConsentModal, setShowMemoryConsentModal] = useState(false);
-  const [hasDismissedMemoryConsent, setHasDismissedMemoryConsent] =
-    useState(false);
+  const [hasCheckedMemoryConsent, setHasCheckedMemoryConsent] = useState(false);
+  const [isMemoryDisclosureOpen, setIsMemoryDisclosureOpen] = useState(false);
+  const memoryDisclosureAnimation = useRef(new Animated.Value(0)).current;
+  const [memoryDisclosureContentHeight, setMemoryDisclosureContentHeight] =
+    useState(0);
+  const memoryConsentDismissedAtRef = useRef(0);
   const atBottomRef = useRef(true);
   const contentHeights = useRef({ content: 0, view: 0 });
   const inputFocusAnimation = useRef(new Animated.Value(0)).current;
@@ -135,36 +137,56 @@ function ChatScreenContent() {
 
   const openMemoryConsentModal = useCallback(() => {
     Keyboard.dismiss();
+    setHasCheckedMemoryConsent(false);
+    setIsMemoryDisclosureOpen(false);
+    memoryDisclosureAnimation.setValue(0);
     setShowMemoryConsentModal(true);
-  }, []);
+  }, [memoryDisclosureAnimation]);
 
   const closeMemoryConsentModal = useCallback(() => {
+    memoryConsentDismissedAtRef.current = Date.now();
+    setHasCheckedMemoryConsent(false);
+    setIsMemoryDisclosureOpen(false);
+    memoryDisclosureAnimation.setValue(0);
     setShowMemoryConsentModal(false);
-    setHasDismissedMemoryConsent(true);
-  }, []);
+  }, [memoryDisclosureAnimation]);
 
   const openMemorySettings = useCallback(() => {
     setShowMemoryConsentModal(false);
-    setHasDismissedMemoryConsent(true);
     router.push({
       pathname: "/(tabs)/chat/finny-settings",
       params: { open: "memories" },
     });
   }, [router]);
 
-  const acceptMemoryConsent = useCallback(() => {
-    if (!userId) {
-      setHasAcceptedMemoryConsent(true);
-      setHasDismissedMemoryConsent(false);
-      setShowMemoryConsentModal(false);
+  const acceptMemoryConsent = useCallback(async () => {
+    if (!hasCheckedMemoryConsent) {
       return;
     }
 
-    AppStorage.setItemSync(getMemoryConsentKey(userId), "accepted");
+    if (userId) {
+      AppStorage.setItemSync(getMemoryConsentKey(userId), "accepted");
+      try {
+        await persistChatAiConsent(userId, CHAT_MEMORY_CONSENT_KEY);
+      } catch (error) {
+        logger.warn("Failed to persist chat AI consent to Supabase:", error);
+      }
+    }
     setHasAcceptedMemoryConsent(true);
-    setHasDismissedMemoryConsent(false);
     setShowMemoryConsentModal(false);
-  }, [getMemoryConsentKey, userId]);
+    setHasCheckedMemoryConsent(false);
+  }, [getMemoryConsentKey, hasCheckedMemoryConsent, userId]);
+
+  const toggleMemoryDisclosure = useCallback(() => {
+    const nextValue = !isMemoryDisclosureOpen;
+    setIsMemoryDisclosureOpen(nextValue);
+    Animated.timing(memoryDisclosureAnimation, {
+      toValue: nextValue ? 1 : 0,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: false,
+    }).start();
+  }, [isMemoryDisclosureOpen, memoryDisclosureAnimation]);
 
   // Handle orientation changes
   useEffect(() => {
@@ -254,7 +276,6 @@ function ChatScreenContent() {
             getMemoryConsentKey(user.id),
           );
           setHasAcceptedMemoryConsent(consentState === "accepted");
-          setHasDismissedMemoryConsent(false);
           const { data: profile } = await supabase
             .from("profiles")
             .select("first_name")
@@ -267,8 +288,6 @@ function ChatScreenContent() {
         } else {
           setUserId(null);
           setHasAcceptedMemoryConsent(false);
-          setHasPriorChatHistory(null);
-          setHasDismissedMemoryConsent(false);
         }
       } catch (error) {
         logger.debug("Could not fetch user first name:", error);
@@ -276,50 +295,6 @@ function ChatScreenContent() {
     };
     fetchUserName();
   }, [getMemoryConsentKey, updateUserName]);
-
-  const evaluateMemoryConsentEligibility = useCallback(async () => {
-    if (!userId || isDemoMode) return;
-
-    if (hasUserMessage) {
-      setHasPriorChatHistory(true);
-      setShowMemoryConsentModal(false);
-      return;
-    }
-
-    try {
-      const { count, error } = await supabase
-        .from("chat_sessions")
-        .select("id", { count: "exact", head: true })
-        .eq("user_id", userId);
-
-      if (error) {
-        logger.warn("Could not check chat history for memory consent:", error);
-        setHasPriorChatHistory(false);
-        return;
-      }
-
-      const hasHistory = (count || 0) > 0;
-      setHasPriorChatHistory(hasHistory);
-
-      if (
-        !hasHistory &&
-        !hasAcceptedMemoryConsent &&
-        !hasDismissedMemoryConsent
-      ) {
-        openMemoryConsentModal();
-      }
-    } catch (error) {
-      logger.warn("Could not evaluate chat memory consent:", error);
-      setHasPriorChatHistory(false);
-    }
-  }, [
-    hasAcceptedMemoryConsent,
-    hasDismissedMemoryConsent,
-    hasUserMessage,
-    isDemoMode,
-    openMemoryConsentModal,
-    userId,
-  ]);
 
   // Auto-scroll to bottom when user comes to this screen (every time)
   useFocusEffect(
@@ -359,12 +334,6 @@ function ChatScreenContent() {
 
       return () => clearTimeout(timer);
     }, [handleUserMessage, isDemoMode]),
-  );
-
-  useFocusEffect(
-    useCallback(() => {
-      evaluateMemoryConsentEligibility();
-    }, [evaluateMemoryConsentEligibility]),
   );
 
   const [suggestions] = useState<Suggestion[]>(() => {
@@ -598,11 +567,12 @@ function ChatScreenContent() {
       return;
     }
 
-    if (
-      !hasAcceptedMemoryConsent &&
-      !hasUserMessage &&
-      hasPriorChatHistory !== true
-    ) {
+    // Prevent the dismiss tap from immediately re-triggering consent.
+    if (Date.now() - memoryConsentDismissedAtRef.current < 350) {
+      return;
+    }
+
+    if (!hasAcceptedMemoryConsent) {
       openMemoryConsentModal();
       return;
     }
@@ -1025,7 +995,10 @@ function ChatScreenContent() {
                   data={suggestions}
                   renderItem={({ item }) => (
                     <TouchableOpacity
-                      onPress={() => !isTyping && handleSend(item.text)}
+                      onPress={() => {
+                        if (isTyping) return;
+                        handleSend(item.text);
+                      }}
                       style={[
                         styles.suggestionChip,
                         isTyping && styles.suggestionChipDisabled,
@@ -1107,7 +1080,8 @@ function ChatScreenContent() {
                 <TouchableOpacity
                   style={[styles.sendButton, isTyping && { opacity: 0.5 }]}
                   onPress={() => {
-                    if (!isTyping) handleSend();
+                    if (isTyping) return;
+                    handleSend();
                   }}
                   activeOpacity={isTyping ? 1 : 0.7}
                   disabled={isTyping}
@@ -1200,64 +1174,163 @@ function ChatScreenContent() {
           />
         )}
 
-        <Modal
-          visible={showMemoryConsentModal}
-          transparent
-          animationType="fade"
-          onRequestClose={closeMemoryConsentModal}
-        >
-          <View style={memoryConsentStyles.overlay}>
-            <TouchableOpacity
-              style={memoryConsentStyles.backdrop}
-              activeOpacity={1}
-              onPress={closeMemoryConsentModal}
-            />
-            <View style={memoryConsentStyles.sheet}>
-              <View style={memoryConsentStyles.handle} />
+        {showMemoryConsentModal && (
+          <Modal
+            visible
+            transparent
+            animationType="fade"
+            presentationStyle="overFullScreen"
+            statusBarTranslucent
+            onRequestClose={closeMemoryConsentModal}
+          >
+            <View style={memoryConsentStyles.overlay}>
               <TouchableOpacity
-                style={memoryConsentStyles.closeButton}
+                style={memoryConsentStyles.backdrop}
+                activeOpacity={1}
                 onPress={closeMemoryConsentModal}
-                activeOpacity={0.7}
-              >
-                <Ionicons name="close" size={18} color="rgba(255,255,255,0.7)" />
-              </TouchableOpacity>
-              <Text style={memoryConsentStyles.title}>Personalize Finny</Text>
-              <Text style={memoryConsentStyles.body}>
-                Finny can remember helpful details from your chats to make
-                future advice more personal.
-              </Text>
-              <Text style={memoryConsentStyles.body}>
-                You can edit or delete memories anytime in Settings.
-              </Text>
-              <View style={memoryConsentStyles.linkRow}>
+              />
+              <View style={memoryConsentStyles.sheet}>
+                <View style={memoryConsentStyles.handle} />
                 <TouchableOpacity
-                  onPress={handlePrivacyPolicy}
+                  style={memoryConsentStyles.closeButton}
+                  onPress={closeMemoryConsentModal}
                   activeOpacity={0.7}
                 >
-                  <Text style={memoryConsentStyles.linkText}>
-                    Privacy Policy
-                  </Text>
+                  <Ionicons
+                    name="close"
+                    size={18}
+                    color="rgba(255,255,255,0.7)"
+                  />
                 </TouchableOpacity>
-                <Text style={memoryConsentStyles.dot}>•</Text>
+                <Text style={memoryConsentStyles.title}>Personalize Finny</Text>
+                <Text style={memoryConsentStyles.body}>
+                  Finny can remember helpful details from your chats to make
+                  future advice more personal.
+                </Text>
+                <View style={memoryConsentStyles.disclosureCard}>
+                  <View style={memoryConsentStyles.disclosureHeaderRow}>
+                    <TouchableOpacity
+                      style={memoryConsentStyles.disclosureCheckbox}
+                      onPress={() =>
+                        setHasCheckedMemoryConsent((current) => !current)
+                      }
+                      activeOpacity={0.8}
+                    >
+                      <Ionicons
+                        name={
+                          hasCheckedMemoryConsent
+                            ? "checkbox"
+                            : "square-outline"
+                        }
+                        size={22}
+                        color={hasCheckedMemoryConsent ? "#7DB1FF" : "#9BB6DB"}
+                      />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={memoryConsentStyles.disclosureToggle}
+                      onPress={toggleMemoryDisclosure}
+                      activeOpacity={0.8}
+                    >
+                      <View style={memoryConsentStyles.disclosureTitleBlock}>
+                        <Text style={memoryConsentStyles.disclosureTitle}>
+                          Permission to tailor your guidance
+                        </Text>
+                        <Text style={memoryConsentStyles.disclosureSummary}>
+                          Chat messages may be used to personalize Finny.
+                        </Text>
+                      </View>
+                      <Animated.View
+                        style={[
+                          memoryConsentStyles.disclosureChevron,
+                          {
+                            transform: [
+                              {
+                                rotate: memoryDisclosureAnimation.interpolate({
+                                  inputRange: [0, 1],
+                                  outputRange: ["0deg", "180deg"],
+                                }),
+                              },
+                            ],
+                          },
+                        ]}
+                      >
+                        <Ionicons
+                          name="chevron-down"
+                          size={18}
+                          color="rgba(255,255,255,0.85)"
+                        />
+                      </Animated.View>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Animated.View
+                    style={[
+                      memoryConsentStyles.disclosureAnimatedContainer,
+                      {
+                        height: memoryDisclosureAnimation.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0, memoryDisclosureContentHeight || 1],
+                        }),
+                        opacity: memoryDisclosureAnimation,
+                      },
+                    ]}
+                  >
+                    <View
+                      style={memoryConsentStyles.disclosureContent}
+                      onLayout={(event) => {
+                        const nextHeight = event.nativeEvent.layout.height;
+                        if (
+                          nextHeight > 0 &&
+                          nextHeight !== memoryDisclosureContentHeight
+                        ) {
+                          setMemoryDisclosureContentHeight(nextHeight);
+                        }
+                      }}
+                    >
+                      <Text style={memoryConsentStyles.disclosureText}>
+                        Finny may use your chat messages with the AI provider
+                        to better understand your preferences and personalize
+                        your experience in future chats. This is used only to
+                        provide and improve your experience with Finny and is
+                        never sold or used for advertising.
+                      </Text>
+                      <Text style={memoryConsentStyles.disclosureText}>
+                        You can edit or delete memories anytime in Settings.{" "}
+                        <Text
+                          style={memoryConsentStyles.disclosureTextLink}
+                          onPress={handlePrivacyPolicy}
+                        >
+                          View Privacy Policy
+                        </Text>
+                        {" · "}
+                        <Text
+                          style={memoryConsentStyles.disclosureTextLink}
+                          onPress={openMemorySettings}
+                        >
+                          Open Settings
+                        </Text>
+                      </Text>
+                    </View>
+                  </Animated.View>
+                </View>
                 <TouchableOpacity
-                  onPress={openMemorySettings}
-                  activeOpacity={0.7}
+                  style={[
+                    memoryConsentStyles.acceptButton,
+                    !hasCheckedMemoryConsent &&
+                      memoryConsentStyles.acceptButtonDisabled,
+                  ]}
+                  onPress={acceptMemoryConsent}
+                  activeOpacity={hasCheckedMemoryConsent ? 0.85 : 1}
+                  disabled={!hasCheckedMemoryConsent}
                 >
-                  <Text style={memoryConsentStyles.linkText}>
-                    Open Settings
+                  <Text style={memoryConsentStyles.acceptButtonText}>
+                    Accept
                   </Text>
                 </TouchableOpacity>
               </View>
-              <TouchableOpacity
-                style={memoryConsentStyles.acceptButton}
-                onPress={acceptMemoryConsent}
-                activeOpacity={0.85}
-              >
-                <Text style={memoryConsentStyles.acceptButtonText}>Accept</Text>
-              </TouchableOpacity>
             </View>
-          </View>
-        </Modal>
+          </Modal>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -1316,20 +1389,68 @@ const memoryConsentStyles = StyleSheet.create({
     color: "rgba(255,255,255,0.8)",
     marginBottom: 6,
   },
-  linkRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginTop: 6,
+  disclosureCard: {
+    borderRadius: 12,
+    padding: 14,
+    marginTop: 10,
     marginBottom: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(20, 27, 39, 0.92)",
+    gap: 8,
   },
-  linkText: {
-    fontSize: 13,
+  disclosureHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  disclosureCheckbox: {
+    paddingTop: 2,
+  },
+  disclosureToggle: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 12,
+  },
+  disclosureTitleBlock: {
+    flex: 1,
+    flexShrink: 1,
+    gap: 4,
+  },
+  disclosureTitle: {
+    fontSize: 14,
     fontWeight: "600",
-    color: "#7AB7FF",
+    color: "#fff",
   },
-  dot: {
-    marginHorizontal: 8,
-    color: "rgba(255,255,255,0.35)",
+  disclosureSummary: {
+    fontSize: 11,
+    lineHeight: 15,
+    color: "rgba(255, 255, 255, 0.72)",
+  },
+  disclosureChevron: {
+    width: 18,
+    alignItems: "center",
+    marginTop: 2,
+  },
+  disclosureAnimatedContainer: {
+    overflow: "hidden",
+  },
+  disclosureContent: {
+    paddingTop: 8,
+    paddingLeft: 32,
+    gap: 6,
+  },
+  disclosureText: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.86)",
+    lineHeight: 15,
+  },
+  disclosureTextLink: {
+    color: "#7AB7FF",
+    textDecorationLine: "underline",
   },
   acceptButton: {
     alignSelf: "flex-start",
@@ -1337,6 +1458,9 @@ const memoryConsentStyles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 999,
     backgroundColor: "#4A90E2",
+  },
+  acceptButtonDisabled: {
+    backgroundColor: "rgba(74, 144, 226, 0.38)",
   },
   acceptButtonText: {
     fontSize: 14,

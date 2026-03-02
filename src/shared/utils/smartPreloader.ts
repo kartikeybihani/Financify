@@ -100,12 +100,10 @@ export class SmartPreloader {
   static async preloadForSection(currentSection: string): Promise<void> {
     // Preload likely next sections only (section gate loads current section)
     const sectionPreloadMap: Record<string, string[]> = {
-      spending: ["transactions", "recurring"],
-      transactions: ["recurring", "investments"],
-      recurring: ["transactions", "investments"],
-      budget: ["spending", "investments"],
-      investments: ["transactions", "spending"],
-      cashflow: ["spending", "transactions"],
+      transactions: ["recurring"],
+      recurring: ["transactions"],
+      budget: ["transactions", "recurring"],
+      cashflow: ["transactions"],
     };
 
     const tasksToPreload = sectionPreloadMap[currentSection] || [];

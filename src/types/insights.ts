@@ -3,12 +3,12 @@ import { FilterOptions, Account } from "@/src/components/EnhancedFilterModal";
 import { MonthOption } from "@/src/components/insights/components/MonthSelector";
 
 export type InsightsSection =
-  | "investments"
-  | "spending"
   | "budget"
   | "transactions"
   | "recurring"
   | "cashflow";
+
+export type BudgetSectionMode = "budget" | "spending";
 
 export interface ReAuthItem {
   item_id: string;
@@ -59,11 +59,9 @@ export interface InitialCache {
 }
 
 export interface SectionAnimations {
-  spending: any;
   budget: any;
   transactions: any;
   recurring: any;
-  investments: any;
   cashflow: any;
 }
 

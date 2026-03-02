@@ -75,6 +75,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   refreshBudget,
   refreshCategories,
   onEditMonthlyBudget,
+  onViewPersonality,
 }) => {
   // Optimistic updates: track local budget changes before DB sync
   const [optimisticBudgets, setOptimisticBudgets] = useState<
@@ -622,6 +623,18 @@ const BudgetView: React.FC<BudgetViewProps> = ({
           </View>
         </View>
       </View>
+
+      {onViewPersonality && (
+        <View style={styles.personalityButtonRow}>
+          <TouchableOpacity
+            onPress={onViewPersonality}
+            style={styles.personalityButton}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.personalityButtonText}>See personality</Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
       {/* Compact Categories List - No ScrollView, No Header */}
       {sortedBudgets.length > 0 ? (
@@ -2056,6 +2069,25 @@ const styles = StyleSheet.create({
   progressRemaining: {
     fontSize: 12,
     fontWeight: "600",
+  },
+  personalityButtonRow: {
+    alignItems: "center",
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  personalityButton: {
+    paddingVertical: 9,
+    paddingHorizontal: 14,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  personalityButtonText: {
+    color: "#B9D7FF",
+    fontSize: 12,
+    fontWeight: "700",
+    letterSpacing: 0.2,
   },
   // Categories Box (glassy style)
   categoriesBox: {

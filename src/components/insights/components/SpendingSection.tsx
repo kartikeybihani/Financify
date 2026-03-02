@@ -105,8 +105,6 @@ export default function SpendingSection({
 
   return (
     <View style={styles.container}>
-      {/* <Text style={titleStyle}>Your Spending Personality</Text> */}
-
       <PersonalityBadge personality={personality} showDetails={true} />
 
       <SpendingBreakdown

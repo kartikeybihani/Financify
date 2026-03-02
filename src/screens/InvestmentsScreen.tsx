@@ -37,7 +37,12 @@ import {
   getSnaptradeConnectionDetails,
   recalculateInvestmentBalances,
 } from "@/src/utils/integrations/snaptrade";
-import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
+import {
+  clearInvestmentCache,
+  loadInvestmentFromCache,
+  loadInvestmentFromCacheSync,
+  saveInvestmentToCache,
+} from "@/src/shared/utils/investmentCache";
 import { filterDisplayableHoldings } from "@/src/utils/investments/filterDisplayableHoldings";
 import { styles } from "@/src/styles/investmentsStyles";
 import InstitutionSelectionModal from "@/src/components/modals/InstitutionSelectionModal";
@@ -51,6 +56,8 @@ import { PremiumLockOverlay } from "@/src/components/subscription/PremiumLockOve
 import IconButton from "@/src/components/shared/IconButton";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
 import { AnimatedCurrency } from "@/src/components/shared/AnimatedNumber";
+import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
+import CleanInvestmentsHeader from "@/src/components/investments/CleanInvestmentsHeader";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -193,33 +200,31 @@ export default function InvestmentsScreen({
   const router = useRouter();
   const { isDemoMode } = useDemoMode();
   const { isPremium, showPaywall } = useSubscription();
+  const initialUserId = getUserIdSync();
+  const initialCachedData =
+    preloadedData === undefined && initialUserId
+      ? loadInvestmentFromCacheSync(initialUserId)
+      : null;
+  const initialData = preloadedData ?? initialCachedData;
   // In demo mode, don't lock investments screen
   const isPremiumLocked = isDemoMode ? false : !isPremium;
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncError, setSyncError] = useState<string | null>(null);
   const [holdings, setHoldings] = useState<Holding[]>(
-    preloadedData?.holdings || [],
+    initialData?.holdings || [],
   );
   const [options, setOptions] = useState<OptionPosition[]>(
-    preloadedData?.options || [],
+    initialData?.options || [],
   );
   const [balances, setBalances] = useState<BalanceRow[]>(
-    preloadedData?.balances || [],
+    initialData?.balances || [],
   );
   const [connections, setConnections] = useState<ConnectionRow[]>(
-    preloadedData?.connections || [],
+    initialData?.connections || [],
   );
   const [showInstitutionModal, setShowInstitutionModal] = useState(false);
   // Show loading until we have confirmed data (avoids empty-state flash for users with holdings)
-  const hasPreloadedContent =
-    preloadedData &&
-    ((preloadedData.holdings?.length ?? 0) > 0 ||
-      (preloadedData.options?.length ?? 0) > 0 ||
-      (preloadedData.balances?.length ?? 0) > 0 ||
-      (preloadedData.connections?.length ?? 0) > 0);
-  const [isLoading, setIsLoading] = useState(
-    !hasPreloadedContent && !isDemoMode,
-  );
+  const [isLoading, setIsLoading] = useState(!initialData && !isDemoMode);
   const [selectedSecurityType, setSelectedSecurityType] = useState<
     string | null
   >(null);
@@ -235,14 +240,15 @@ export default function InvestmentsScreen({
     connectionId: string | null;
   }>({ isDisabled: false, connectionId: null });
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [hasCheckedConnections, setHasCheckedConnections] =
-    useState(!!hasPreloadedContent);
+  const [hasCheckedConnections, setHasCheckedConnections] = useState(
+    !!initialData,
+  );
   const hasData = useRef(
-    preloadedData
-      ? (preloadedData.holdings && preloadedData.holdings.length > 0) ||
-          (preloadedData.options && preloadedData.options.length > 0) ||
-          (preloadedData.balances && preloadedData.balances.length > 0) ||
-          (preloadedData.connections && preloadedData.connections.length > 0)
+    initialData
+      ? (initialData.holdings && initialData.holdings.length > 0) ||
+          (initialData.options && initialData.options.length > 0) ||
+          (initialData.balances && initialData.balances.length > 0) ||
+          (initialData.connections && initialData.connections.length > 0)
       : false,
   );
 
@@ -292,6 +298,10 @@ export default function InvestmentsScreen({
         setIsLoading(false);
         return true;
       }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const currentUserId = user?.id || initialUserId;
       const [h, o, b, c] = await Promise.all([
         getSnaptradeHoldingsFromDB(),
         getSnaptradeOptionsFromDB(),
@@ -304,13 +314,22 @@ export default function InvestmentsScreen({
         (o && o.length > 0) ||
         (b && b.length > 0) ||
         (c && c.length > 0);
+      const investmentData = {
+        holdings: h || [],
+        options: o || [],
+        balances: b || [],
+        connections: c || [],
+      };
 
       if (hasAnyData) {
-        setHoldings(h || []);
-        setOptions(o || []);
-        setBalances(b || []);
-        setConnections(c || []);
+        setHoldings(investmentData.holdings);
+        setOptions(investmentData.options);
+        setBalances(investmentData.balances);
+        setConnections(investmentData.connections);
         setHasCheckedConnections(true);
+        if (currentUserId) {
+          await saveInvestmentToCache(currentUserId, investmentData);
+        }
 
         // Check if connection is disabled (but don't trigger auto-sync)
         if (c && c.length > 0) {
@@ -343,6 +362,9 @@ export default function InvestmentsScreen({
         setHasCheckedConnections(true);
         hasData.current = false;
         setIsLoading(false);
+        if (currentUserId) {
+          await saveInvestmentToCache(currentUserId, investmentData);
+        }
       }
 
       return hasAnyData;
@@ -384,6 +406,10 @@ export default function InvestmentsScreen({
         setIsLoading(false);
         return true;
       }
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const currentUserId = user?.id || initialUserId;
       const [h, o, b, c] = await Promise.all([
         getSnaptradeHoldingsFromDB(), // Gets ALL holdings (both Plaid and SnapTrade)
         getSnaptradeOptionsFromDB(), // Gets ALL options (both Plaid and SnapTrade)
@@ -396,6 +422,12 @@ export default function InvestmentsScreen({
         (o && o.length > 0) ||
         (b && b.length > 0) ||
         (c && c.length > 0);
+      const investmentData = {
+        holdings: h || [],
+        options: o || [],
+        balances: b || [],
+        connections: c || [],
+      };
 
       if (hasAnyData) {
         logger.debug(
@@ -405,11 +437,14 @@ export default function InvestmentsScreen({
             b?.length || 0
           }, Connections: ${c?.length || 0}`,
         );
-        setHoldings(h || []);
-        setOptions(o || []);
-        setBalances(b || []);
-        setConnections(c || []);
+        setHoldings(investmentData.holdings);
+        setOptions(investmentData.options);
+        setBalances(investmentData.balances);
+        setConnections(investmentData.connections);
         setHasCheckedConnections(true);
+        if (currentUserId) {
+          await saveInvestmentToCache(currentUserId, investmentData);
+        }
 
         // Check if connection is disabled
         if (c && c.length > 0) {
@@ -546,6 +581,9 @@ export default function InvestmentsScreen({
       setConnections([]);
       setHasCheckedConnections(true);
       setIsLoading(false);
+      if (currentUserId) {
+        await saveInvestmentToCache(currentUserId, investmentData);
+      }
       return false;
     } catch (err) {
       logger.error("Failed to load investments from DB", err);
@@ -594,7 +632,33 @@ export default function InvestmentsScreen({
         return;
       }
 
-      // Standalone route (/investments) - load from DB ourselves
+      const currentUserId = initialUserId || getUserIdSync();
+      if (currentUserId) {
+        const cachedData = await loadInvestmentFromCache(currentUserId);
+        if (cachedData) {
+          lastPreloadedDataRef.current = cachedData;
+          setHoldings(cachedData.holdings || []);
+          setOptions(cachedData.options || []);
+          setBalances(cachedData.balances || []);
+          setConnections(cachedData.connections || []);
+          setHasCheckedConnections(true);
+          hasData.current =
+            cachedData.holdings.length > 0 ||
+            cachedData.options.length > 0 ||
+            cachedData.balances.length > 0 ||
+            cachedData.connections.length > 0;
+          setIsLoading(false);
+          loadFromDb().catch((err) => {
+            logger.error(
+              "Error refreshing investment data after cached load:",
+              err,
+            );
+          });
+          return;
+        }
+      }
+
+      // Standalone route (/investments or tab) - load from DB ourselves
       const shouldReload =
         !hasData.current ||
         (lastSyncTime.current && Date.now() - lastSyncTime.current < 5000) ||
@@ -628,7 +692,7 @@ export default function InvestmentsScreen({
     };
 
     initializeScreen();
-  }, [preloadedData]);
+  }, [initialUserId, preloadedData]);
 
   // Watch for preloaded data changes and update state immediately
   useEffect(() => {
@@ -2672,6 +2736,10 @@ export default function InvestmentsScreen({
     <>
       <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
         <View style={styles.container}>
+          <CleanInvestmentsHeader
+            isRefreshing={isRefreshing || isSyncing}
+            onRefresh={handlePullToRefresh}
+          />
           <ScrollView
             style={{ flex: 1 }}
             contentContainerStyle={[

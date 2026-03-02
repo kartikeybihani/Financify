@@ -1153,7 +1153,7 @@ export default function HomeScreen() {
             }
           />
 
-          {/* Demo: Spent so far — tap to open Spending in Insights */}
+          {/* Demo: Spent so far — tap to open the merged Budget/Spending section in Insights */}
           {isDemoMode && (
             <TouchableOpacity
               style={styles.demoSpendingCard}
@@ -1162,7 +1162,7 @@ export default function HomeScreen() {
                 router.push("/(tabs)/insights");
                 setTimeout(() => {
                   DeviceEventEmitter.emit("navigateToInsightsSection", {
-                    section: "spending",
+                    section: "budget",
                   });
                 }, 200);
               }}
@@ -1248,12 +1248,7 @@ export default function HomeScreen() {
                 holdings={investmentHoldings}
                 balances={investmentBalances}
                 onPress={() => {
-                  router.push("/(tabs)/insights");
-                  setTimeout(() => {
-                    DeviceEventEmitter.emit("navigateToInsightsSection", {
-                      section: "investments",
-                    });
-                  }, 200);
+                  router.push("/(tabs)/investments");
                 }}
               />
             );

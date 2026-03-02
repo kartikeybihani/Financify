@@ -653,15 +653,7 @@ export default function InstitutionSelectionModal({
     // Small delay to ensure modals are fully closed and animations complete before navigation
     await new Promise((resolve) => setTimeout(resolve, 300));
 
-    // Navigate to insights tab with investments section
-    // First navigate to the tab, then emit event to switch to investments section
-    router.push("/(tabs)/insights?section=investments");
-    // Also emit event in case insights screen is already mounted
-    setTimeout(() => {
-      DeviceEventEmitter.emit("navigateToInsightsSection", {
-        section: "investments",
-      });
-    }, 100);
+    router.push("/(tabs)/investments");
   };
 
   const performRefresh = async () => {

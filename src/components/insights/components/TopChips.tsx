@@ -136,16 +136,17 @@ export default function TopChips({
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 0,
+    paddingHorizontal: 16,
     paddingVertical: 12,
     backgroundColor: "#121212",
   },
   chipsRow: {
-    paddingHorizontal: 0,
+    flexGrow: 1,
+    justifyContent: "center",
     gap: 8,
   },
   chipTouchable: {
-    marginRight: 8,
+    marginRight: 0,
   },
   glassChip: {
     paddingVertical: 8,

@@ -7,7 +7,6 @@ import {
   openPlaidLink,
 } from "@/src/utils/plaid/plaid";
 import { clearRecurringCache } from "@/src/shared/utils/recurringCache";
-import { clearInvestmentCache } from "@/src/shared/utils/investmentCache";
 import { clearTransactionsCache } from "@/src/shared/utils/transactionCache";
 import { clearSpendingCache } from "@/src/shared/utils/spendingCache";
 import logger from "@/src/utils/core/logger";
@@ -165,7 +164,6 @@ export const handleReAuth = async (
       searchQuery?: string,
     ) => Promise<void>;
     loadRecurringTransactions: () => Promise<void>;
-    loadInvestmentData: () => Promise<void>;
     setReAuthItems: (updater: (prev: ReAuthItem[]) => ReAuthItem[]) => void;
     searchQuery?: string;
   },
@@ -209,7 +207,6 @@ export const handleReAuth = async (
     await callbacks.fetchFreshData();
     await callbacks.loadFilteredTransactions(filterOptions, true);
     await callbacks.loadRecurringTransactions();
-    await callbacks.loadInvestmentData();
 
     logger.info(
       "✅ RE-AUTH COMPLETE: All data synced and UI updated from database",
@@ -225,7 +222,6 @@ export const handleReAuth = async (
         true,
         callbacks.searchQuery,
       );
-      await callbacks.loadInvestmentData();
     } catch (fallbackError) {
       logger.error("❌ Fallback data refresh also failed:", fallbackError);
     }
@@ -262,7 +258,6 @@ export const handleRefreshLatestData = async (
       searchQuery?: string,
     ) => Promise<void>;
     loadRecurringTransactions: () => Promise<void>;
-    loadInvestmentData: () => Promise<void>;
     searchQuery?: string;
   },
 ): Promise<void> => {
@@ -321,7 +316,6 @@ export const handleRefreshLatestData = async (
 
     // Clear caches since we have fresh data
     await clearRecurringCache();
-    await clearInvestmentCache();
     await clearTransactionsCache();
     await clearSpendingCache();
 
@@ -330,7 +324,6 @@ export const handleRefreshLatestData = async (
     await callbacks.fetchFreshData();
     await callbacks.loadFilteredTransactions(filterOptions, true);
     await callbacks.loadRecurringTransactions();
-    await callbacks.loadInvestmentData();
 
     setRefreshStatus({
       type: "cloud",
@@ -358,7 +351,6 @@ export const handleRefreshLatestData = async (
         callbacks.searchQuery,
       );
       await callbacks.loadRecurringTransactions();
-      await callbacks.loadInvestmentData();
     } catch (fallbackError) {
       logger.error("❌ Fallback refresh failed:", fallbackError);
       setRefreshStatus({ type: "cloud", message: "Unable to refresh data" });

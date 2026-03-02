@@ -275,8 +275,7 @@ export class NotificationService {
         console.log('Navigating to:', navigation_target);
         switch (navigation_target) {
           case 'insights_investments':
-            // Navigate to insights tab with investments section
-            router.push('/(tabs)/insights?section=investments');
+            router.push('/(tabs)/investments');
             return;
           case 'insights_spending':
             router.push('/(tabs)/insights?section=spending');
