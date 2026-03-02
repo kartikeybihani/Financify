@@ -61,6 +61,9 @@ function assertRuntime(message, expected, options = {}) {
   if (expected.coverage) {
     assert.equal(runtime.info.coverage, expected.coverage);
   }
+  if (expected.risk_level) {
+    assert.equal(runtime.risk.level, expected.risk_level);
+  }
   if (expected.mode) {
     assert.equal(runtime.resolution.mode, expected.mode);
   }
@@ -69,6 +72,14 @@ function assertRuntime(message, expected, options = {}) {
   }
   if (expected.blocker) {
     assert.ok(runtime.info.blockers.includes(expected.blocker));
+  }
+  if (expected.derived_includes) {
+    for (const item of expected.derived_includes) {
+      assert.ok(
+        runtime.info.derived.includes(item),
+        `expected derived to include ${item}, got ${runtime.info.derived.join(", ")}`,
+      );
+    }
   }
 
   return runtime;
@@ -225,6 +236,55 @@ function main() {
         },
       },
       profile: { monthly_income: null },
+    },
+  );
+
+  assertRuntime(
+    "Can I afford a 10 day luxury trip to Japan right now?",
+    {
+      advisory_job: "assess",
+      decision_type: "affordability",
+      coverage: "grounded",
+      risk_level: "high",
+      mode: "answer_now",
+      question_policy: "none",
+      derived_includes: [
+        "investment_assets_default:long_term_not_casual_spending",
+        "discretionary_affordability_posture:constrained",
+        "cash_pressure:debt_near_liquid_assets",
+        "cash_pressure:burn_above_income",
+      ],
+    },
+    {
+      packs: {
+        base: {
+          liquidAssets: 4335.4,
+          totalLiabilities: 4342.11,
+          netWorth: 2756.75,
+          accounts: [
+            { type: "credit", subtype: "credit card", balance: 824.88 },
+            { type: "investment", subtype: "investment", balance: 2763.46 },
+            { type: "credit", subtype: "credit card", balance: 141.89 },
+            { type: "depository", subtype: "checking", balance: 462.54 },
+            { type: "depository", subtype: "checking", balance: 3925.86 },
+            { type: "credit", subtype: "credit card", balance: 3375.34 },
+          ],
+          spendByCategoryCurrentMonth: [],
+          spendByCategoryLastMonth: [
+            { category: "Travel", total_spend: 5262.93 },
+            { category: "Housing", total_spend: 875.91 },
+            { category: "Food", total_spend: 200.2 },
+            { category: "Groceries", total_spend: 176.22 },
+            { category: "Business", total_spend: 99.17 },
+            { category: "Badminton", total_spend: 53.0 },
+            { category: "Other", total_spend: 25.96 },
+            { category: "Entertainment", total_spend: 20.99 },
+            { category: "Health", total_spend: 6.52 },
+          ],
+          recentTransactions: [{ merchant: "Capcut", amount: 13.03, date: "2026-02-28" }],
+        },
+      },
+      profile: { monthly_income: 1500 },
     },
   );
 

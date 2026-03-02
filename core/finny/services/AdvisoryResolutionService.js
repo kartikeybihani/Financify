@@ -10,6 +10,13 @@ function countTrue(values = []) {
   return values.filter(Boolean).length;
 }
 
+function safeDivide(numerator, denominator) {
+  if (!Number.isFinite(numerator) || !Number.isFinite(denominator) || denominator === 0) {
+    return null;
+  }
+  return numerator / denominator;
+}
+
 function extractMentionedAmount(message = "") {
   const text = String(message || "");
   const dollarMatch = text.match(/\$\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/);
@@ -55,6 +62,119 @@ function summarizeSpendingContext(base = {}) {
     currentTotal,
     lastTotal,
     rollingTotal,
+  };
+}
+
+function getInvestmentAssetsTotal(packs = {}) {
+  const explicitInvestments = Number(packs?.invest?.totalValue ?? NaN);
+  if (Number.isFinite(explicitInvestments)) {
+    return explicitInvestments;
+  }
+
+  const accounts = Array.isArray(packs?.base?.accounts) ? packs.base.accounts : [];
+  return accounts.reduce((sum, account) => {
+    const isInvestment =
+      account?.type === "investment" || account?.subtype === "investment";
+    const balance = Number(
+      account?.balance ?? account?.current_balance ?? account?.available ?? NaN,
+    );
+    return isInvestment && Number.isFinite(balance) ? sum + balance : sum;
+  }, 0);
+}
+
+function getEstimatedMonthlyBurn(base = {}) {
+  const spendSummary = summarizeSpendingContext(base);
+  if (spendSummary.lastTotal > 0) return spendSummary.lastTotal;
+  if (spendSummary.currentTotal > 0) return spendSummary.currentTotal;
+  return null;
+}
+
+function isDiscretionarySubject(message = "", decision = {}) {
+  const text = lower(message);
+  const subject = lower(decision?.subject || "");
+
+  if (
+    /\b(luxury|trip|vacation|holiday|milan|japan|macbook|laptop|watch|art piece|art|shopping)\b/.test(
+      text,
+    )
+  ) {
+    return true;
+  }
+
+  return /\b(trip|vacation|watch|macbook|art|shopping)\b/.test(subject);
+}
+
+function isBusinessFundingAsk(message = "", decision = {}) {
+  const text = lower(message);
+  const subject = lower(decision?.subject || "");
+  return /\b(start(?:ing)? a business|put into .*business|business)\b/.test(text) ||
+    subject === "business" ||
+    subject === "food business";
+}
+
+function getFinancialRealitySignals(packs = {}, profile = {}, message = "", decision = {}) {
+  const base = packs?.base || {};
+  const liquidAssets = Number(base.liquidAssets ?? NaN);
+  const totalLiabilities = Number(base.totalLiabilities ?? NaN);
+  const monthlyIncome = Number(profile?.monthly_income ?? NaN);
+  const investmentAssets = getInvestmentAssetsTotal(packs);
+  const monthlyBurn = getEstimatedMonthlyBurn(base);
+
+  const liquidMinusLiabilities =
+    Number.isFinite(liquidAssets) && Number.isFinite(totalLiabilities)
+      ? liquidAssets - totalLiabilities
+      : null;
+  const liabilitiesToLiquidRatio = safeDivide(totalLiabilities, liquidAssets);
+  const burnToIncomeRatio = safeDivide(monthlyBurn, monthlyIncome);
+  const burnIncomeGap =
+    Number.isFinite(monthlyBurn) && Number.isFinite(monthlyIncome)
+      ? monthlyBurn - monthlyIncome
+      : null;
+
+  const debtNearLiquidAssets =
+    Number.isFinite(liabilitiesToLiquidRatio) && liabilitiesToLiquidRatio >= 0.75;
+  const burnAboveIncome =
+    Number.isFinite(burnToIncomeRatio) && burnToIncomeRatio > 1.15;
+  const hasInvestmentAssets = Number.isFinite(investmentAssets) && investmentAssets > 0;
+  const discretionaryAsk = isDiscretionarySubject(message, decision);
+  const businessFundingAsk = isBusinessFundingAsk(message, decision);
+
+  let discretionaryAffordabilityPosture = "flexible";
+  if (debtNearLiquidAssets || burnAboveIncome) {
+    discretionaryAffordabilityPosture = "constrained";
+  } else if (
+    Number.isFinite(liabilitiesToLiquidRatio) && liabilitiesToLiquidRatio >= 0.35
+  ) {
+    discretionaryAffordabilityPosture = "cautious";
+  }
+
+  let safeSpendPosture = "normal";
+  if (debtNearLiquidAssets || burnAboveIncome) {
+    safeSpendPosture = "preserve_buffer";
+  } else if (
+    Number.isFinite(liquidMinusLiabilities) &&
+    liquidMinusLiabilities < Math.max(monthlyIncome || 0, 1000)
+  ) {
+    safeSpendPosture = "tight_buffer";
+  }
+
+  return {
+    liquidAssets,
+    totalLiabilities,
+    monthlyIncome,
+    investmentAssets,
+    monthlyBurn,
+    liquidMinusLiabilities,
+    liabilitiesToLiquidRatio,
+    burnToIncomeRatio,
+    burnIncomeGap,
+    debtNearLiquidAssets,
+    burnAboveIncome,
+    hasInvestmentAssets,
+    discretionaryAsk,
+    businessFundingAsk,
+    discretionaryAffordabilityPosture,
+    safeSpendPosture,
   };
 }
 
@@ -275,13 +395,18 @@ function getInfoAnchors(packs = {}, profile = {}) {
   };
 }
 
-function buildDerivedValues(packs = {}, profile = {}) {
+function buildDerivedValues(packs = {}, profile = {}, message = "", decision = {}) {
   const base = packs?.base || {};
   const spendSummary = summarizeSpendingContext(base);
   const derived = [];
+  const reality = getFinancialRealitySignals(packs, profile, message, decision);
 
   if (hasNumberContext(base.liquidAssets)) {
     derived.push(`liquid_assets_total:${Number(base.liquidAssets).toFixed(2)}`);
+  }
+  if (Number.isFinite(reality.investmentAssets) && reality.investmentAssets > 0) {
+    derived.push(`investment_assets_total:${Number(reality.investmentAssets).toFixed(2)}`);
+    derived.push(`investment_assets_default:long_term_not_casual_spending`);
   }
   if (hasNumberContext(profile?.monthly_income)) {
     derived.push(
@@ -299,6 +424,35 @@ function buildDerivedValues(packs = {}, profile = {}) {
   }
   if (hasNumberContext(base.totalLiabilities)) {
     derived.push(`known_total_liabilities:${Number(base.totalLiabilities).toFixed(2)}`);
+  }
+  if (Number.isFinite(reality.liquidMinusLiabilities)) {
+    derived.push(`liquid_minus_liabilities:${reality.liquidMinusLiabilities.toFixed(2)}`);
+  }
+  if (Number.isFinite(reality.liabilitiesToLiquidRatio)) {
+    derived.push(`liabilities_to_liquid_ratio:${reality.liabilitiesToLiquidRatio.toFixed(2)}`);
+  }
+  if (Number.isFinite(reality.burnIncomeGap)) {
+    derived.push(`monthly_burn_minus_income:${reality.burnIncomeGap.toFixed(2)}`);
+  }
+  if (Number.isFinite(reality.burnToIncomeRatio)) {
+    derived.push(`burn_to_income_ratio:${reality.burnToIncomeRatio.toFixed(2)}`);
+  }
+  if (reality.debtNearLiquidAssets) {
+    derived.push(`cash_pressure:debt_near_liquid_assets`);
+  }
+  if (reality.burnAboveIncome) {
+    derived.push(`cash_pressure:burn_above_income`);
+  }
+  if (reality.discretionaryAsk) {
+    derived.push(
+      `discretionary_affordability_posture:${reality.discretionaryAffordabilityPosture}`,
+    );
+  }
+  if (reality.businessFundingAsk) {
+    derived.push(`business_funding_posture:${reality.safeSpendPosture}`);
+  }
+  if (decision?.goal_posture === "safe") {
+    derived.push(`safe_max_interpretation:preserve_buffer`);
   }
 
   return derived;
@@ -408,6 +562,7 @@ export function deriveRiskContext({
   const text = lower(message);
   const reasons = [];
   let level = "medium";
+  const reality = getFinancialRealitySignals(packs, profile, message, decision);
 
   if (
     advisoryJob === "lookup" ||
@@ -425,6 +580,14 @@ export function deriveRiskContext({
     decision?.goal_posture === "max"
   ) {
     level = "high";
+  }
+
+  if (
+    (reality.discretionaryAsk || reality.businessFundingAsk) &&
+    (reality.debtNearLiquidAssets || reality.burnAboveIncome)
+  ) {
+    level = "high";
+    reasons.push("real_life_affordability_pressure");
   }
 
   const baseRisk = String(classificationResult?.decision_risk || "").toLowerCase();
@@ -469,7 +632,7 @@ export function deriveInfoContext({
   const available = [];
   const missing = [];
   const blockers = [];
-  const derived = buildDerivedValues(packs, profile);
+  const derived = buildDerivedValues(packs, profile, message, decision);
   const amount = extractMentionedAmount(message);
 
   if (decision?.subject) available.push("subject");
