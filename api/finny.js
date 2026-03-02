@@ -1210,7 +1210,7 @@ async function cleanupSupabaseCache() {
     const { error, count } = await supabase
       .from("context_cache")
       .delete()
-      .lt("expires_at", new Date().toISOString())
+      .lt("expires_at", Date.now())
       .select("id", { count: "exact" });
 
     if (error) {
@@ -1614,6 +1614,47 @@ async function logConversation(conversationData) {
   }
 }
 
+async function ensureChatSessionRecord(userId, chatId, firstMessage) {
+  if (!userId || !chatId || !firstMessage) {
+    return;
+  }
+
+  try {
+    const insertResult = await withTimeout(
+      supabase.from("chat_sessions").upsert(
+        {
+          id: chatId,
+          user_id: userId,
+          session_title: String(firstMessage).trim().slice(0, 60) || "Chat",
+          first_message: String(firstMessage),
+          messages: [
+            {
+              id: `user-${Date.now()}`,
+              sender: "user",
+              text: String(firstMessage),
+              timestamp: Date.now(),
+            },
+          ],
+        },
+        {
+          onConflict: "id",
+          ignoreDuplicates: true,
+        },
+      ),
+      5000,
+      null,
+    );
+
+    if (!insertResult?.error) {
+      return;
+    }
+
+    logWarn("⚠️ [CHAT_SESSION] Placeholder upsert failed:", insertResult.error);
+  } catch (error) {
+    logWarn("⚠️ [CHAT_SESSION] Could not ensure placeholder chat session:", error);
+  }
+}
+
 // Initialize cache cleanup on server start
 initializeCacheCleanup();
 
@@ -1651,7 +1692,7 @@ export default async function handler(req, res) {
     action,
     message,
     context,
-    classification,
+    classification: bodyClassification,
     chat_id: bodyChatId,
     ...otherParams
   } = body;
@@ -1830,6 +1871,76 @@ export default async function handler(req, res) {
   timings.context_loading_ms = 0;
 
   let sessionState = getSessionState(finalUserId);
+  let effectiveClassification = bodyClassification;
+  let finalAction = action;
+  let safeContext = {
+    ...(context || {}),
+    user_id: finalUserId,
+    chat_id: chatId,
+    profile: {
+      name: userProfile.name,
+      age: userProfile.age,
+      occupation: null,
+      monthly_income: userProfile.monthly_income,
+      finny_style: "conversational",
+      intent_context: "",
+    },
+    session: sessionState,
+    memory: { memories: [], totalCount: 0 },
+    feedbackPatterns: {
+      preferences: [],
+      patterns: {},
+      deepInsights: [],
+    },
+  };
+
+  // === FLOW STATE CHECK: Bypass classification for active goal flows ===
+  const activeGoalFlow = sessionState?.goal_flow;
+  if (
+    (action === "classify" || action === "message") &&
+    activeGoalFlow &&
+    activeGoalFlow.active
+  ) {
+    console.log(
+      `🎯 [FLOW] Active goal flow detected - bypassing classification`,
+    );
+    finalAction = "goal_conversation";
+  } else if (action === "message") {
+    try {
+      const classifyStartTime = Date.now();
+      effectiveClassification = await handleClassify(message, safeContext);
+      timings.classification_ms = Date.now() - classifyStartTime;
+
+      if (
+        effectiveClassification &&
+        effectiveClassification.hasOwnProperty("heuristic") &&
+        (effectiveClassification.heuristic === true ||
+          effectiveClassification.heuristic === "true" ||
+          effectiveClassification.heuristic === 1)
+      ) {
+        const key = generateClassificationCacheKey(message);
+        classificationCache.delete(key);
+        effectiveClassification = await handleClassify(message, safeContext);
+      }
+
+      const classifiedIntent = effectiveClassification?.intent;
+      if (classifiedIntent === "stock_query") {
+        finalAction = "stock_query";
+      } else if (classifiedIntent === "off_topic") {
+        finalAction = "off_topic";
+      } else if (
+        classifiedIntent === "goal_conversation" ||
+        classifiedIntent === "goal"
+      ) {
+        finalAction = "goal_conversation";
+      } else {
+        finalAction = "ask";
+      }
+    } catch (error) {
+      logError("❌ [FINNY] Message classification failed, defaulting to ask:", error);
+      finalAction = "ask";
+    }
+  }
 
   // Load user profile, memory, and feedback patterns only when needed
   // OPTIMIZED: Only load for "ask" action (not needed for classify or prebuild_context)
@@ -1848,8 +1959,8 @@ export default async function handler(req, res) {
     deepInsights: [],
   };
 
-  // Only load memory and profile data for "ask" action
-  if (action === "ask") {
+  // Only load memory and profile data for ask-like actions
+  if (finalAction === "ask" || finalAction === "stock_query") {
     // OPTIMIZED: Load memory, profile, and feedback patterns in parallel for better performance
     const prepStartTime = Date.now();
 
@@ -1956,30 +2067,6 @@ export default async function handler(req, res) {
     intent_context: userProfileData.intent_context,
   };
 
-  // Log age source for debugging
-  if (
-    userProfile.age &&
-    userProfileData.age &&
-    userProfile.age !== userProfileData.age
-  ) {
-    logWarn(
-      `⚠️ [PROFILE] Age mismatch: user_metadata.age=${userProfile.age}, profiles.age=${userProfileData.age} (using profiles.age)`,
-    );
-  }
-
-  const safeContext = {
-    ...(context || {}),
-    user_id: finalUserId,
-    chat_id: chatId,
-    profile: enrichedProfile,
-    // carry session short-term state into handlers
-    session: sessionState,
-    // NEW: Add memory reading
-    memory: userMemory,
-    // NEW: Add feedback patterns for adaptation
-    feedbackPatterns: feedbackPatterns,
-  };
-
   // === PROFILE CACHE INVALIDATION ===
   if (action === "invalidate_profile_cache") {
     // Invalidate profile cache for the authenticated user
@@ -2022,15 +2109,31 @@ export default async function handler(req, res) {
     });
   }
 
-  // === FLOW STATE CHECK: Bypass classification for active goal flows ===
-  const activeGoalFlow = sessionState?.goal_flow;
-  let finalAction = action; // Create mutable copy
-  if (action === "classify" && activeGoalFlow && activeGoalFlow.active) {
-    console.log(
-      `🎯 [FLOW] Active goal flow detected - bypassing classification`,
+  // Log age source for debugging
+  if (
+    userProfile.age &&
+    userProfileData.age &&
+    userProfile.age !== userProfileData.age
+  ) {
+    logWarn(
+      `⚠️ [PROFILE] Age mismatch: user_metadata.age=${userProfile.age}, profiles.age=${userProfileData.age} (using profiles.age)`,
     );
-    // Override action to go directly to goal_conversation
-    finalAction = "goal_conversation";
+  }
+
+  safeContext = {
+    ...(context || {}),
+    user_id: finalUserId,
+    chat_id: chatId,
+    profile: enrichedProfile,
+    session: sessionState,
+    memory: userMemory,
+    feedbackPatterns: feedbackPatterns,
+  };
+
+  if (action === "message" && finalUserId && chatId && message) {
+    setImmediate(() => {
+      ensureChatSessionRecord(finalUserId, chatId, message);
+    });
   }
 
   try {
@@ -2083,14 +2186,14 @@ export default async function handler(req, res) {
       }
       case "ask": {
         const askIntent =
-          classification?.intent === "stock_query"
+          effectiveClassification?.intent === "stock_query"
             ? "stock_query"
             : "ask_personalized";
         response = await handleAsk(
           message,
           safeContext,
           askIntent,
-          classification,
+          effectiveClassification,
           timings, // Pass timings object to track web search and context packs
           wantsStreaming, // Pass streaming preference
           wantsStreaming ? res : null, // Pass response object for progress updates if streaming
@@ -2102,7 +2205,7 @@ export default async function handler(req, res) {
           message,
           safeContext,
           "stock_query",
-          classification,
+          effectiveClassification,
           timings, // Pass timings object to track web search and context packs
           wantsStreaming, // Pass streaming preference
           wantsStreaming ? res : null, // Pass response object for progress updates if streaming
@@ -2113,7 +2216,7 @@ export default async function handler(req, res) {
         // Pass classification result to off-topic handler for logging
         const offTopicContext = {
           ...safeContext,
-          classification_result: classification,
+          classification_result: effectiveClassification,
         };
         response = await handleOffTopic(
           message,

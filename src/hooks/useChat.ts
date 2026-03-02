@@ -7,6 +7,7 @@ import logger from '@/src/utils/core/logger';
 import { supabase } from '@/src/lib/supabase/supabase';
 import { getFreshAccessToken, authenticatedFetch, invalidateTokenCache } from '@/src/utils/auth/authToken';
 import { API_BASE_URL } from '@/src/utils/core/apiUrl';
+import { generateUUID } from '@/src/utils/core/uuid';
 
 /**
  * Creates a promise that rejects after a specified timeout duration.
@@ -16,6 +17,17 @@ const createTimeoutPromise = (ms: number, message: string): Promise<never> => {
   return new Promise((_, reject) => {
     setTimeout(() => reject(new Error(message)), ms);
   });
+};
+
+const withTimeout = async <T,>(
+  promise: PromiseLike<T>,
+  ms: number,
+  message: string
+): Promise<T> => {
+  return Promise.race([
+    Promise.resolve(promise),
+    createTimeoutPromise(ms, message),
+  ]) as Promise<T>;
 };
 
 /**
@@ -261,7 +273,8 @@ export const useChat = (userName?: string | null) => {
   };
 
   const ensureSessionForOutgoingMessage = async (
-    messageText: string
+    messageText: string,
+    resolvedUserId?: string | null,
   ): Promise<string | null> => {
     const existingSessionId = getActiveSessionId();
     if (existingSessionId) return existingSessionId;
@@ -271,51 +284,19 @@ export const useChat = (userName?: string | null) => {
     }
 
     const creationPromise = (async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user?.id) {
+      const sessionUserId = resolvedUserId || activeUserIdRef.current;
+      if (!sessionUserId) {
         logger.warn("[CHAT] Cannot create session - no authenticated user");
         return null;
       }
 
-      activeUserIdRef.current = user.id;
-
-      let messagesForSession = [...chatMessages];
-      const lastMessage = messagesForSession[messagesForSession.length - 1];
-      if (!(lastMessage?.sender === "user" && lastMessage?.text === messageText)) {
-        messagesForSession = [
-          ...messagesForSession,
-          {
-            id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-            sender: "user",
-            text: messageText,
-            timestamp: Date.now(),
-          },
-        ];
-      }
-
-      const { hasUser } = validateMessages(messagesForSession);
-      if (!hasUser) {
-        logger.warn("[CHAT] Cannot create session - no user message available");
-        return null;
-      }
-
-      const { data: sessionUuid, error } = await supabase.rpc('save_chat_session', {
-        p_user_id: user.id,
-        p_session_title: truncate(messageText, 60),
-        p_first_message: messageText,
-        p_messages: messagesForSession,
-      });
-
-      if (error || !sessionUuid) {
-        logger.error("[CHAT] Failed to create chat session:", error);
-        return null;
-      }
-
-      setCurrentSessionId(sessionUuid);
-      setChatId(sessionUuid);
+      activeUserIdRef.current = sessionUserId;
+      const localSessionId = generateUUID();
+      setCurrentSessionId(localSessionId);
+      setChatId(localSessionId);
       setIsNewSession(false);
-      logger.info("[CHAT] Created session on first message:", sessionUuid);
-      return sessionUuid;
+      logger.info("[CHAT] Created local session on first message:", localSessionId);
+      return localSessionId;
     })();
 
     sessionCreationPromiseRef.current = creationPromise;
@@ -382,19 +363,25 @@ export const useChat = (userName?: string | null) => {
         return;
       }
 
-      const { error: updateError } = await supabase
-        .from('chat_sessions')
-        .update({
-          messages: sortedMessages,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', activeSessionId)
-        .eq('user_id', user.id);
+      const sessionPayload = {
+        id: activeSessionId,
+        user_id: user.id,
+        session_title: truncate(firstUserMsg.text || 'Chat', 60),
+        first_message: firstUserMsg.text,
+        messages: sortedMessages,
+        updated_at: new Date().toISOString()
+      };
 
-      if (updateError) {
-        logger.error("Error updating chat session:", updateError);
+      const { error: upsertError } = await supabase
+        .from('chat_sessions')
+        .upsert(sessionPayload, {
+          onConflict: 'id',
+        });
+
+      if (upsertError) {
+        logger.error("Error upserting chat session:", upsertError);
       } else {
-        logger.info("✅ Chat session updated successfully:", activeSessionId);
+        logger.info("✅ Chat session synced successfully:", activeSessionId);
       }
     } catch (error) {
       logger.error("Error in saveCurrentSession:", error);
@@ -1374,21 +1361,22 @@ export const useChat = (userName?: string | null) => {
   // Backend always sends full message strings, frontend splits intelligently for consistent behavior
 
   const handleUserMessage = async (messageText: string, startTime?: number) => {
-    // Invalidate onboarding cache when user sends a message (finny asked)
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.id) {
-        const { invalidateOnboardingCache } = await import("@/src/shared/utils/cacheInvalidation");
-        // Don't await - fire and forget to avoid blocking message send
-        invalidateOnboardingCache(user.id).catch((err) => {
-          logger.error("Failed to invalidate onboarding cache:", err);
-        });
-      }
-    } catch (error) {
-      // Don't block message send if cache invalidation fails
-      logger.error("Error invalidating onboarding cache:", error);
-    }
     setIsTyping(true); // Start typing indicator immediately
+
+    // Invalidate onboarding cache when user sends a message (finny asked)
+    const cachedUserId = activeUserIdRef.current;
+    if (cachedUserId) {
+      import("@/src/shared/utils/cacheInvalidation")
+        .then(({ invalidateOnboardingCache }) =>
+          invalidateOnboardingCache(cachedUserId),
+        )
+        .catch((error) => {
+          logger.error("Error invalidating onboarding cache:", error);
+        });
+    } else {
+      logger.warn("[CHAT] Skipping onboarding cache invalidation - no cached userId");
+    }
+
     await handleFinnyResponse(messageText, startTime);
     // Note: setIsTyping(false) is now handled within handleFinnyResponse for streaming
   };
@@ -1644,7 +1632,7 @@ export const useChat = (userName?: string | null) => {
       // Every backend call must use the canonical chat_sessions UUID.
       let effectiveChatId = getActiveSessionId();
       if (!effectiveChatId) {
-        effectiveChatId = await ensureSessionForOutgoingMessage(messageText);
+        effectiveChatId = await ensureSessionForOutgoingMessage(messageText, userId);
       }
 
       if (!effectiveChatId) {
@@ -1655,137 +1643,16 @@ export const useChat = (userName?: string | null) => {
         return;
       }
 
-      // 1) First classify the message to determine intent (skip if goal flow active)
-      const classifyRes = goalFlow?.active ? null : await authenticatedFetch(`${BASE_URL}/api/finny`, {
-        method: "POST",
-        body: JSON.stringify({
-          action: "classify",
+      const requestContext = goalFlow ? { goal_flow: goalFlow } : {};
+
+      if (useStreaming) {
+        const requestBody = {
+          action: "message",
           message: messageText,
           chat_id: effectiveChatId,
-          context: {}
-        }),
-      });
-
-      let classifyData = classifyRes ? await classifyRes.json() : { intent: "ask_personalized" };
-
-      if (!classifyData || typeof classifyData.intent !== 'string') {
-        classifyData = {
-          intent: "ask_personalized",
-          needs_web: false,
-          needs_user_data: true,
-        } as any;
-      }
-      
-      // Check if API returned "Please log in" - indicates stale/invalid token
-      if (classifyRes && classifyData.message && 
-          (classifyData.message.toLowerCase().includes("please log in") || 
-           classifyData.message.toLowerCase().includes("log in"))) {
-        logger.warn(`[CHAT] ⚠️ API returned "Please log in" - retrying with fresh token...`);
-        invalidateTokenCache();
-        
-        // Retry classification once with fresh token
-        try {
-          const retryToken = await getFreshAccessToken();
-          if (retryToken) {
-            const retryRes = await authenticatedFetch(`${BASE_URL}/api/finny`, {
-              method: "POST",
-              body: JSON.stringify({
-                action: "classify",
-                message: messageText,
-                chat_id: effectiveChatId,
-                context: {}
-              }),
-            });
-            const retryData = await retryRes.json();
-            if (retryData.message && 
-                (retryData.message.toLowerCase().includes("please log in") || 
-                 retryData.message.toLowerCase().includes("log in"))) {
-              logger.error(`[CHAT] ❌ Retry still returned "Please log in"`);
-              pushChat("finny", "Please log in to get personalized financial advice.");
-              return;
-            }
-            classifyData = retryData;
-          } else {
-            logger.error(`[CHAT] ❌ Could not get fresh token for retry`);
-            pushChat("finny", "Please log in to get personalized financial advice.");
-            return;
-          }
-        } catch (retryError) {
-          logger.error(`[CHAT] ❌ Retry failed:`, retryError);
-          pushChat("finny", "Please log in to get personalized financial advice.");
-          return;
-        }
-      }
-
-      // Update progress based on intent
-      if (classifyData.intent === "off_topic") {
-        // Fun Gen Z-style messages for off-topic queries
-        const funMessages = [
-          "Hold up, let me redirect you to something better... 💸",
-          "Plot twist: let's talk money instead! 🎭",
-          "Ngl, I'm not the right person for that... but I AM great at finances! 💅",
-          "Sksksks, that's not really my vibe... but your bank account? That's my jam! ✨",
-          "Bestie, I'm not about that life... but I AM about that financial freedom! 🌟",
-          "Periodt, that's not my expertise... but budgeting? Now we're talking! 💯",
-          "Oooohh...",
-          "Not it, chief... but your financial future? That's definitely it! 👑",
-          "I'm gonna need you to redirect that energy to your finances! ⚡"
-        ];
-        const randomMessage = funMessages[Math.floor(Math.random() * funMessages.length)];
-        setProgressStatus(randomMessage);
-      } else if (classifyData.intent === "stock_query") {
-        setProgressStatus("Checking that ticker...");
-      } else if (classifyData.intent === "ask_personalized") {
-        // Check if web search is needed for more specific progress message
-        if (classifyData.needs_web) {
-          setProgressStatus("Looking up the web for you now...");
-        } else {
-          setProgressStatus("Taking a peek at your finances...");
-        }
-      } else if (classifyData.intent === "goal") {
-        setProgressStatus("Setting up your goal...");
-      } else {
-        // Fun but warm messages for other intents
-        const warmMessages = [
-          "Brewing finance wisdom... ☕",
-          "Crunching numbers with love... 💕",
-          "Getting your financial story ready... 📖",
-          "Preparing something special for you... ✨",
-          "Working my magic on your money matters... 🪄",
-          "Crafting the perfect financial insight... 🎨",
-          "Putting together your financial puzzle... 🧩",
-          "Whipping up some financial advice... 👨‍🍳",
-          "Polishing your financial gems... 💎",
-          "Weaving your financial tapestry... 🧵"
-        ];
-        const randomWarmMessage = warmMessages[Math.floor(Math.random() * warmMessages.length)];
-        setProgressStatus(randomWarmMessage);
-      }
-
-      // 2) Route to appropriate handler based on classification
-      // Use XMLHttpRequest for streaming, fetch for regular responses
-      if (useStreaming) {
-        const isAskIntent =
-          !goalFlow?.active &&
-          (classifyData.intent === "ask_personalized" ||
-            classifyData.intent === "stock_query");
-        const requestBody = isAskIntent
-          ? {
-              action: "ask",
-              message: messageText,
-              chat_id: effectiveChatId,
-              context: {},
-              classification: classifyData,
-              stream: true
-            }
-          : {
-              action: goalFlow?.active ? "goal_conversation" : classifyData.intent,
-              message: messageText,
-              chat_id: effectiveChatId,
-              context: goalFlow ? { goal_flow: goalFlow } : {},
-              stream: true
-            };
-
+          context: requestContext,
+          stream: true
+        };
         const streamStartTime = Date.now();
         let finalResponse: string | null = null;
         
@@ -1847,35 +1714,16 @@ export const useChat = (userName?: string | null) => {
       }
 
       // Regular fetch for non-streaming requests
-      let res;
-      const isAskIntent =
-        !goalFlow?.active &&
-        (classifyData.intent === "ask_personalized" ||
-          classifyData.intent === "stock_query");
-      if (isAskIntent) {
-        res = await authenticatedFetch(`${BASE_URL}/api/finny`, {
-          method: "POST",
-          body: JSON.stringify({
-            action: "ask",
-            message: messageText,
-            chat_id: effectiveChatId,
-            context: {},
-            classification: classifyData,
-            stream: false
-          }),
-        });
-      } else {
-        res = await authenticatedFetch(`${BASE_URL}/api/finny`, {
-          method: "POST",
-          body: JSON.stringify({
-            action: goalFlow?.active ? "goal_conversation" : classifyData.intent,
-            message: messageText,
-            chat_id: effectiveChatId,
-            context: goalFlow ? { goal_flow: goalFlow } : {},
-            stream: false
-          }),
-        });
-      }
+      const res = await authenticatedFetch(`${BASE_URL}/api/finny`, {
+        method: "POST",
+        body: JSON.stringify({
+          action: "message",
+          message: messageText,
+          chat_id: effectiveChatId,
+          context: requestContext,
+          stream: false
+        }),
+      });
 
       // Handle regular JSON response
       const data = await res.json();

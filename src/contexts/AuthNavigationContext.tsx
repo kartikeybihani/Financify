@@ -657,16 +657,7 @@ export const AuthNavigationProvider: React.FC<AuthNavigationProviderProps> = ({
       // Use the token refresh coordinator to manage the refresh lifecycle
       const refreshFn = async (): Promise<string | null> => {
         await new Promise((resolve) => setTimeout(resolve, 100));
-
-        const {
-          data: { session: latestSession },
-          error: sessionError,
-        } = await supabase.auth.getSession();
-        if (sessionError || !latestSession?.access_token) {
-          return null;
-        }
-
-        return latestSession.access_token;
+        return newSession.access_token || null;
       };
 
       const newToken = await startTokenRefresh(refreshFn);

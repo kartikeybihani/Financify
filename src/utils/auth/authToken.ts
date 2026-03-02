@@ -121,6 +121,52 @@ const createTimeoutPromise = (ms: number, message: string): Promise<never> => {
   });
 };
 
+const getStoredAccessToken = (): string | null => {
+  try {
+    const SUPABASE_URL =
+      (typeof process !== "undefined" &&
+        process.env.EXPO_PUBLIC_SUPABASE_URL) ||
+      (typeof process !== "undefined" && process.env.SUPABASE_URL) ||
+      null;
+
+    if (!SUPABASE_URL) {
+      return null;
+    }
+
+    const url = new URL(SUPABASE_URL);
+    const projectRef = url.host.split(".")[0];
+    const primaryKey = `sb-${projectRef}-auth-token`;
+    const stored = AppStorage.getItemSync(primaryKey);
+
+    if (!stored) {
+      return null;
+    }
+
+    const parsed = JSON.parse(stored);
+    const token =
+      parsed?.access_token ||
+      parsed?.currentSession?.access_token ||
+      parsed?.session?.access_token;
+    const nowSec = Math.floor(Date.now() / 1000);
+    const exp =
+      parsed?.expires_at ||
+      parsed?.exp ||
+      parsed?.currentSession?.expires_at ||
+      parsed?.session?.expires_at ||
+      null;
+
+    const isValid =
+      typeof token === "string" &&
+      token.length > 0 &&
+      (!exp || (typeof exp === "number" && exp > nowSec + 60));
+
+    return isValid ? token : null;
+  } catch (error) {
+    logger.error("[AUTH_TOKEN] Error reading token from storage:", error);
+    return null;
+  }
+};
+
 /**
  * Retrieves a fresh access token from Supabase with in-memory caching and robust error handling.
  * 
@@ -169,6 +215,20 @@ export const getFreshAccessToken = async (): Promise<string | null> => {
       return tokenCache.token;
     } else {
       tokenCache = null;
+    }
+  }
+
+  // In React Native, the persisted auth session in MMKV is often available
+  // before Supabase's getSession() settles. Prefer that fast path when no
+  // refresh is in progress to avoid repeated getSession() timeouts on tab focus.
+  if (!refreshCoordinator.isRefreshing) {
+    const storedToken = getStoredAccessToken();
+    if (storedToken) {
+      tokenCache = {
+        token: storedToken,
+        timestamp: Date.now(),
+      };
+      return storedToken;
     }
   }
   
@@ -226,67 +286,17 @@ export const getFreshAccessToken = async (): Promise<string | null> => {
               `[AUTH_TOKEN] 🔄 [${callId}] getSession() timed out, trying AsyncStorage fallback using primary Supabase auth key...`
             );
             try {
-              // Supabase React Native client stores the session under a deterministic key:
-              //   sb-${projectRef}-auth-token
-              // We derive projectRef from the Supabase URL host to avoid scanning all keys.
-              const SUPABASE_URL =
-                (typeof process !== "undefined" &&
-                  process.env.EXPO_PUBLIC_SUPABASE_URL) ||
-                (typeof process !== "undefined" && process.env.SUPABASE_URL) ||
-                null;
-
-              if (SUPABASE_URL) {
-                try {
-                  const url = new URL(SUPABASE_URL);
-                  const host = url.host; // e.g. vfbghyahfrlxkbxtzejw.supabase.co
-                  const projectRef = host.split(".")[0];
-                  const primaryKey = `sb-${projectRef}-auth-token`;
-
-                  const stored = AppStorage.getItemSync(primaryKey);
-                  if (stored) {
-                    const parsed = JSON.parse(stored);
-
-                    // Supabase stores the session structure; we look for an access token and basic expiry.
-                    const token =
-                      parsed?.access_token ||
-                      parsed?.currentSession?.access_token ||
-                      parsed?.session?.access_token;
-
-                    // Basic expiry check: if we have exp (seconds) or expires_at, ensure token is not expired
-                    const nowSec = Math.floor(Date.now() / 1000);
-                    const exp =
-                      parsed?.expires_at ||
-                      parsed?.exp ||
-                      parsed?.currentSession?.expires_at ||
-                      parsed?.session?.expires_at ||
-                      null;
-
-                    const isValid =
-                      token &&
-                      (!exp || (typeof exp === "number" && exp > nowSec + 60));
-
-                    if (isValid) {
-                      const totalDuration = Date.now() - startTime;
-                      tokenCache = {
-                        token: token,
-                        timestamp: Date.now(),
-                      };
-                      logger.info(
-                        `[AUTH_TOKEN] ✅ [${callId}] Got token from AsyncStorage fallback (key: ${primaryKey}) in ${totalDuration}ms and cached`
-                      );
-                      return token;
-                    } else if (token && exp && typeof exp === "number") {
-                      logger.warn(
-                        `[AUTH_TOKEN] ⚠️ [${callId}] AsyncStorage fallback token from ${primaryKey} is expired or near expiry (exp=${exp}, now=${nowSec})`
-                      );
-                    }
-                  }
-                } catch (parseOrUrlError) {
-                  logger.error(
-                    `[AUTH_TOKEN] ❌ [${callId}] Error using primary AsyncStorage auth key fallback:`,
-                    parseOrUrlError
-                  );
-                }
+              const token = getStoredAccessToken();
+              if (token) {
+                const totalDuration = Date.now() - startTime;
+                tokenCache = {
+                  token,
+                  timestamp: Date.now(),
+                };
+                logger.info(
+                  `[AUTH_TOKEN] ✅ [${callId}] Got token from AsyncStorage fallback in ${totalDuration}ms and cached`
+                );
+                return token;
               }
             } catch (storageError) {
               logger.error(

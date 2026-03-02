@@ -116,6 +116,8 @@ function ChatScreenContent() {
   const [memoryDisclosureContentHeight, setMemoryDisclosureContentHeight] =
     useState(0);
   const memoryConsentDismissedAtRef = useRef(0);
+  const contextPrebuildInFlightRef = useRef(false);
+  const lastContextPrebuildAtRef = useRef(0);
   const atBottomRef = useRef(true);
   const contentHeights = useRef({ content: 0, view: 0 });
   const inputFocusAnimation = useRef(new Animated.Value(0)).current;
@@ -412,8 +414,23 @@ function ChatScreenContent() {
    * If it fails, the app falls back to on-demand context building when needed.
    */
   const triggerContextPrebuild = async () => {
+    const now = Date.now();
+    const PREBUILD_THROTTLE_MS = 2 * 60 * 1000;
+
+    if (contextPrebuildInFlightRef.current) {
+      logger.debug("⏭️ [CONTEXT_PREBUILD] Skipping - already in flight");
+      return;
+    }
+
+    if (now - lastContextPrebuildAtRef.current < PREBUILD_THROTTLE_MS) {
+      logger.debug("⏭️ [CONTEXT_PREBUILD] Skipping - throttled on recent focus");
+      return;
+    }
+
     const callId = Math.random().toString(36).substring(2, 8);
     const startTime = Date.now();
+    contextPrebuildInFlightRef.current = true;
+    lastContextPrebuildAtRef.current = now;
     try {
       logger.debug(
         `🚀 [CONTEXT_PREBUILD] [${callId}] Starting context pre-building...`,
@@ -479,6 +496,8 @@ function ChatScreenContent() {
         `⚠️ [CONTEXT_PREBUILD] [${callId}] Pre-build setup error after ${totalDuration}ms:`,
         error,
       );
+    } finally {
+      contextPrebuildInFlightRef.current = false;
     }
   };
 
