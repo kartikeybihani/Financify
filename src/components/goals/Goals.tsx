@@ -64,6 +64,7 @@ const Goals: React.FC<GoalsProps> = ({
   const [localGoalsData, setLocalGoalsData] = useState<Goal[]>(goalsData);
   const [deletedGoal, setDeletedGoal] = useState<Goal | null>(null); // Store for undo
   const deleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Store timeout for delayed deletion
+  const prevPremiumLockedRef = useRef(isPremiumLocked);
 
   const { addManualGoal, refreshGoals } = useGoals(() => {});
 
@@ -141,7 +142,14 @@ const Goals: React.FC<GoalsProps> = ({
   useEffect(() => {
     // Sync goalsData prop to local state
     // Merge strategy: keep optimistic updates that aren't in server data yet
+    const justUnlocked = prevPremiumLockedRef.current && !isPremiumLocked;
+
     setLocalGoalsData((prev) => {
+      // When the paywall unlocks, replace any demo teaser goals with the user's real goals.
+      if (justUnlocked) {
+        return goalsData;
+      }
+
       // If server data is empty or we have no local data, just use server data
       if (goalsData.length === 0 || prev.length === 0) {
         return goalsData;
@@ -154,7 +162,9 @@ const Goals: React.FC<GoalsProps> = ({
       // Combine server data with any local-only goals (optimistic updates)
       return [...goalsData, ...localOnlyGoals];
     });
-  }, [goalsData]);
+
+    prevPremiumLockedRef.current = isPremiumLocked;
+  }, [goalsData, isPremiumLocked]);
 
   // Cleanup timeout on unmount
   useEffect(() => {

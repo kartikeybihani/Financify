@@ -1,40 +1,36 @@
-import React, {
-  useEffect,
-  useRef,
-  useState,
-  memo,
-  useMemo,
-  useCallback,
-} from "react";
+import React, { memo, useEffect, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  LayoutAnimation,
-  Platform,
-  UIManager,
   Animated,
-  Easing,
-  TouchableOpacity,
   Dimensions,
   Linking,
+  Platform,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons, AntDesign, FontAwesome } from "@expo/vector-icons";
+import { FontAwesome } from "@expo/vector-icons";
 import * as WebBrowser from "expo-web-browser";
-import { Svg, Path } from "react-native-svg";
 
-// Enable LayoutAnimation for Android
-if (Platform.OS === "android") {
-  if (UIManager.setLayoutAnimationEnabledExperimental) {
-    UIManager.setLayoutAnimationEnabledExperimental(true);
-  }
-}
-
-// URL detection regex
 const URL_REGEX = /(https?:\/\/[^\s]+)/g;
 
-// Function to open URL in WebBrowser
+const { width: screenWidth } = Dimensions.get("window");
+const isSmallScreen = screenWidth < 375;
+const isLargeScreen = screenWidth >= 414;
+
+const responsiveWidth = (percentage: number) =>
+  screenWidth * (percentage / 100);
+const responsiveFontSize = (baseSize: number) => {
+  if (isSmallScreen) return baseSize * 0.92;
+  if (isLargeScreen) return baseSize * 1.06;
+  return baseSize;
+};
+const responsivePadding = (basePadding: number) => {
+  if (isSmallScreen) return basePadding * 0.85;
+  if (isLargeScreen) return basePadding * 1.08;
+  return basePadding;
+};
+
 const openURL = async (url: string) => {
   try {
     await WebBrowser.openBrowserAsync(url, {
@@ -42,282 +38,90 @@ const openURL = async (url: string) => {
       controlsColor: "#4A90E2",
       showTitle: true,
     });
-  } catch (error) {
-    console.error("Failed to open URL:", error);
-    // Fallback to system browser
+  } catch (_error) {
     await Linking.openURL(url);
   }
 };
 
-// Function to extract domain name from URL for display
 const extractDomainName = (url: string): string => {
   try {
-    // Extract domain from URL
     const domain = url.replace(/^https?:\/\//, "").split("/")[0];
-
-    // Remove common subdomain prefixes
     const cleanDomain = domain.replace(
       /^(www\.|api\.|app\.|blog\.|mail\.|mobile\.)/,
       "",
     );
-
-    // Split by dots and get the main domain part (before TLD)
     const parts = cleanDomain.split(".");
-
-    // If there are multiple parts, get the main domain name (usually second-to-last)
-    // For example: "chase.com" -> "chase", "subdomain.github.com" -> "github"
-    let mainDomain = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
-
-    // Capitalize first letter
+    const mainDomain = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
     return mainDomain.charAt(0).toUpperCase() + mainDomain.slice(1);
-  } catch (error) {
-    // Fallback to generic text if extraction fails
-    return "view link";
+  } catch (_error) {
+    return "Link";
   }
 };
 
-// Function to generate elegant link text based on domain name
-const generateLinkText = (url: string, context: string = "") => {
-  // Extract and return the domain name (e.g., "Chase" from chase.com)
-  return extractDomainName(url);
-};
-
-// Function to parse text and render links with elegant text
 const parseTextWithLinks = (text: string, textStyle: any) => {
-  // Early return if no URLs found
+  URL_REGEX.lastIndex = 0;
   if (!URL_REGEX.test(text)) {
     return text;
   }
 
+  URL_REGEX.lastIndex = 0;
   const parts = text.split(URL_REGEX);
   let linkCounter = 0;
+  const linkCount = (text.match(URL_REGEX) || []).length;
 
   return parts.map((part, index) => {
+    URL_REGEX.lastIndex = 0;
     if (URL_REGEX.test(part)) {
-      linkCounter++;
-      const linkText = generateLinkText(part, text);
-      const isMultipleLinks = (text.match(URL_REGEX) || []).length > 1;
-      const displayText = isMultipleLinks
-        ? `${linkText} (${linkCounter})`
-        : linkText;
+      linkCounter += 1;
+      const label =
+        linkCount > 1
+          ? `${extractDomainName(part)} (${linkCounter})`
+          : extractDomainName(part);
 
       return (
         <Text
-          key={index}
+          key={`${part}-${index}`}
           style={[textStyle, styles.linkText]}
           onPress={() => openURL(part)}
         >
-          {displayText}{" "}
-          <Ionicons
-            name="open-outline"
-            size={12}
-            color="#87CEEB"
-            style={{ marginLeft: 2 }}
-          />
+          {label}
+          <Text style={styles.linkArrow}> ↗</Text>
         </Text>
       );
     }
+
     return part;
   });
 };
 
-// Helper to pick the corner color that meets the tail
-const pickTailColor = (colors: string[], side: "left" | "right") => {
-  if (side === "right") {
-    // For user messages, use the end color (darker)
-    return colors[colors.length - 1];
-  } else {
-    // For Finny messages, use the darkest color from the gradient
-    return colors[0];
-  }
-};
-
-// Separate component for action buttons to avoid conditional hooks
-const ActionButton = ({
-  btn,
-  onAction,
-  clicked,
-  setClicked,
-  shouldLock = true,
-  message,
-}: {
-  btn: any;
-  onAction?: (action: string, message?: ChatMessageProps["message"]) => void;
-  clicked: boolean;
-  setClicked: (value: boolean) => void;
-  shouldLock?: boolean;
-  message?: ChatMessageProps["message"];
-}) => {
-  const [isPressed, setIsPressed] = useState(false);
-  const pressAnim = useRef(new Animated.Value(1)).current;
-
-  const handlePressIn = () => {
-    setIsPressed(true);
-    Animated.spring(pressAnim, {
-      toValue: 0.95,
-      useNativeDriver: true,
-      tension: 300,
-      friction: 10,
-    }).start();
-  };
-
-  const handlePressOut = () => {
-    setIsPressed(false);
-    Animated.spring(pressAnim, {
-      toValue: 1,
-      useNativeDriver: true,
-      tension: 300,
-      friction: 10,
-    }).start();
-  };
-
-  const handlePress = () => {
-    if (clicked || !onAction) return;
-    // Always lock/hide button when clicked (for both Yes and Change Ticker)
-    setClicked(true);
-    onAction(btn.action, message);
-  };
-
-  return (
-    <Animated.View
-      style={{
-        opacity: 1, // We'll handle fadeAnim in the parent component
-        transform: [{ scale: pressAnim }],
-      }}
+const renderFormattedParagraphs = (
+  text: string,
+  baseTextStyle: object,
+  paragraphStyle?: object,
+) =>
+  text.split("\n").map((line, lineIndex) => (
+    <Text
+      key={`line-${lineIndex}`}
+      style={[baseTextStyle, lineIndex > 0 && styles.paragraphSpacing, paragraphStyle]}
     >
-      <TouchableOpacity
-        onPress={handlePress}
-        onPressIn={handlePressIn}
-        onPressOut={handlePressOut}
-        activeOpacity={0.7}
-        style={{
-          marginRight: 6,
-          marginBottom: 4,
-        }}
-      >
-        <LinearGradient
-          colors={
-            btn.style === "primary"
-              ? ["#4A90E2", "#5BA3F5", "#6BB6FF"]
-              : ["rgba(255, 255, 255, 0.15)", "rgba(255, 255, 255, 0.08)"]
-          }
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={{
-            paddingHorizontal: responsivePadding(14),
-            paddingVertical: responsivePadding(10),
-            borderRadius: 20,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "center",
-            shadowColor: btn.style === "primary" ? "#4A90E2" : "#000",
-            shadowOffset: { width: 0, height: 3 },
-            shadowOpacity: btn.style === "primary" ? 0.4 : 0.1,
-            shadowRadius: 6,
-            elevation: 4,
-            opacity: clicked ? 0.5 : 1,
-            borderWidth: 0,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: responsiveFontSize(12),
-              fontWeight: "600",
-              color: btn.style === "primary" ? "#FFFFFF" : "#E0E0E0",
-              letterSpacing: 0.3,
-              textAlign: "center",
-            }}
-          >
-            {btn.label}
-          </Text>
-        </LinearGradient>
-      </TouchableOpacity>
-    </Animated.View>
-  );
-};
-
-// SVG tail component with iMessage-style teardrop
-const BubbleTail = ({
-  side,
-  color,
-}: {
-  side: "left" | "right";
-  color: string;
-}) => {
-  // Different configs for left and right
-  const config =
-    side === "right"
-      ? {
-          width: 36,
-          height: 20,
-          offset: -16,
-          viewBox: "0 0 36 20",
-          flipX: -1,
-          // Much wider and shorter, very thick at top
-          path: "M36,0 L36,12 Q34,12 30,14 Q26,16 22,18 Q16,20 8,20 Q12,18 16,16 Q20,14 24,12 Q28,10 32,6 Q34,3 36,0 Z",
-          shadowPath: "M36,1 Q34,6 30,10 Q26,14 22,16 Q16,18 8,20",
+      {line.split(/(\*\*[^*]+\*\*)/).map((chunk, chunkIndex) => {
+        if (chunk.startsWith("**") && chunk.endsWith("**")) {
+          return (
+            <Text key={`${lineIndex}-${chunkIndex}`} style={styles.boldText}>
+              {parseTextWithLinks(chunk.slice(2, -2), [baseTextStyle, styles.boldText])}
+            </Text>
+          );
         }
-      : {
-          width: 32,
-          height: 16,
-          offset: -14,
-          viewBox: "0 0 32 16",
-          flipX: 1,
-          // Smaller tail for left side
-          path: "M32,0 L32,12 Q30,12 26,14 Q22,16 18,17 Q12,18 6,18 Q10,16 16,14 Q22,12 26,8 Q29,4 32,0 Z",
-          shadowPath: "M32,1 Q30,6 26,10 Q22,14 18,15 Q12,16 6,18",
-        };
 
-  return (
-    <View
-      pointerEvents="none"
-      style={{
-        position: "absolute",
-        bottom: side === "left" ? 15 : -2,
-        right: side === "right" ? config.offset : undefined,
-        left: side === "left" ? config.offset : undefined,
-        width: config.width,
-        height: config.height,
-      }}
-    >
-      <Svg
-        width={config.width}
-        height={config.height}
-        viewBox={config.viewBox}
-        style={{ transform: [{ scaleX: config.flipX }] }}
-      >
-        {/* Shadow path */}
-        <Path
-          d={config.shadowPath}
-          fill="none"
-          stroke="rgba(0,0,0,0.2)"
-          strokeWidth="2"
-          strokeLinecap="round"
-        />
-        {/* Main tail - very thick at connection point */}
-        <Path d={config.path} fill={color} />
-      </Svg>
-    </View>
-  );
-};
+        return parseTextWithLinks(chunk, baseTextStyle);
+      })}
+    </Text>
+  ));
 
-// Responsive calculations
-const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
-const isSmallScreen = screenWidth < 375;
-const isMediumScreen = screenWidth >= 375 && screenWidth < 414;
-const isLargeScreen = screenWidth >= 414;
-
-const responsiveWidth = (percentage: number) =>
-  screenWidth * (percentage / 100);
-const responsiveFontSize = (baseSize: number) => {
-  if (isSmallScreen) return baseSize * 0.9;
-  if (isLargeScreen) return baseSize * 1.1;
-  return baseSize;
-};
-const responsivePadding = (basePadding: number) => {
-  if (isSmallScreen) return basePadding * 0.8;
-  if (isLargeScreen) return basePadding * 1.2;
-  return basePadding;
+type MessageAction = {
+  label: string;
+  action: string;
+  style?: "primary" | "secondary";
 };
 
 interface ChatMessageProps {
@@ -326,11 +130,7 @@ interface ChatMessageProps {
     text: string;
     id: string;
     type?: "text" | "action";
-    actions?: Array<{
-      label: string;
-      action: string;
-      style?: "primary" | "secondary";
-    }>;
+    actions?: MessageAction[];
     stockCandidate?: {
       ticker: string;
     };
@@ -339,596 +139,341 @@ interface ChatMessageProps {
       amount: number | null;
       showButton: boolean;
     };
-    hideFeedback?: boolean; // Hide feedback buttons for confirmation messages
-    hideActions?: boolean; // Hide action buttons after they're clicked
+    hideFeedback?: boolean;
+    hideActions?: boolean;
   };
   showSender?: boolean;
   onAction?: (action: string, message?: ChatMessageProps["message"]) => void;
   onThumbUp?: (messageId: string) => void;
   onThumbDown?: (messageId: string) => void;
-  // For grouping logic
   prevSender?: "user" | "finny" | null;
   nextSender?: "user" | "finny" | null;
 }
 
-const BASE_RADIUS = 18;
-const PILL_RADIUS = 22; // for one-liners
-const GROUP_RADIUS = 14; // middle of a group
-
-function getBubbleRadii({
-  sender,
-  isFirstInGroup,
-  isLastInGroup,
-  isSingleLine,
+const ActionButton = ({
+  button,
+  disabled,
+  onPress,
 }: {
-  sender: "user" | "finny";
-  isFirstInGroup: boolean;
-  isLastInGroup: boolean;
-  isSingleLine: boolean;
-}) {
-  const r = isSingleLine ? PILL_RADIUS : BASE_RADIUS;
-  const mid = GROUP_RADIUS;
-  const isUser = sender === "user";
-
-  if (isFirstInGroup && isLastInGroup) {
-    // Even radii all around - tail does the pointing
-    return {
-      borderTopLeftRadius: r,
-      borderTopRightRadius: r,
-      borderBottomLeftRadius: r,
-      borderBottomRightRadius: r,
-    };
-  }
-
-  if (isFirstInGroup) {
-    return isUser
-      ? {
-          borderTopLeftRadius: r,
-          borderTopRightRadius: r,
-          borderBottomLeftRadius: r,
-          borderBottomRightRadius: mid,
-        }
-      : {
-          borderTopLeftRadius: r,
-          borderTopRightRadius: r,
-          borderBottomLeftRadius: mid,
-          borderBottomRightRadius: r,
-        };
-  }
-
-  if (isLastInGroup) {
-    return isUser
-      ? {
-          borderTopLeftRadius: r,
-          borderTopRightRadius: r,
-          borderBottomLeftRadius: r,
-          borderBottomRightRadius: r,
-        }
-      : {
-          borderTopLeftRadius: r,
-          borderTopRightRadius: r,
-          borderBottomLeftRadius: r,
-          borderBottomRightRadius: r,
-        };
-  }
-
-  return {
-    borderTopLeftRadius: mid,
-    borderTopRightRadius: mid,
-    borderBottomLeftRadius: mid,
-    borderBottomRightRadius: mid,
-  } as const;
-}
+  button: MessageAction;
+  disabled: boolean;
+  onPress: () => void;
+}) => (
+  <TouchableOpacity
+    activeOpacity={disabled ? 1 : 0.75}
+    disabled={disabled}
+    onPress={onPress}
+    style={[
+      styles.actionButton,
+      button.style === "primary"
+        ? styles.actionButtonPrimary
+        : styles.actionButtonSecondary,
+      disabled && styles.actionButtonDisabled,
+    ]}
+  >
+    <Text
+      style={[
+        styles.actionButtonText,
+        button.style === "primary"
+          ? styles.actionButtonTextPrimary
+          : styles.actionButtonTextSecondary,
+      ]}
+    >
+      {button.label}
+    </Text>
+  </TouchableOpacity>
+);
 
 export const ChatMessageComponent = memo(
   ({
     message,
-    showSender = true,
     onAction,
     onThumbUp,
     onThumbDown,
-    prevSender,
     nextSender,
   }: ChatMessageProps) => {
     const fadeAnim = useRef(new Animated.Value(0)).current;
-    const scaleAnim = useRef(new Animated.Value(0.8)).current;
-    const slideAnim = useRef(new Animated.Value(20)).current;
-    const [lineCount, setLineCount] = useState(1);
+    const translateAnim = useRef(new Animated.Value(8)).current;
     const [clicked, setClicked] = useState(false);
 
-    // Memoize expensive calculations
-    const isUser = useMemo(() => message.sender === "user", [message.sender]);
-    const isFirstInGroup = useMemo(
-      () => prevSender !== message.sender,
-      [prevSender, message.sender],
-    );
-    const isLastInGroup = useMemo(
-      () => nextSender !== message.sender,
-      [nextSender, message.sender],
-    );
-    const isSingleLine = useMemo(() => lineCount <= 1, [lineCount]);
-
-    const bubbleRadii = useMemo(
-      () =>
-        getBubbleRadii({
-          sender: message.sender,
-          isFirstInGroup,
-          isLastInGroup,
-          isSingleLine,
-        }),
-      [message.sender, isFirstInGroup, isLastInGroup, isSingleLine],
-    );
-
-    // Memoize gradient colors
-    const userGradient = useMemo(() => ["#2A3A4A", "#1A2A3A"] as const, []);
-    const finnyGradient = useMemo(
-      () => ["#1A3A5A", "#2E5A8A", "#4A90E2"] as const,
-      [],
-    );
-
-    const onTextLayout = useCallback((e: any) => {
-      // e.nativeEvent.lines is available on RN Text layout events
-      const lines = (e?.nativeEvent?.lines as any[]) || [];
-      setLineCount(lines.length > 0 ? lines.length : 1);
-    }, []);
-
     useEffect(() => {
-      // Simplified entrance animation for better performance
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
-          duration: 300, // Reduced duration
-          easing: Easing.out(Easing.cubic),
+          duration: 180,
           useNativeDriver: true,
         }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 300, // Reduced duration
-          easing: Easing.out(Easing.cubic), // Simplified easing
-          useNativeDriver: true,
-        }),
-        Animated.timing(slideAnim, {
+        Animated.timing(translateAnim, {
           toValue: 0,
-          duration: 300, // Reduced duration
-          easing: Easing.out(Easing.cubic),
+          duration: 220,
           useNativeDriver: true,
         }),
       ]).start();
+    }, [fadeAnim, translateAnim]);
 
-      // Remove LayoutAnimation for better performance
-    }, []);
-
-    if (isUser) {
-      const userTailColor = pickTailColor([...userGradient], "right");
-
-      return (
-        <Animated.View
-          style={[
-            styles.messageContainer,
-            styles.userMessageContainer,
-            {
-              opacity: fadeAnim,
-              transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
-            },
-          ]}
-        >
-          <LinearGradient
-            colors={userGradient}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={[
-              styles.userMessageBubble,
-              bubbleRadii,
-              { paddingBottom: responsivePadding(10) },
-            ]}
-          >
-            <Text
-              onTextLayout={onTextLayout}
-              style={[styles.messageText, styles.userMessageText]}
-            >
-              {parseTextWithLinks(message.text, [
-                styles.messageText,
-                styles.userMessageText,
-              ])}
-            </Text>
-          </LinearGradient>
-        </Animated.View>
-      );
-    }
-
-    // Check for action buttons (regardless of type, as long as actions exist and not hidden)
-
-    if (message.actions && message.actions.length > 0 && !message.hideActions) {
-      const finnyTailColor = pickTailColor([...finnyGradient], "left");
-
-      return (
-        <Animated.View
-          style={{
-            opacity: fadeAnim,
-            transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
-          }}
-        >
-          {showSender && (
-            <Animated.View
-              style={[
-                styles.senderNameContainer,
-                {
-                  opacity: fadeAnim,
-                  transform: [{ translateY: slideAnim }],
-                },
-              ]}
-            >
-              <Text style={styles.senderName}>Finny</Text>
-            </Animated.View>
-          )}
-          <View style={styles.finnyMessageRow}>
-            <View style={styles.finnyMessageContainer}>
-              <View style={styles.bubbleWrapper}>
-                <LinearGradient
-                  colors={finnyGradient}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={[
-                    styles.finnyMessageBubble,
-                    bubbleRadii,
-                    { paddingBottom: responsivePadding(10) },
-                    !isFirstInGroup &&
-                      !isLastInGroup &&
-                      styles.finnyMessageBubbleGrouped,
-                    isLastInGroup && styles.finnyMessageBubbleLastInGroup,
-                  ]}
-                >
-                  <Text style={[styles.messageText, styles.finnyMessageText]}>
-                    {message.text.split("\n").map((line, lineIdx) => (
-                      <React.Fragment key={lineIdx}>
-                        {lineIdx > 0 && <Text>{"\n"}</Text>}
-                        <Text
-                          onTextLayout={
-                            lineIdx === 0 ? onTextLayout : undefined
-                          }
-                        >
-                          {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
-                            if (
-                              chunk.startsWith("**") &&
-                              chunk.endsWith("**")
-                            ) {
-                              return (
-                                <Text key={idx} style={styles.boldText}>
-                                  {parseTextWithLinks(
-                                    chunk.slice(2, -2),
-                                    styles.boldText,
-                                  )}
-                                </Text>
-                              );
-                            }
-                            return parseTextWithLinks(chunk, [
-                              styles.messageText,
-                              styles.finnyMessageText,
-                            ]);
-                          })}
-                        </Text>
-                      </React.Fragment>
-                    ))}
-                  </Text>
-                </LinearGradient>
-              </View>
-              {/* Feedback buttons - hide for initial welcome message and confirmation messages */}
-              {isLastInGroup &&
-                message.id !== "welcome" &&
-                !message.hideFeedback && (
-                  <View style={styles.feedbackButtons}>
-                    <TouchableOpacity
-                      style={styles.feedbackButton}
-                      onPress={() => onThumbUp?.(message.id)}
-                      activeOpacity={0.7}
-                    >
-                      <FontAwesome name="thumbs-o-up" size={15} color="#888" />
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={styles.feedbackButton}
-                      onPress={() => onThumbDown?.(message.id)}
-                      activeOpacity={0.7}
-                    >
-                      <FontAwesome
-                        name="thumbs-o-down"
-                        size={15}
-                        color="#888"
-                      />
-                    </TouchableOpacity>
-                  </View>
-                )}
-            </View>
-          </View>
-          {message.stockCandidate?.ticker && (
-            <View style={styles.tickerBadge}>
-              <Text style={styles.tickerBadgeLabel}>TICKER:</Text>
-              <Text style={styles.tickerBadgeText}>
-                {message.stockCandidate.ticker}
-              </Text>
-            </View>
-          )}
-          {/* Action buttons below the bubble */}
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              marginLeft: 12,
-              marginTop: 6,
-              gap: responsivePadding(6),
-              flexWrap: "wrap",
-            }}
-          >
-            {message.actions.map((btn, idx) => (
-              <ActionButton
-                key={btn.action}
-                btn={btn}
-                onAction={onAction}
-                clicked={clicked}
-                setClicked={setClicked}
-                shouldLock={true} // Always lock/hide buttons when clicked
-                message={message}
-              />
-            ))}
-          </View>
-        </Animated.View>
-      );
-    }
-
-    // Display message as single string (no splitting)
-    // Defensive: handle undefined/null text during streaming
     const messageText =
-      typeof message?.text === "string"
-        ? message.text
-        : String(message?.text || "");
+      typeof message.text === "string" ? message.text.trim() : String(message.text || "").trim();
 
-    // Don't render if there's no text at all
-    if (!messageText || messageText.trim() === "") {
+    if (!messageText) {
       return null;
     }
 
-    const finnyTailColor = pickTailColor([...finnyGradient], "left");
+    const isUser = message.sender === "user";
+    const isLastInGroup = nextSender !== message.sender;
+    const showFeedback =
+      !isUser && isLastInGroup && message.id !== "welcome" && !message.hideFeedback;
+    const hasActions =
+      !isUser && !!message.actions?.length && !message.hideActions;
+    const showsDataSurface = hasActions || !!message.stockCandidate?.ticker;
+
+    if (isUser) {
+      return (
+        <Animated.View
+          style={[
+            styles.userMessageContainer,
+            {
+              opacity: fadeAnim,
+              transform: [{ translateY: translateAnim }],
+            },
+          ]}
+        >
+          <View style={styles.userMessageBubble}>
+            <Text style={styles.userMessageText}>
+              {parseTextWithLinks(messageText, styles.userMessageText)}
+            </Text>
+          </View>
+        </Animated.View>
+      );
+    }
 
     return (
       <Animated.View
-        style={{
-          opacity: fadeAnim,
-          transform: [{ scale: scaleAnim }, { translateY: slideAnim }],
-        }}
+        style={[
+          styles.assistantMessageContainer,
+          {
+            opacity: fadeAnim,
+            transform: [{ translateY: translateAnim }],
+          },
+        ]}
       >
-        {showSender && (
-          <Animated.View
-            style={[
-              styles.senderNameContainer,
-              {
-                opacity: fadeAnim,
-                transform: [{ translateY: slideAnim }],
-              },
-            ]}
-          >
-            <Text style={styles.senderName}>Finny</Text>
-          </Animated.View>
-        )}
-        <Animated.View style={styles.finnyMessageRow}>
-          <View style={styles.finnyMessageContainer}>
-            <View style={styles.bubbleWrapper}>
-              <LinearGradient
-                colors={finnyGradient}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[
-                  styles.finnyMessageBubble,
-                  bubbleRadii,
-                  { paddingBottom: responsivePadding(10) },
-                  !isFirstInGroup &&
-                    !isLastInGroup &&
-                    styles.finnyMessageBubbleGrouped,
-                  isLastInGroup && styles.finnyMessageBubbleLastInGroup,
-                ]}
-              >
-                <Text style={[styles.messageText, styles.finnyMessageText]}>
-                  {messageText.split("\n").map((line, lineIdx) => (
-                    <React.Fragment key={lineIdx}>
-                      {lineIdx > 0 && <Text>{"\n"}</Text>}
-                      <Text
-                        onTextLayout={lineIdx === 0 ? onTextLayout : undefined}
-                      >
-                        {line.split(/(\*\*[^*]+\*\*)/).map((chunk, idx) => {
-                          if (chunk.startsWith("**") && chunk.endsWith("**")) {
-                            return (
-                              <Text key={idx} style={styles.boldText}>
-                                {parseTextWithLinks(
-                                  chunk.slice(2, -2),
-                                  styles.boldText,
-                                )}
-                              </Text>
-                            );
-                          }
-                          return parseTextWithLinks(chunk, [
-                            styles.messageText,
-                            styles.finnyMessageText,
-                          ]);
-                        })}
-                      </Text>
-                    </React.Fragment>
-                  ))}
+        <View style={styles.assistantContentColumn}>
+          <View style={styles.assistantLeadRow}>
+            <View style={styles.assistantLeadMark} />
+          </View>
+
+          <View style={showsDataSurface ? styles.assistantSurface : undefined}>
+            {renderFormattedParagraphs(
+              messageText,
+              styles.assistantMessageText,
+            )}
+
+            {message.stockCandidate?.ticker && (
+              <View style={styles.tickerBadge}>
+                <Text style={styles.tickerBadgeLabel}>Ticker</Text>
+                <Text style={styles.tickerBadgeValue}>
+                  {message.stockCandidate.ticker}
                 </Text>
-              </LinearGradient>
-            </View>
-            {/* Feedback buttons - hide for initial welcome message and confirmation messages */}
-            {(() => {
-              const shouldShowFeedback =
-                isLastInGroup &&
-                message.id !== "welcome" &&
-                !message.hideFeedback;
-              return shouldShowFeedback;
-            })() && (
-              <View style={styles.feedbackButtons}>
-                <TouchableOpacity
-                  style={styles.feedbackButton}
-                  onPress={() => onThumbUp?.(message.id)}
-                  activeOpacity={0.7}
-                >
-                  <FontAwesome name="thumbs-o-up" size={15} color="#888" />
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={styles.feedbackButton}
-                  onPress={() => onThumbDown?.(message.id)}
-                  activeOpacity={0.7}
-                >
-                  <FontAwesome name="thumbs-o-down" size={15} color="#888" />
-                </TouchableOpacity>
+              </View>
+            )}
+
+            {hasActions && (
+              <View style={styles.actionsRow}>
+                {message.actions?.map((button) => (
+                  <ActionButton
+                    key={button.action}
+                    button={button}
+                    disabled={clicked}
+                    onPress={() => {
+                      if (clicked || !onAction) return;
+                      setClicked(true);
+                      onAction(button.action, message);
+                    }}
+                  />
+                ))}
               </View>
             )}
           </View>
-        </Animated.View>
+
+          {showFeedback && (
+            <View style={styles.feedbackRow}>
+              <TouchableOpacity
+                style={styles.feedbackButton}
+                onPress={() => onThumbUp?.(message.id)}
+                activeOpacity={0.75}
+              >
+                <FontAwesome name="thumbs-o-up" size={13} color="#AAB4C3" />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.feedbackButton}
+                onPress={() => onThumbDown?.(message.id)}
+                activeOpacity={0.75}
+              >
+                <FontAwesome name="thumbs-o-down" size={13} color="#AAB4C3" />
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </Animated.View>
     );
   },
 );
 
 const styles = StyleSheet.create({
-  messageContainer: {
-    maxWidth: isSmallScreen ? "95%" : "90%",
-    marginVertical: responsivePadding(1),
-    overflow: "visible",
-  },
   userMessageContainer: {
     alignSelf: "flex-end",
-    marginRight: responsivePadding(16),
-    marginLeft: responsiveWidth(15),
+    maxWidth: isSmallScreen ? "88%" : "82%",
     marginTop: responsivePadding(8),
-    overflow: "visible",
+    marginRight: responsivePadding(12),
+    marginLeft: responsiveWidth(20),
   },
   userMessageBubble: {
     borderRadius: 18,
-    paddingHorizontal: responsivePadding(12),
-    paddingVertical: responsivePadding(8),
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 2,
-    elevation: 2,
-    position: "relative",
-    overflow: "visible",
-  },
-  finnyMessageRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    marginBottom: responsivePadding(1),
-    overflow: "visible",
-  },
-  finnyMessageContainer: {
-    flex: 1,
-    marginLeft: responsivePadding(12),
-    marginRight: responsiveWidth(15),
-    overflow: "visible",
-  },
-  bubbleWrapper: {
-    position: "relative",
-    overflow: "visible",
-    maxWidth: responsiveWidth(90),
-  },
-  finnyMessageBubble: {
-    paddingHorizontal: responsivePadding(12),
-    paddingVertical: responsivePadding(8),
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 2,
-    elevation: 2,
-    marginBottom: responsivePadding(8),
-    borderRadius: 18,
-    position: "relative",
-    overflow: "visible",
-  },
-  finnyMessageBubbleGrouped: {
-    marginBottom: responsivePadding(8),
-  },
-  finnyMessageBubbleLastInGroup: {
-    marginBottom: responsivePadding(18),
-  },
-  messageText: {
-    fontSize: responsiveFontSize(14),
-    lineHeight: responsiveFontSize(18),
-    letterSpacing: 0,
-    fontFamily: Platform.OS === "ios" ? "SF Pro Text" : "System",
+    backgroundColor: "#213349",
+    paddingHorizontal: responsivePadding(13),
+    paddingVertical: responsivePadding(9),
+    borderWidth: 1,
+    borderColor: "rgba(142, 184, 255, 0.16)",
   },
   userMessageText: {
-    color: "#FFFFFF",
-    fontWeight: "400",
-  },
-  finnyMessageText: {
-    color: "#FFFFFF",
-    fontWeight: "400",
-  },
-  boldText: {
-    fontWeight: "600",
-    color: "#FFFFFF",
-  },
-  linkText: {
-    textDecorationLine: "underline",
-    color: "#87CEEB", // Light blue color for links
+    color: "#F7FAFF",
+    fontSize: responsiveFontSize(14),
+    lineHeight: responsiveFontSize(19),
     fontWeight: "500",
-    paddingHorizontal: 4,
-    paddingVertical: 1,
-    borderRadius: 4,
+    fontFamily: Platform.OS === "ios" ? "SF Pro Text" : "System",
+  },
+  assistantMessageContainer: {
+    alignSelf: "stretch",
+    paddingTop: responsivePadding(8),
+    paddingBottom: responsivePadding(2),
+  },
+  assistantContentColumn: {
+    marginLeft: responsivePadding(14),
+    marginRight: responsiveWidth(10),
+  },
+  assistantLeadRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  assistantLeadMark: {
+    width: 18,
+    height: 2,
+    borderRadius: 1,
+    backgroundColor: "rgba(94, 155, 255, 0.72)",
+  },
+  assistantSurface: {
+    paddingHorizontal: responsivePadding(12),
+    paddingVertical: responsivePadding(10),
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "rgba(135, 206, 235, 0.3)",
+    borderColor: "rgba(255, 255, 255, 0.07)",
+    backgroundColor: "rgba(255, 255, 255, 0.035)",
   },
-  senderNameContainer: {
-    marginLeft: responsivePadding(16),
-    marginBottom: responsivePadding(2),
-  },
-  senderName: {
-    fontSize: responsiveFontSize(13),
-    color: "#8E8E93",
-    fontWeight: "500",
+  assistantMessageText: {
+    color: "#EDF2FA",
+    fontSize: responsiveFontSize(15),
+    lineHeight: responsiveFontSize(21),
+    fontWeight: "400",
     letterSpacing: -0.1,
     fontFamily: Platform.OS === "ios" ? "SF Pro Text" : "System",
   },
-  feedbackButtons: {
-    flexDirection: "row",
-    gap: 1,
-    marginTop: -22,
-    marginLeft: 10,
+  paragraphSpacing: {
+    marginTop: 8,
   },
-  feedbackButton: {
-    borderRadius: 14,
-    padding: 8,
+  boldText: {
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  linkText: {
+    color: "#9FC1FF",
+    textDecorationLine: "underline",
+    fontWeight: "600",
+  },
+  linkArrow: {
+    color: "#9FC1FF",
+    fontWeight: "600",
   },
   tickerBadge: {
     alignSelf: "flex-start",
-    marginLeft: 12,
-    marginTop: 8,
-    marginBottom: 4,
-    paddingHorizontal: responsivePadding(16),
-    paddingVertical: responsivePadding(12),
-    borderRadius: 14,
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    borderWidth: 1.5,
-    borderColor: "rgba(255, 255, 255, 0.3)",
+    marginTop: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: "rgba(94, 155, 255, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(94, 155, 255, 0.18)",
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
-    minWidth: 120,
+    gap: 6,
   },
   tickerBadgeLabel: {
-    color: "rgba(255, 255, 255, 0.7)",
-    fontWeight: "500",
+    color: "#A7B6CA",
     fontSize: responsiveFontSize(11),
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  tickerBadgeValue: {
+    color: "#F7FAFF",
+    fontSize: responsiveFontSize(12),
+    fontWeight: "700",
     letterSpacing: 0.3,
   },
-  tickerBadgeText: {
-    color: "#FFFFFF",
+  actionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+    gap: responsivePadding(8),
+    marginTop: 12,
+  },
+  actionButton: {
+    minHeight: 34,
+    paddingHorizontal: responsivePadding(12),
+    paddingVertical: responsivePadding(8),
+    borderRadius: 17,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  actionButtonPrimary: {
+    backgroundColor: "#4F8EF7",
+  },
+  actionButtonSecondary: {
+    backgroundColor: "rgba(255, 255, 255, 0.06)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
+  },
+  actionButtonDisabled: {
+    opacity: 0.55,
+  },
+  actionButtonText: {
+    fontSize: responsiveFontSize(12),
+    lineHeight: responsiveFontSize(15),
     fontWeight: "700",
-    fontSize: responsiveFontSize(16),
-    letterSpacing: 1,
+    letterSpacing: -0.1,
+  },
+  actionButtonTextPrimary: {
+    color: "#FFFFFF",
+  },
+  actionButtonTextSecondary: {
+    color: "#E2E8F2",
+  },
+  feedbackRow: {
+    alignSelf: "flex-start",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 8,
+    paddingHorizontal: 4,
+  },
+  feedbackButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.045)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.08)",
   },
 });
 

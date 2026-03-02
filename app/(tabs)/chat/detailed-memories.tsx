@@ -4,13 +4,10 @@ import {
   Text,
   ScrollView,
   TouchableOpacity,
-  Platform,
   ActivityIndicator,
   Alert,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { Dimensions } from "react-native";
 import { useRouter } from "expo-router";
 import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
@@ -18,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import EditMemoryModal from "@/src/components/modals/EditMemoryModal";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
+import ChatScreenHeader from "@/src/components/shared/ChatScreenHeader";
 import logger from "@/src/utils/core/logger";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
@@ -281,28 +279,7 @@ export default function DetailedMemoriesScreen({
   return (
     <View style={styles.container}>
       <SafeAreaView style={{ flex: 1 }}>
-        {/* Header */}
-        <View style={styles.header}>
-          <TouchableOpacity
-            style={styles.closeButton}
-            onPress={handleBack}
-            activeOpacity={0.7}
-          >
-            <LinearGradient
-              colors={[
-                "rgba(255, 255, 255, 0.15)",
-                "rgba(255, 255, 255, 0.05)",
-              ]}
-              style={styles.closeButtonCircle}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-            >
-              <Ionicons name="chevron-back" size={22} color="#fff" />
-            </LinearGradient>
-          </TouchableOpacity>
-          <Text style={styles.headerTitle}>All Memories</Text>
-          <View style={{ width: 40 }} />
-        </View>
+        <ChatScreenHeader title="All Memories" onBack={handleBack} />
 
         {/* Content */}
         <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -424,37 +401,6 @@ const styles = {
   container: {
     flex: 1,
     backgroundColor: "#0F0F0F",
-  },
-  header: {
-    flexDirection: "row" as const,
-    alignItems: "center" as const,
-    justifyContent: "space-between" as const,
-    paddingHorizontal: responsivePadding(16),
-    paddingTop: Platform.OS === "ios" ? 8 : 12,
-    paddingBottom: 10,
-    backgroundColor: "transparent",
-    borderBottomWidth: 1,
-    borderBottomColor: "rgba(30, 30, 30, 0.8)",
-  },
-  headerTitle: {
-    fontSize: responsiveFontSize(18),
-    fontWeight: "600" as const,
-    color: "#fff",
-    letterSpacing: 0.5,
-    flex: 1,
-    textAlign: "center" as const,
-  },
-  closeButton: {
-    padding: 8,
-  },
-  closeButtonCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: "center" as const,
-    justifyContent: "center" as const,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   content: {
     flex: 1,

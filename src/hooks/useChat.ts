@@ -52,6 +52,23 @@ const extractUserIdFromToken = (token: string): string | null => {
 
 // Simple message handling - display messages as single strings
 
+type RuntimeChatState = {
+  userId: string | null;
+  chatMessages: ChatMessage[];
+  currentSessionId: string | null;
+  chatId: string;
+  goalFlow: any | null;
+  isNewSession: boolean;
+};
+
+let runtimeChatState: RuntimeChatState | null = null;
+
+const LEGACY_CHAT_STORAGE_KEYS = ["chatMessages", "chatId", "currentChatUserId"];
+
+const isUuid = (value?: string | null): boolean =>
+  typeof value === "string" &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
+
 export const useChat = (userName?: string | null) => {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>(
     finnyConstants.getInitialChatMessages(userName)
@@ -66,10 +83,23 @@ export const useChat = (userName?: string | null) => {
   const [chatId, setChatId] = useState<string>('');
   const appStateRef = useRef(AppState.currentState);
   const shouldPersistRef = useRef(false);
+  const activeUserIdRef = useRef<string | null>(null);
+  const sessionCreationPromiseRef = useRef<Promise<string | null> | null>(null);
 
   useEffect(() => {
     loadChatMessages();
   }, []);
+
+  useEffect(() => {
+    runtimeChatState = {
+      userId: activeUserIdRef.current,
+      chatMessages,
+      currentSessionId,
+      chatId,
+      goalFlow,
+      isNewSession,
+    };
+  }, [chatMessages, currentSessionId, chatId, goalFlow, isNewSession]);
 
   // Update the welcome message when userName changes (only if chat has just the welcome message)
   useEffect(() => {
@@ -109,9 +139,10 @@ export const useChat = (userName?: string | null) => {
     if (hasStreamingMessage) return;
 
     shouldPersistRef.current = false;
-    // Fire and forget; errors are logged inside saveChatMessages
-    void saveChatMessages();
-  }, [chatMessages]);
+    if (!currentSessionId) return;
+    // Fire and forget; errors are logged inside saveCurrentSession
+    void saveCurrentSession();
+  }, [chatMessages, currentSessionId]);
 
   /**
    * Listen for TOKEN_REFRESHED events.
@@ -139,111 +170,42 @@ export const useChat = (userName?: string | null) => {
 
   const loadChatMessages = async () => {
     try {
-      // CRITICAL: Verify current user matches stored user before loading messages
       const { data: { user } } = await supabase.auth.getUser();
       const currentUserId = user?.id;
-      
-      if (!currentUserId) {
-        // No user logged in, start fresh
-        setChatMessages(finnyConstants.getInitialChatMessages(userName));
-        setShowNudges(true);
+
+      activeUserIdRef.current = currentUserId || null;
+      AppStorage.multiRemoveSync(LEGACY_CHAT_STORAGE_KEYS);
+
+      if (
+        currentUserId &&
+        runtimeChatState &&
+        runtimeChatState.userId === currentUserId
+      ) {
+        setChatMessages(runtimeChatState.chatMessages);
+        setCurrentSessionId(runtimeChatState.currentSessionId);
+        setChatId(runtimeChatState.chatId);
+        setGoalFlow(runtimeChatState.goalFlow);
+        setIsNewSession(runtimeChatState.isNewSession);
+        setShowNudges(runtimeChatState.chatMessages.length <= 1);
+        logger.info("[CHAT] Restored active chat from in-memory runtime cache");
         return;
       }
 
-      // Check if stored chat belongs to current user
-      const storedUserId = AppStorage.getItemSync("currentChatUserId");
-      if (storedUserId && storedUserId !== currentUserId) {
-        // Different user detected - clear old chat data
-        logger.debug("🔄 [SECURITY] User changed, clearing previous user's chat data");
-        AppStorage.removeItemSync("chatMessages");
-        AppStorage.removeItemSync("chatId");
-        AppStorage.removeItemSync("currentChatUserId");
-        setChatMessages(finnyConstants.getInitialChatMessages(userName));
-        setChatId('');
-        setCurrentSessionId(null);
-        setShowNudges(true);
-        AppStorage.setItemSync("currentChatUserId", currentUserId);
-        return;
-      }
-
-      // Load stored chatId (UUID from session or legacy chat_xxx)
-      const storedChatId = AppStorage.getItemSync("chatId");
-      if (storedChatId) {
-        setChatId(storedChatId);
-        // If UUID, we have a session - set currentSessionId for updates
-        const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(storedChatId);
-        if (isUuid) setCurrentSessionId(storedChatId);
-      }
-      
-      // Store current user ID for future verification
-      AppStorage.setItemSync("currentChatUserId", currentUserId);
-
-      const savedMessages = AppStorage.getItemSync("chatMessages");
-      if (savedMessages) {
-        const parsedMessages = JSON.parse(savedMessages);
-        if (parsedMessages.length > 1) {
-          setChatMessages(parsedMessages);
-          setShowNudges(false);
-        } else {
-          setChatMessages(finnyConstants.getInitialChatMessages(userName));
-          setShowNudges(true);
-        }
-      } else {
-        setChatMessages(finnyConstants.getInitialChatMessages(userName));
-        setShowNudges(true);
-      }
+      runtimeChatState = null;
+      setChatMessages(finnyConstants.getInitialChatMessages(userName));
+      setChatId('');
+      setCurrentSessionId(null);
+      setGoalFlow(null);
+      setIsNewSession(true);
+      setShowNudges(true);
     } catch (error) {
       logger.error("Error loading chat messages:", error);
       setChatMessages(finnyConstants.getInitialChatMessages(userName));
+      setChatId('');
+      setCurrentSessionId(null);
+      setGoalFlow(null);
+      setIsNewSession(true);
       setShowNudges(true);
-    }
-  };
-
-  const saveChatMessages = async () => {
-    try {
-      // CRITICAL: Only save if current user matches stored user
-      const { data: { user } } = await supabase.auth.getUser();
-      const currentUserId = user?.id;
-      
-      if (!currentUserId) {
-        // Don't save if no user logged in
-        return;
-      }
-
-      const storedUserId = AppStorage.getItemSync("currentChatUserId");
-      if (storedUserId && storedUserId !== currentUserId) {
-        // User changed - don't save messages for wrong user
-        logger.warn("⚠️ [SECURITY] User mismatch detected, not saving chat messages");
-        return;
-      }
-
-      // Validate message integrity: check for orphaned split messages
-      // Split messages have IDs like "messageId::2", "messageId::3", etc.
-      // They should always have a corresponding base message with ID "messageId"
-      const messageIds = new Set(chatMessages.map(m => m.id));
-      const orphanedSplits: string[] = [];
-      for (const msg of chatMessages) {
-        if (msg.id.includes('::')) {
-          const baseId = msg.id.split('::')[0];
-          if (!messageIds.has(baseId)) {
-            orphanedSplits.push(msg.id);
-          }
-        }
-      }
-      if (orphanedSplits.length > 0) {
-        logger.warn(`[PERSISTENCE] ⚠️ Detected ${orphanedSplits.length} orphaned split messages:`, orphanedSplits);
-        // Still save, but log the issue for debugging
-      }
-
-      AppStorage.setItemSync("chatMessages", JSON.stringify(chatMessages));
-      if (chatId) AppStorage.setItemSync("chatId", chatId);
-      AppStorage.setItemSync("currentChatUserId", currentUserId);
-      // Keep DB session in sync when we have one
-      if (currentSessionId) {
-        saveCurrentSession().catch((err) => logger.error("Background session sync failed:", err));
-      }
-    } catch (error) {
-      logger.error("Error saving chat messages:", error);
     }
   };
 
@@ -254,21 +216,25 @@ export const useChat = (userName?: string | null) => {
       // Save current session to DB first (needs chatMessages before clear)
       await saveCurrentSession();
       
-      AppStorage.removeItemSync("chatMessages");
       setChatMessages(finnyConstants.getInitialChatMessages(userName));
       setCurrentSessionId(null);
       setChatId('');
       setIsNewSession(true);
-      setShowNudges(true);
-      
       setGoalFlow(null);
+      setShowNudges(true);
+      sessionCreationPromiseRef.current = null;
+      runtimeChatState = activeUserIdRef.current
+        ? {
+            userId: activeUserIdRef.current,
+            chatMessages: finnyConstants.getInitialChatMessages(userName),
+            currentSessionId: null,
+            chatId: '',
+            goalFlow: null,
+            isNewSession: true,
+          }
+        : null;
       logger.debug("🔥 [CLEAR_CHAT] Goal flow cleared");
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.id) {
-        AppStorage.setItemSync("currentChatUserId", user.id);
-      }
-      
+
       logger.debug("✅ [CLEAR_CHAT] Chat cleared successfully");
     } catch (error) {
       logger.error("Error clearing chat:", error);
@@ -286,6 +252,79 @@ export const useChat = (userName?: string | null) => {
     const hasUserMessages = messages.some(m => m.sender === 'user');
     const hasFinnyMessages = messages.some(m => m.sender === 'finny');
     return { hasUser: hasUserMessages, hasFinny: hasFinnyMessages };
+  };
+
+  const getActiveSessionId = () => {
+    if (currentSessionId) return currentSessionId;
+    if (isUuid(chatId)) return chatId;
+    return null;
+  };
+
+  const ensureSessionForOutgoingMessage = async (
+    messageText: string
+  ): Promise<string | null> => {
+    const existingSessionId = getActiveSessionId();
+    if (existingSessionId) return existingSessionId;
+
+    if (sessionCreationPromiseRef.current) {
+      return sessionCreationPromiseRef.current;
+    }
+
+    const creationPromise = (async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user?.id) {
+        logger.warn("[CHAT] Cannot create session - no authenticated user");
+        return null;
+      }
+
+      activeUserIdRef.current = user.id;
+
+      let messagesForSession = [...chatMessages];
+      const lastMessage = messagesForSession[messagesForSession.length - 1];
+      if (!(lastMessage?.sender === "user" && lastMessage?.text === messageText)) {
+        messagesForSession = [
+          ...messagesForSession,
+          {
+            id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+            sender: "user",
+            text: messageText,
+            timestamp: Date.now(),
+          },
+        ];
+      }
+
+      const { hasUser } = validateMessages(messagesForSession);
+      if (!hasUser) {
+        logger.warn("[CHAT] Cannot create session - no user message available");
+        return null;
+      }
+
+      const { data: sessionUuid, error } = await supabase.rpc('save_chat_session', {
+        p_user_id: user.id,
+        p_session_title: truncate(messageText, 60),
+        p_first_message: messageText,
+        p_messages: messagesForSession,
+      });
+
+      if (error || !sessionUuid) {
+        logger.error("[CHAT] Failed to create chat session:", error);
+        return null;
+      }
+
+      setCurrentSessionId(sessionUuid);
+      setChatId(sessionUuid);
+      setIsNewSession(false);
+      logger.info("[CHAT] Created session on first message:", sessionUuid);
+      return sessionUuid;
+    })();
+
+    sessionCreationPromiseRef.current = creationPromise;
+
+    try {
+      return await creationPromise;
+    } finally {
+      sessionCreationPromiseRef.current = null;
+    }
   };
 
   // Save current session to database (only when conversation ends)
@@ -315,11 +354,14 @@ export const useChat = (userName?: string | null) => {
         return timestampA - timestampB;
       });
 
-      // Validate message integrity before saving
-      const { hasUser: hasUserMessages } = validateMessages(sortedMessages);
+      // Only mark a session as completed after Finny has replied at least once.
+      const {
+        hasUser: hasUserMessages,
+        hasFinny: hasFinnyMessages,
+      } = validateMessages(sortedMessages);
       
-      if (!hasUserMessages) {
-        logger.warn("[SAVE_SESSION] No user messages found, skipping save");
+      if (!hasUserMessages || !hasFinnyMessages) {
+        logger.info("[SAVE_SESSION] Skipping sync until chat has both user and Finny messages");
         return;
       }
 
@@ -330,46 +372,29 @@ export const useChat = (userName?: string | null) => {
         finnyMessageCount: sortedMessages.filter(m => m.sender === 'finny').length,
         firstMessage: firstUserMsg.text.substring(0, 50) + '...',
         sessionTitle: truncate(firstUserMsg.text || 'Chat', 60),
-        currentSessionId: currentSessionId,
-        isUpdate: !!currentSessionId
+        currentSessionId: getActiveSessionId(),
+        isUpdate: !!getActiveSessionId()
       });
 
-      let sessionId = currentSessionId;
+      const activeSessionId = getActiveSessionId();
+      if (!activeSessionId) {
+        logger.info("[SAVE_SESSION] Skipping sync - no active session UUID exists yet");
+        return;
+      }
 
-      if (currentSessionId) {
-        // Update existing session
-        const { error: updateError } = await supabase
-          .from('chat_sessions')
-          .update({
-            messages: sortedMessages,
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', currentSessionId)
-          .eq('user_id', user.id);
+      const { error: updateError } = await supabase
+        .from('chat_sessions')
+        .update({
+          messages: sortedMessages,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', activeSessionId)
+        .eq('user_id', user.id);
 
-        if (updateError) {
-          logger.error("Error updating chat session:", updateError);
-        } else {
-          logger.info("✅ Chat session updated successfully:", currentSessionId);
-        }
+      if (updateError) {
+        logger.error("Error updating chat session:", updateError);
       } else {
-        // Create new session
-        const { data, error } = await supabase.rpc('save_chat_session', {
-          p_user_id: user.id,
-          p_session_title: truncate(firstUserMsg.text || 'Chat', 60),
-          p_first_message: firstUserMsg.text || '',
-          p_messages: sortedMessages
-        });
-
-        if (error) {
-          logger.error("Error saving chat session:", error);
-        } else {
-          sessionId = data;
-          setCurrentSessionId(data);
-          setChatId(data);
-          AppStorage.setItemSync("chatId", data);
-          logger.info("✅ Chat session saved successfully:", data);
-        }
+        logger.info("✅ Chat session updated successfully:", activeSessionId);
       }
     } catch (error) {
       logger.error("Error in saveCurrentSession:", error);
@@ -382,7 +407,6 @@ export const useChat = (userName?: string | null) => {
       logger.debug("🆕 [NEW_SESSION] Starting new session");
       
       await saveCurrentSession();
-      AppStorage.removeItemSync('chatMessages');
       setChatMessages(finnyConstants.getInitialChatMessages(userName));
       setCurrentSessionId(null);
       setChatId('');
@@ -390,12 +414,8 @@ export const useChat = (userName?: string | null) => {
       setShowNudges(true);
       
       setGoalFlow(null);
+      sessionCreationPromiseRef.current = null;
       logger.debug("🔥 [NEW_SESSION] Goal flow cleared");
-      
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user?.id) {
-        AppStorage.setItemSync("currentChatUserId", user.id);
-      }
       
       logger.info("Started new chat session");
     } catch (error) {
@@ -473,8 +493,6 @@ export const useChat = (userName?: string | null) => {
       setCurrentSessionId(sessionId);
       setChatId(sessionId);
       setIsNewSession(false);
-      AppStorage.setItemSync('chatMessages', JSON.stringify(sortedMessages));
-      AppStorage.setItemSync("chatId", sessionId);
       setShowNudges(sortedMessages.length <= 1);
       
       setGoalFlow(null);
@@ -492,7 +510,7 @@ export const useChat = (userName?: string | null) => {
     const subscription = AppState.addEventListener('change', async (nextAppState) => {
       if (nextAppState === 'background' && appStateRef.current === 'active') {
         // App going to background - save current session
-        if (chatMessages.length > 1) {
+        if (chatMessages.length > 1 && getActiveSessionId()) {
           logger.info("App going to background - saving current session");
           await saveCurrentSession();
         }
@@ -503,7 +521,7 @@ export const useChat = (userName?: string | null) => {
       appStateRef.current = nextAppState;
     });
     return () => subscription.remove();
-  }, [chatMessages.length]); // Add dependency to access current chatMessages
+  }, [chatMessages, currentSessionId, chatId]);
 
 
   const pushChat = (
@@ -1410,11 +1428,18 @@ export const useChat = (userName?: string | null) => {
       const isGoalAction = goalActions.has(action);
       const isStockAction = stockActions.has(action);
       const apiAction = isStockAction ? "stock_conversation" : "goal_conversation";
+      const activeSessionId = getActiveSessionId();
+
+      if (!activeSessionId) {
+        logger.error("❌ [ACTION] Cannot continue action flow without an active session UUID");
+        pushChat("finny", "Please start a new chat and try again.");
+        return;
+      }
 
       const requestBody: any = {
         action: apiAction,
         message: action,
-        chat_id: chatId || currentSessionId || `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
+        chat_id: activeSessionId,
         context: isGoalAction && goalFlow ? { goal_flow: goalFlow } : {},
         stream: false,
       };
@@ -1616,49 +1641,18 @@ export const useChat = (userName?: string | null) => {
       // Show initial progress
       setProgressStatus(randomWarmMessage);
 
-      // Create session on first message - use UUID as chat_id everywhere
-      // Client-generated IDs (chat_<timestamp>_<random>) are ephemeral; create DB session so chat_sessions row exists
-      const isClientGeneratedChatId =
-        typeof (chatId || "") === "string" &&
-        (chatId || "").startsWith("chat_") &&
-        !(chatId || "").match(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
-        );
-      const shouldCreateSession =
-        !(chatId || currentSessionId) ||
-        (isClientGeneratedChatId && !currentSessionId);
-
-      let effectiveChatId = chatId || currentSessionId;
-      if (shouldCreateSession) {
-        const { data: { user } } = await supabase.auth.getUser();
-        if (user?.id) {
-          const newUserMsg: ChatMessage = {
-            id: `user-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
-            sender: 'user',
-            text: messageText,
-            timestamp: Date.now(),
-          };
-          const messagesForSession = [...chatMessages, newUserMsg];
-          const { hasUser } = validateMessages(messagesForSession);
-          if (hasUser) {
-            const { data: sessionUuid, error } = await supabase.rpc('save_chat_session', {
-              p_user_id: user.id,
-              p_session_title: truncate(messageText, 60),
-              p_first_message: messageText,
-              p_messages: messagesForSession,
-            });
-            if (!error && sessionUuid) {
-              setCurrentSessionId(sessionUuid);
-              setChatId(sessionUuid);
-              AppStorage.setItemSync("chatId", sessionUuid);
-              effectiveChatId = sessionUuid;
-              logger.info("[CHAT] Created session on first message:", sessionUuid);
-            }
-          }
-        }
-      }
+      // Every backend call must use the canonical chat_sessions UUID.
+      let effectiveChatId = getActiveSessionId();
       if (!effectiveChatId) {
-        effectiveChatId = `chat_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`;
+        effectiveChatId = await ensureSessionForOutgoingMessage(messageText);
+      }
+
+      if (!effectiveChatId) {
+        logger.error("[CHAT] Failed to obtain a canonical chat session UUID");
+        pushChat("finny", "Something went wrong starting this chat. Please try again.");
+        setProgressStatus("");
+        setIsTyping(false);
+        return;
       }
 
       // 1) First classify the message to determine intent (skip if goal flow active)

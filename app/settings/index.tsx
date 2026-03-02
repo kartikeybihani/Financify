@@ -239,37 +239,31 @@ export default function SettingsScreen() {
     try {
       setIsOpeningSubscriptionManager(true);
 
-      const subscriptionManagementUrls = [
-        "itms-apps://apps.apple.com/account/subscriptions",
-        "https://apps.apple.com/account/subscriptions",
-      ];
-
-      for (const url of subscriptionManagementUrls) {
-        const supported = await Linking.canOpenURL(url);
-        if (supported) {
-          await Linking.openURL(url);
-          logger.info("[SettingsIndex] Opened subscription management URL", {
-            url,
-            isPremium,
-          });
-          return;
-        }
-      }
-
-      // Fall back to RevenueCat's native bridge if the App Store deep link
-      // isn't available for any reason.
       const configured = await Purchases.isConfigured();
-      if (!configured) {
-        throw new Error("Subscription management is not available right now.");
+      if (configured) {
+        await Purchases.showManageSubscriptions();
+        logger.info(
+          "[SettingsIndex] Opened native subscription management sheet",
+          { isPremium },
+        );
+        return;
       }
 
-      await Purchases.showManageSubscriptions();
+      const appStoreSubscriptionUrl =
+        "itms-apps://apps.apple.com/account/subscriptions";
+
+      // `canOpenURL` can return false for `itms-apps` unless the scheme is
+      // whitelisted, even though `openURL` still succeeds on device.
+      await Linking.openURL(appStoreSubscriptionUrl);
+      logger.info("[SettingsIndex] Opened subscription management URL", {
+        url: appStoreSubscriptionUrl,
+        isPremium,
+      });
     } catch (error: any) {
       logger.error("Error showing manage subscriptions:", error);
       Alert.alert(
-        "Error",
-        error?.message ||
-          "Unable to open subscription management. Please try again.",
+        "Unable to Open",
+        "We couldn't open Apple's subscription management screen right now. Please try again from the App Store or Settings app.",
       );
     } finally {
       setIsOpeningSubscriptionManager(false);

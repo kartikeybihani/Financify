@@ -1743,11 +1743,9 @@ export default async function handler(req, res) {
   // But fall back to client-provided user_id if no JWT token is present (for testing)
   const finalUserId = serverUserId || context?.user_id;
   const chatIdRaw = bodyChatId ?? body.chat_id ?? context?.chat_id ?? null;
-  const chatId =
-    chatIdRaw ||
-    (finalUserId && action === "ask" ? `chat_${finalUserId}` : null);
-  if (!chatIdRaw && chatId && !shouldSuppressLogs) {
-    logInfo(`ℹ️ [FINNY] chat_id missing - using fallback chat_id=${chatId}`);
+  const chatId = chatIdRaw || null;
+  if (!chatIdRaw && !shouldSuppressLogs) {
+    logWarn(`⚠️ [FINNY] chat_id missing for action=${action}`);
   }
 
   // Re-check with finalUserId (more secure) - always use server-verified userId when available
@@ -2672,8 +2670,7 @@ async function handleAsk(
   try {
     // 1) Get user_id from context
     const userId = context?.user_id;
-    const resolvedChatId =
-      context?.chat_id || (userId ? `chat_${userId}` : null);
+    const resolvedChatId = context?.chat_id || null;
 
     const recordConversationTurns = (assistantText) => {
       if (!userId || !resolvedChatId) return;

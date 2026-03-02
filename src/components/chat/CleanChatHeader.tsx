@@ -5,23 +5,15 @@ import {
   TouchableOpacity,
   StyleSheet,
   Platform,
-  Animated,
+  Image,
 } from "react-native";
-import { FontAwesome6 } from "@expo/vector-icons";
+import { Feather } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { useDemoMode } from "@/src/contexts/DemoContext";
 
-interface CleanChatHeaderProps {
-  rotate?: Animated.AnimatedInterpolation<string>;
-  bounce?: Animated.AnimatedInterpolation<number>;
-}
-
-export default function CleanChatHeader({
-  rotate,
-  bounce,
-}: CleanChatHeaderProps) {
+export default function CleanChatHeader() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const { isDemoMode } = useDemoMode();
@@ -38,7 +30,7 @@ export default function CleanChatHeader({
       start={{ x: 0, y: 0 }}
       end={{ x: 0, y: 1 }}
       style={[
-        styles.gradientContainer,
+        styles.container,
         {
           paddingTop: isDemoMode
             ? Platform.OS === "ios"
@@ -49,40 +41,25 @@ export default function CleanChatHeader({
       ]}
     >
       <View style={styles.header}>
-        {/* Left mascot icon - absolutely positioned */}
-        <View style={styles.leftIconContainer}>
+        <View style={styles.brandContainer}>
           <View style={styles.mascotContainer}>
-            <Animated.Image
+            <Image
               source={require("../../../assets/images/mascot1.jpg")}
-              style={[
-                styles.mascotImage,
-                {
-                  transform: [
-                    { rotate: rotate || "0deg" },
-                    { scale: bounce || 1 },
-                    { scaleX: -1 },
-                    { rotateY: rotate || "0deg" },
-                  ],
-                },
-              ]}
+              style={styles.mascotImage}
             />
           </View>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.headerTitle}>Finny</Text>
+          </View>
         </View>
 
-        {/* Centered text */}
-        <View style={styles.headerTextContainer}>
-          <Text style={styles.headerTitle}>Finny</Text>
-        </View>
-
-        {/* Right icon - absolutely positioned */}
         <TouchableOpacity
-          style={styles.rightIconButton}
+          style={styles.settingsButton}
           onPress={() => router.push("/(tabs)/chat/finny-settings")}
           activeOpacity={0.7}
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
         >
-          <View style={styles.filterButton}>
-            <FontAwesome6 name="sliders" size={19} color="#4A90E2" />
-          </View>
+          <Feather name="settings" size={17} color="#F3F8FF" />
         </TouchableOpacity>
       </View>
     </LinearGradient>
@@ -90,79 +67,67 @@ export default function CleanChatHeader({
 }
 
 const styles = StyleSheet.create({
-  gradientContainer: {
+  container: {
     paddingBottom: 4,
     backgroundColor: "#121212",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    justifyContent: "space-between",
     paddingHorizontal: 16,
-    paddingVertical: 6,
-    position: "relative",
-    minHeight: 40,
-    // marginTop: 55,
+    paddingVertical: 4,
+    minHeight: 38,
   },
-  leftIconContainer: {
-    position: "absolute",
-    left: 16,
-    top: 0,
-    bottom: 0,
+  brandContainer: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
+    flexShrink: 1,
+    paddingRight: 6,
   },
   mascotContainer: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    padding: 2,
-    borderWidth: 1.5,
-    borderColor: "rgba(74, 144, 226, 0.3)",
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    // backgroundColor: "rgba(255, 255, 255, 0.08)",
+    padding: 1.5,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.24)",
     overflow: "hidden",
     shadowColor: "#4A90E2",
     shadowOffset: {
       width: 0,
-      height: 2,
+      height: 1,
     },
-    shadowOpacity: 0.15,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowOpacity: 0.12,
+    shadowRadius: 3,
+    elevation: 2,
   },
   mascotImage: {
     width: "100%",
     height: "100%",
-    borderRadius: 18,
+    borderRadius: 14.5,
+    transform: [{ scaleX: -1 }],
   },
   headerTextContainer: {
-    alignItems: "center",
     justifyContent: "center",
+    marginLeft: 7,
   },
   headerTitle: {
-    fontSize: 18,
+    fontSize: 17,
     fontWeight: "600",
     color: "#fff",
-    letterSpacing: 0.3,
+    letterSpacing: 0.2,
   },
-  rightIconButton: {
-    position: "absolute",
-    right: 16,
-    top: 0,
-    bottom: 0,
+  settingsButton: {
+    width: 35,
+    height: 35,
+    borderRadius: 19,
     alignItems: "center",
     justifyContent: "center",
-  },
-  filterButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: "rgba(26, 61, 102, 0.15)",
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    backgroundColor: "rgba(20, 44, 78, 0.38)",
     borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.3)",
+    borderColor: "rgba(143, 187, 255, 0.26)",
     shadowColor: "#4A90E2",
     shadowOffset: {
       width: 0,

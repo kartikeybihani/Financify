@@ -23,6 +23,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { AntDesign } from "@expo/vector-icons";
 import { FontAwesome6 } from "@expo/vector-icons";
+import { Entypo } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { usePostHog } from "posthog-react-native";
 import { ChatMessageComponent } from "@/src/components/chat/ChatMessage";
@@ -95,8 +96,7 @@ function ChatScreenContent() {
   const [showStockTickerModal, setShowStockTickerModal] = useState(false);
   const [stockTickerDraft, setStockTickerDraft] = useState("");
   const inputLineHeight = Math.round(isSmallScreen ? 13 : 18);
-  const inputVerticalPadding =
-    Platform.OS === "ios" ? responsivePadding(1) : 0;
+  const inputVerticalPadding = Platform.OS === "ios" ? responsivePadding(1) : 0;
   const minInputHeight = Math.round(inputLineHeight + inputVerticalPadding * 2);
   const [dimensions, setDimensions] = useState(Dimensions.get("window"));
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
@@ -365,11 +365,6 @@ function ChatScreenContent() {
   });
   const scrollButtonAnimation = useRef(new Animated.Value(0)).current;
   const flatListRef = useRef<FlatList>(null);
-  const dotAnimations = useRef([
-    new Animated.Value(0),
-    new Animated.Value(0),
-    new Animated.Value(0),
-  ]).current;
 
   // Prepare FlatList data with nudges and messages
   const flatListData = React.useMemo(() => {
@@ -398,79 +393,11 @@ function ChatScreenContent() {
     return data;
   }, [chatMessages, showNudges, isTyping, progressStatus]);
 
-  // Auto-scroll to bottom when new messages are added
-  useEffect(() => {
-    if (flatListData.length > 0) {
-      const timer = setTimeout(() => {
-        scrollToAbsoluteBottom();
-      }, 100);
-
-      return () => clearTimeout(timer);
-    }
-  }, [flatListData.length]);
-
   // FlatList key extractor
   const keyExtractor = useCallback((item: any) => item.id, []);
 
   // Remove getItemLayout to prevent layout calculation issues
   // Let FlatList handle dynamic sizing naturally
-
-  // Remove tagline-related code
-  const mascotFlip = useRef(new Animated.Value(0)).current;
-  const mascotBounce = useRef(new Animated.Value(0)).current;
-  const mascotRotate = useRef(new Animated.Value(0)).current;
-
-  // Setup mascot animations
-  useEffect(() => {
-    const startMascotAnimation = () => {
-      Animated.parallel([
-        // Smooth rotation
-        Animated.sequence([
-          Animated.timing(mascotRotate, {
-            toValue: 1,
-            duration: 1200,
-            easing: Easing.bezier(0.4, 0, 0.2, 1),
-            useNativeDriver: true,
-          }),
-          Animated.timing(mascotRotate, {
-            toValue: 0,
-            duration: 1200,
-            easing: Easing.bezier(0.4, 0, 0.2, 1),
-            useNativeDriver: true,
-          }),
-        ]),
-        // Subtle bounce
-        Animated.sequence([
-          Animated.timing(mascotBounce, {
-            toValue: 1,
-            duration: 600,
-            easing: Easing.elastic(1),
-            useNativeDriver: true,
-          }),
-          Animated.timing(mascotBounce, {
-            toValue: 0,
-            duration: 600,
-            easing: Easing.elastic(1),
-            useNativeDriver: true,
-          }),
-        ]),
-      ]).start(() => {
-        setTimeout(startMascotAnimation, 4000);
-      });
-    };
-
-    startMascotAnimation();
-  }, []);
-
-  const rotate = mascotRotate.interpolate({
-    inputRange: [0, 1],
-    outputRange: ["0deg", "360deg"],
-  });
-
-  const bounce = mascotBounce.interpolate({
-    inputRange: [0, 0.5, 1],
-    outputRange: [1, 1.1, 1],
-  });
 
   /**
    * Triggers context pre-building when the user enters the chat tab.
@@ -600,9 +527,13 @@ function ChatScreenContent() {
     }
 
     pushChat("user", messageText);
+    atBottomRef.current = true;
     Keyboard.dismiss();
     setUserInput("");
     setIsTyping(true);
+    requestAnimationFrame(() => {
+      scrollToAbsoluteBottom();
+    });
 
     try {
       const startTime = messageStartTime;
@@ -644,12 +575,6 @@ function ChatScreenContent() {
 
   const onContentSizeChange = useCallback((w: number, h: number) => {
     contentHeights.current.content = h;
-    if (atBottomRef.current && flatListRef.current) {
-      // Only auto-scroll if user is already at bottom
-      requestAnimationFrame(() => {
-        (flatListRef.current as any)?.scrollToEnd({ animated: true });
-      });
-    }
   }, []);
 
   const onLayout = useCallback((e: any) => {
@@ -797,7 +722,9 @@ function ChatScreenContent() {
         action === "start_over_goal" ||
         action === "skip_category"
       ) {
+        atBottomRef.current = true;
         setIsTyping(true);
+        scrollToAbsoluteBottom();
         // Send action directly to backend and update existing message
         await handleActionButton(action);
         setIsTyping(false);
@@ -805,7 +732,9 @@ function ChatScreenContent() {
       }
 
       if (action === "confirm_stock") {
+        atBottomRef.current = true;
         setIsTyping(true);
+        scrollToAbsoluteBottom();
         try {
           await handleActionButton(action);
         } catch (error) {
@@ -890,7 +819,7 @@ function ChatScreenContent() {
           </View>
         )}
         {/* Clean Header with Gradient */}
-        <CleanChatHeader rotate={rotate} bounce={bounce} />
+        <CleanChatHeader />
         <KeyboardAvoidingView
           style={{ flex: 1 }}
           behavior={Platform.OS === "ios" ? "padding" : "height"}
@@ -928,7 +857,7 @@ function ChatScreenContent() {
                   paddingTop: responsivePadding(8),
                   paddingBottom:
                     Math.max(insets.bottom, responsivePadding(8)) +
-                    responsiveHeight(8),
+                    responsiveHeight(6),
                 }}
                 removeClippedSubviews={false} // Disable to prevent layout issues
                 maxToRenderPerBatch={10} // Increased for smoother scrolling
@@ -970,7 +899,11 @@ function ChatScreenContent() {
                     activeOpacity={0.8}
                   >
                     <View style={styles.scrollButtonGradient}>
-                      <AntDesign name="arrow-down" size={19} color="#FFFFFF" />
+                      <Entypo
+                        name="chevron-thin-down"
+                        size={18}
+                        color="#FFFFFF"
+                      />
                     </View>
                   </TouchableOpacity>
                 </Animated.View>
@@ -1009,7 +942,7 @@ function ChatScreenContent() {
                       <Ionicons
                         name={item.icon}
                         size={13}
-                        color={isTyping ? "#666" : "#FFFFFF"}
+                        color={isTyping ? "#666" : "#6FA8FF"}
                         style={styles.suggestionIcon}
                       />
                       <Text
@@ -1047,7 +980,7 @@ function ChatScreenContent() {
                   <Ionicons name="add" size={24} color="#4A90E2" />
                 </TouchableOpacity>
                 <TextInput
-                  placeholder="Ask finny anything..."
+                  placeholder="Ask Finny anything"
                   placeholderTextColor="#888"
                   style={[
                     styles.input,
@@ -1236,7 +1169,7 @@ function ChatScreenContent() {
                           Permission to tailor your guidance
                         </Text>
                         <Text style={memoryConsentStyles.disclosureSummary}>
-                          Chat messages may be used to personalize Finny.
+                          Chat messages may be used to personalize future responses.
                         </Text>
                       </View>
                       <Animated.View
@@ -1288,11 +1221,12 @@ function ChatScreenContent() {
                       }}
                     >
                       <Text style={memoryConsentStyles.disclosureText}>
-                        Finny may use your chat messages with the AI provider
-                        to better understand your preferences and personalize
-                        your experience in future chats. This is used only to
-                        provide and improve your experience with Finny and is
-                        never sold or used for advertising.
+                        To personalize future responses, Finny may store and
+                        use your chat messages in Supermemory and share
+                        relevant context with the AI provider used to generate
+                        responses. This data is used only to provide and
+                        improve your experience with Finny and is never sold or
+                        used for advertising or training.
                       </Text>
                       <Text style={memoryConsentStyles.disclosureText}>
                         You can edit or delete memories anytime in Settings.{" "}
@@ -1301,13 +1235,6 @@ function ChatScreenContent() {
                           onPress={handlePrivacyPolicy}
                         >
                           View Privacy Policy
-                        </Text>
-                        {" · "}
-                        <Text
-                          style={memoryConsentStyles.disclosureTextLink}
-                          onPress={openMemorySettings}
-                        >
-                          Open Settings
                         </Text>
                       </Text>
                     </View>

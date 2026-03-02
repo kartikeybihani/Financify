@@ -5,7 +5,6 @@ import {
   ScrollView,
   TouchableOpacity,
   Platform,
-  Alert,
   Animated,
   Dimensions,
 } from "react-native";
@@ -13,7 +12,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { LinearGradient } from "expo-linear-gradient";
 import IconButton from "@/src/components/shared/IconButton";
 import DetailedMemoriesScreen from "@/app/(tabs)/chat/detailed-memories";
 import FinnyStyleScreen from "@/app/(tabs)/chat/finny-style";
@@ -21,10 +19,8 @@ import FinnyCheckinScreen from "@/app/(tabs)/chat/finny-checkin";
 import LegalSummaryScreen from "@/app/(tabs)/chat/legal-summary";
 import HowFinnyWorksScreen from "@/app/(tabs)/chat/how-finny-works";
 import ChatHistoryScreen from "@/app/(tabs)/chat/history";
-import { useAuthNavigation } from "@/src/contexts/AuthNavigationContext";
 import { useChatContext } from "@/src/contexts/ChatContext";
-import { SettingItemProps, MemorySummary } from "@/src/types/plaid";
-import { TEXT_STYLES } from "@/src/components/shared/modal-constants";
+import { SettingItemProps } from "@/src/types/plaid";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import {
@@ -62,61 +58,66 @@ const styles = {
     alignItems: "center" as const,
     justifyContent: "space-between" as const,
     paddingHorizontal: responsivePadding(16),
-    paddingTop: Platform.OS === "ios" ? 8 : 12,
-    paddingBottom: 10,
+    paddingTop: Platform.OS === "ios" ? 7 : 11,
+    paddingBottom: 9,
     backgroundColor: "transparent",
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(30, 30, 30, 0.8)",
+    borderBottomColor: "rgba(255, 255, 255, 0.05)",
   },
   headerTitle: {
-    fontSize: responsiveFontSize(18),
+    fontSize: responsiveFontSize(17),
     fontWeight: "600" as const,
     color: "#fff",
-    letterSpacing: 0.5,
+    letterSpacing: 0.1,
     flex: 1,
     textAlign: "center" as const,
   },
   content: {
     flex: 1,
     paddingHorizontal: responsivePadding(16),
-    paddingTop: responsivePadding(20),
+    paddingTop: responsivePadding(12),
+  },
+  contentContainer: {
+    paddingBottom: responsivePadding(126),
   },
   section: {
-    marginBottom: responsivePadding(24),
+    marginBottom: responsivePadding(22),
+  },
+  sectionHeader: {
+    marginBottom: responsivePadding(10),
+    paddingHorizontal: 4,
   },
   sectionTitle: {
-    fontSize: responsiveFontSize(16),
+    fontSize: responsiveFontSize(12),
     fontWeight: "600" as const,
-    color: "#fff",
-    marginBottom: responsivePadding(12),
-    letterSpacing: 0.3,
-    marginLeft: 4,
+    color: "rgba(255, 255, 255, 0.52)",
+    letterSpacing: 0.2,
   },
   settingsGroupContent: {
-    backgroundColor: "rgba(255, 255, 255, 0.05)",
-    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    borderRadius: 14,
     overflow: "hidden" as const,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
+    borderColor: "rgba(255, 255, 255, 0.07)",
     shadowColor: "#000",
     shadowOffset: {
       width: 0,
       height: 2,
     },
-    shadowOpacity: 0.25,
-    shadowRadius: 3.84,
-    elevation: 5,
+    shadowOpacity: 0.16,
+    shadowRadius: 6,
+    elevation: 3,
   },
   settingItem: {
     flexDirection: "row" as const,
     alignItems: "center" as const,
     justifyContent: "space-between" as const,
-    paddingVertical: responsivePadding(15),
-    paddingHorizontal: responsivePadding(16),
+    paddingVertical: responsivePadding(14),
+    paddingHorizontal: responsivePadding(14),
   },
   settingItemBorder: {
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(255, 255, 255, 0.1)",
+    borderBottomColor: "rgba(255, 255, 255, 0.06)",
   },
   settingLeft: {
     flexDirection: "row" as const,
@@ -124,58 +125,66 @@ const styles = {
     flex: 1,
   },
   settingIcon: {
-    marginRight: responsivePadding(12),
-    width: 20,
+    marginRight: responsivePadding(11),
+    width: 18,
     alignItems: "center" as const,
   },
   settingText: {
-    fontSize: responsiveFontSize(15),
+    fontSize: responsiveFontSize(14),
     color: "#fff",
-    fontWeight: "500" as const,
+    fontWeight: "600" as const,
     flex: 1,
   },
   settingDescription: {
-    fontSize: responsiveFontSize(13),
-    color: "rgba(255, 255, 255, 0.6)",
-    marginTop: 2,
+    fontSize: responsiveFontSize(12),
+    color: "rgba(255, 255, 255, 0.52)",
+    marginTop: 3,
+    lineHeight: responsiveFontSize(16),
   },
   switchContainer: {
-    marginLeft: responsivePadding(12),
+    marginLeft: responsivePadding(10),
+  },
+  footer: {
+    position: "absolute" as const,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "#0F0F0F",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
+    paddingHorizontal: responsivePadding(16),
+    paddingTop: responsivePadding(10),
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: -4,
+    },
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    elevation: 10,
   },
   clearChatButton: {
-    backgroundColor: "rgba(255, 68, 68, 0.15)",
-    borderRadius: 12,
-    paddingVertical: responsivePadding(16),
+    backgroundColor: "rgba(255, 255, 255, 0.065)",
+    borderRadius: 14,
+    paddingVertical: responsivePadding(14),
     paddingHorizontal: responsivePadding(16),
-    marginTop: responsivePadding(24),
     borderWidth: 1,
-    borderColor: "rgba(255, 68, 68, 0.3)",
+    borderColor: "rgba(255, 255, 255, 0.12)",
     alignItems: "center" as const,
+    shadowColor: "#000",
+    shadowOffset: {
+      width: 0,
+      height: 6,
+    },
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    elevation: 6,
   },
   clearChatButtonText: {
-    color: "#FF4444",
-    fontSize: responsiveFontSize(16),
-    fontWeight: "600" as const,
-  },
-  infoItem: {
-    paddingVertical: responsivePadding(12),
-    paddingHorizontal: responsivePadding(16),
-    backgroundColor: "#1f1f1f",
-    borderRadius: 12,
-    marginBottom: responsivePadding(8),
-    borderWidth: 1,
-    borderColor: "rgba(74, 144, 226, 0.15)",
-  },
-  infoTitle: {
+    color: "#F5F7FA",
     fontSize: responsiveFontSize(15),
-    color: "#fff",
-    fontWeight: "500" as const,
-    marginBottom: 4,
-  },
-  infoDescription: {
-    fontSize: responsiveFontSize(13),
-    color: "rgba(255, 255, 255, 0.6)",
-    lineHeight: responsiveFontSize(18),
+    fontWeight: "600" as const,
+    letterSpacing: 0.2,
   },
   modalContainer: {
     position: "absolute" as const,
@@ -206,7 +215,7 @@ const SettingItem: React.FC<SettingItemProps> = ({
     <View style={styles.settingLeft}>
       {icon && (
         <View style={styles.settingIcon}>
-          <Ionicons name={icon as any} size={20} color="#4A90E2" />
+          <Ionicons name={icon as any} size={18} color="#7FAEFF" />
         </View>
       )}
       <View style={{ flex: 1 }}>
@@ -224,7 +233,6 @@ export default function FinnySettingsScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ open?: string }>();
-  const { session } = useAuthNavigation();
   const { clearChat } = useChatContext();
   const [showMemories, setShowMemories] = useState(false);
   const [showStyle, setShowStyle] = useState(false);
@@ -433,6 +441,12 @@ export default function FinnySettingsScreen() {
     });
   };
 
+  const closeHistoryAndSettings = () => {
+    historySlideAnimation.setValue(0);
+    setShowHistory(false);
+    router.back();
+  };
+
   const handleClearChat = async () => {
     await clearChat();
     router.replace("/(tabs)/chat");
@@ -536,9 +550,13 @@ export default function FinnySettingsScreen() {
     }
   };
 
+  const chevron = (
+    <Ionicons name="chevron-forward" size={16} color="rgba(255, 255, 255, 0.28)" />
+  );
+
   return (
     <View style={styles.container}>
-      <SafeAreaView style={{ flex: 1, marginBottom: insets.bottom - 10 }}>
+      <SafeAreaView style={{ flex: 1 }}>
         {/* Settings View */}
         <Animated.View
           style={[
@@ -564,27 +582,28 @@ export default function FinnySettingsScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <IconButton icon="close" onPress={() => router.back()} size={22} />
-            <Text style={styles.headerTitle}>Advisor Settings</Text>
-            <View style={{ width: 40 }} />
+            <IconButton icon="close" onPress={() => router.back()} size={19} />
+            <Text style={styles.headerTitle}>Finny settings</Text>
+            <View style={{ width: 34 }} />
           </View>
 
           {/* Content */}
           <ScrollView
             style={styles.content}
+            contentContainerStyle={styles.contentContainer}
             showsVerticalScrollIndicator={false}
           >
-            {/* Finny Section */}
             <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Personalize Finny</Text>
+              </View>
               <View style={styles.settingsGroupContent}>
                 <SettingItem
                   icon="chatbubble-outline"
                   title="Style"
                   description={getStyleDescription(currentStyle)}
                   onPress={openStyle}
-                  rightElement={
-                    <Ionicons name="chevron-forward" size={20} color="#666" />
-                  }
+                  rightElement={chevron}
                 />
 
                 <SettingItem
@@ -592,70 +611,72 @@ export default function FinnySettingsScreen() {
                   title="Check-in notifications"
                   description={getCheckinDescription(currentCheckinFrequency)}
                   onPress={openCheckin}
-                  rightElement={
-                    <Ionicons name="chevron-forward" size={20} color="#666" />
-                  }
+                  rightElement={chevron}
                 />
 
                 <SettingItem
                   icon="bookmark-outline"
                   title="Memories"
+                  description="What Finny remembers about you"
                   onPress={openMemories}
-                  rightElement={
-                    <Ionicons name="chevron-forward" size={20} color="#666" />
-                  }
-                />
-
-                <SettingItem
-                  icon="time-outline"
-                  title="History"
-                  description="Check out the last 5 chats"
-                  onPress={openHistory}
-                  rightElement={
-                    <Ionicons name="chevron-forward" size={20} color="#666" />
-                  }
+                  rightElement={chevron}
                   showBorder={false}
                 />
               </View>
             </View>
 
-            {/* General Section */}
             <View style={styles.section}>
-              <Text style={styles.sectionTitle}>General</Text>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>Conversation</Text>
+              </View>
+              <View style={styles.settingsGroupContent}>
+                <SettingItem
+                  icon="time-outline"
+                  title="History"
+                  onPress={openHistory}
+                  rightElement={chevron}
+                  showBorder={false}
+                />
+              </View>
+            </View>
+
+            <View style={styles.section}>
+              <View style={styles.sectionHeader}>
+                <Text style={styles.sectionTitle}>About Finny</Text>
+              </View>
               <View style={styles.settingsGroupContent}>
                 <SettingItem
                   icon="document-text-outline"
                   title="Legal summary"
                   onPress={openLegalSummary}
-                  rightElement={
-                    <Ionicons name="chevron-forward" size={20} color="#666" />
-                  }
+                  rightElement={chevron}
                 />
 
                 <SettingItem
                   icon="help-circle-outline"
-                  title="How does finny work?"
+                  title="How Finny works"
                   onPress={openHowFinnyWorks}
-                  rightElement={
-                    <Ionicons name="chevron-forward" size={20} color="#666" />
-                  }
+                  rightElement={chevron}
                   showBorder={false}
                 />
               </View>
             </View>
+          </ScrollView>
 
-            {/* Clear Chat Button */}
+          <View
+            style={[
+              styles.footer,
+              { paddingBottom: Math.max(insets.bottom, responsivePadding(14)) },
+            ]}
+          >
             <TouchableOpacity
               style={styles.clearChatButton}
               onPress={handleClearChat}
               activeOpacity={0.7}
             >
-              <Text style={styles.clearChatButtonText}>Clear chat</Text>
+              <Text style={styles.clearChatButtonText}>Start new chat</Text>
             </TouchableOpacity>
-
-            {/* Bottom padding */}
-            <View style={{ height: responsivePadding(40) }} />
-          </ScrollView>
+          </View>
         </Animated.View>
 
         {/* Memories View */}
@@ -744,7 +765,10 @@ export default function FinnySettingsScreen() {
               },
             ]}
           >
-            <ChatHistoryScreen onBack={closeHistory} />
+            <ChatHistoryScreen
+              onBack={closeHistory}
+              onSessionSelected={closeHistoryAndSettings}
+            />
           </Animated.View>
         )}
       </SafeAreaView>

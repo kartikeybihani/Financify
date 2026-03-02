@@ -214,7 +214,7 @@ const HistoryCard: React.FC<HistoryCardProps> = ({ session, onPress }) => {
           {session.session_title}
         </Text>
         <Text style={styles.sessionTime}>
-          {formatRelativeTime(session.created_at)}
+          {formatRelativeTime(session.updated_at || session.created_at)}
         </Text>
       </View>
       <Text style={styles.sessionPreview} numberOfLines={3}>
@@ -226,10 +226,12 @@ const HistoryCard: React.FC<HistoryCardProps> = ({ session, onPress }) => {
 
 interface ChatHistoryScreenProps {
   onBack?: () => void;
+  onSessionSelected?: () => void;
 }
 
 export default function ChatHistoryScreen({
   onBack,
+  onSessionSelected,
 }: ChatHistoryScreenProps = {}) {
   const insets = useSafeAreaInsets();
   const { session, isLoading: isAuthLoading } = useAuthNavigation();
@@ -261,24 +263,35 @@ export default function ChatHistoryScreen({
       // Messages will be loaded when user opens a specific session
       const { data, error: fetchError } = await supabase
         .from("chat_sessions")
-        .select("id, session_title, first_message, created_at")
+        .select("id, session_title, first_message, created_at, updated_at")
         .eq("user_id", session.user.id)
-        .order("created_at", { ascending: false })
-        .limit(5);
+        .order("updated_at", { ascending: false })
+        .limit(30);
 
       if (fetchError) {
         console.error("[History] Error fetching sessions:", fetchError);
         throw fetchError;
       }
 
-      logger.debug("[History] Fetched sessions:", data?.length || 0);
-      // Map to ChatSession type (message_count not needed for list view)
-      const mappedSessions: ChatSession[] = (data || []).map(
+      const filteredSessions = (data || []).filter((session: any) => {
+        if (!session?.created_at || !session?.updated_at) {
+          return false;
+        }
+        return (
+          new Date(session.updated_at).getTime() >
+          new Date(session.created_at).getTime()
+        );
+      });
+
+      logger.debug("[History] Fetched sessions:", filteredSessions.length);
+      // Show only sessions that have at least one saved Finny reply.
+      const mappedSessions: ChatSession[] = filteredSessions.map(
         (session: any) => ({
           id: session.id,
           session_title: session.session_title,
           first_message: session.first_message,
           created_at: session.created_at,
+          updated_at: session.updated_at,
         }),
       );
       setSessions(mappedSessions);
@@ -313,7 +326,7 @@ export default function ChatHistoryScreen({
   const handleSessionPress = async (sessionId: string) => {
     try {
       await loadSession(sessionId);
-      onBack?.();
+      onSessionSelected?.();
     } catch (err) {
       logger.error("Error loading session:", err);
       Alert.alert("Error", "Failed to load chat session");
@@ -336,7 +349,7 @@ export default function ChatHistoryScreen({
       <Text style={styles.emptyStateTitle}>No chat history yet</Text>
       <Text style={styles.emptyStateDescription}>
         Start chatting with Finny to see your conversation history here. Your
-        last 5 chats will be saved automatically.
+        last 30 completed chats will be saved automatically.
       </Text>
     </View>
   );

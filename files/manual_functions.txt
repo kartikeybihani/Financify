@@ -371,7 +371,7 @@ CHAT HISTORY MANAGEMENT
 ------------------------
 
 40. get_user_chat_sessions ⭐ ACTIVE
-   - Returns user's last 5 chat sessions with metadata
+   - Returns user's last 30 completed chat sessions with metadata
    - Parameters: p_user_id (uuid)
    - Returns: TABLE(id uuid, session_title text, first_message text, created_at timestamptz, message_count integer, messages jsonb)
    - Purpose: Display chat history in UI with session previews, counts, and full messages
@@ -380,7 +380,7 @@ CHAT HISTORY MANAGEMENT
      * Now includes full messages jsonb in return (updated return type)
 
 41. save_chat_session ⭐ ACTIVE
-   - Saves chat session and auto-cleanup (keeps only last 5 per user)
+   - Saves chat session and auto-cleanup (keeps only last 30 per user)
    - Parameters: p_user_id (uuid), p_session_title (text), p_first_message (text), p_messages (jsonb)
    - Returns: uuid (new session ID)
    - Purpose: Store complete conversations with automatic cleanup to prevent database bloat

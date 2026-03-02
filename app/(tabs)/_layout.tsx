@@ -1,10 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Platform } from "react-native";
 import { Tabs } from "expo-router";
-import { NativeTabs, Label, Icon } from "expo-router/unstable-native-tabs";
+import {
+  NativeTabs,
+  Label,
+  Icon,
+  VectorIcon,
+} from "expo-router/unstable-native-tabs";
 import {
   Ionicons,
   MaterialCommunityIcons,
+  MaterialIcons,
   FontAwesome,
 } from "@expo/vector-icons";
 import logger from "@/src/utils/core/logger";
@@ -134,10 +140,15 @@ export default function TabLayout() {
       icon: "home-outline",
       iconCategory: "Ionicons",
     },
-    { name: "chat", label: "Finny", icon: "fire", iconCategory: "FontAwesome" },
+    {
+      name: "chat",
+      label: "Finny",
+      icon: "multitrack-audio",
+      iconCategory: "MaterialIcons",
+    },
     {
       name: "insights",
-      label: "Insights",
+      label: "Spend",
       icon: "stats-chart-outline",
       iconCategory: "Ionicons",
     },
@@ -173,10 +184,14 @@ export default function TabLayout() {
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="chat">
             <Label>Finny</Label>
-            <Icon sf={{ default: "flame", selected: "flame.fill" }} />
+            <Icon
+              src={
+                <VectorIcon family={MaterialIcons} name="multitrack-audio" />
+              }
+            />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="insights">
-            <Label>Insights</Label>
+            <Label>Spend</Label>
             <Icon sf={{ default: "chart.bar", selected: "chart.bar.fill" }} />
           </NativeTabs.Trigger>
           <NativeTabs.Trigger name="investments">
@@ -220,11 +235,13 @@ export default function TabLayout() {
                     ? Ionicons
                     : tab.iconCategory === "MaterialCommunityIcons"
                       ? MaterialCommunityIcons
-                      : FontAwesome;
+                      : tab.iconCategory === "MaterialIcons"
+                        ? MaterialIcons
+                        : FontAwesome;
                 return (
                   <IconComponent
                     name={tab.icon as any}
-                    size={22}
+                    size={21}
                     color={focused ? "#4A90E2" : "#C7C7CC"}
                   />
                 );
