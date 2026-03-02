@@ -75,7 +75,7 @@ async function testClassificationContract() {
 }
 
 async function testHighRiskHardClarify() {
-  const name = "High-risk insufficient context triggers deterministic clarify";
+  const name = "Legacy high-risk insufficient context still triggers deterministic clarify when flag is off";
   const message = "Should I buy a house now?";
 
   const forcedClassification = {
@@ -98,6 +98,9 @@ async function testHighRiskHardClarify() {
     },
   };
 
+  const previous = process.env.FINNY_ADVISORY_RUNTIME_V1;
+  process.env.FINNY_ADVISORY_RUNTIME_V1 = "false";
+
   const response = await handleAsk(
     message,
     { user_id: TEST_USER_ID },
@@ -108,9 +111,71 @@ async function testHighRiskHardClarify() {
     null,
   );
 
+  process.env.FINNY_ADVISORY_RUNTIME_V1 = previous;
+
   const text = String(response?.message || response?.text || "");
   if (!text.includes("high-stakes decision")) {
     fail(name, `unexpected response: ${text.slice(0, 140)}`);
+    return false;
+  }
+
+  pass(name);
+  return true;
+}
+
+async function testHighRiskAdvisoryRuntimeAnswers() {
+  const name = "Flagged advisory runtime avoids hard clarify gate for high-risk ask flow";
+  const message = "Should I buy a house this year?";
+
+  const forcedClassification = {
+    intent: "ask_personalized",
+    intent_type: "actionable",
+    needs_user_data: true,
+    needs_web: false,
+    needs_clarification: true,
+    info_sufficiency: "missing",
+    missing_fields: ["income_takehome", "current_savings", "timeline"],
+    decision_risk: "high",
+    emotional_state: "neutral",
+    confidence: 0.9,
+    data_requirements: {
+      required_packs: ["summary_min"],
+      optional_packs: [],
+      filters: {},
+      granularity: "summary_level",
+      time_range: "current",
+    },
+  };
+
+  const previous = process.env.FINNY_ADVISORY_RUNTIME_V1;
+  process.env.FINNY_ADVISORY_RUNTIME_V1 = "true";
+
+  const response = await handleAsk(
+    message,
+    { user_id: TEST_USER_ID },
+    "ask_personalized",
+    forcedClassification,
+    null,
+    false,
+    null,
+  );
+
+  process.env.FINNY_ADVISORY_RUNTIME_V1 = previous;
+
+  const text = String(response?.message || response?.text || "");
+  if (text.toLowerCase().includes("having trouble reaching the model")) {
+    pass(`${name} (skipped: model unavailable)`);
+    return true;
+  }
+
+  if (text.includes("high-stakes decision")) {
+    fail(name, "unexpected legacy hard-clarify response under advisory runtime flag");
+    return false;
+  }
+
+  const questionCount = (text.match(/\?/g) || []).length;
+  if (questionCount > 1) {
+    fail(name, `expected at most one question, got ${questionCount}`);
     return false;
   }
 
@@ -123,6 +188,7 @@ async function main() {
     testFactualClassification,
     testClassificationContract,
     testHighRiskHardClarify,
+    testHighRiskAdvisoryRuntimeAnswers,
   ];
 
   let passed = 0;

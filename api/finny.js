@@ -68,6 +68,7 @@ import { LLMService } from "../core/finny/infrastructure/llm/LLMService.js";
 import { DataFetchService } from "../core/finny/services/DataFetchService.js";
 import { StockAnalysisService } from "../core/finny/services/StockAnalysisService.js";
 import { WebSearchService } from "../core/finny/services/WebSearchService.js";
+import { buildAdvisoryRuntime } from "../core/finny/services/AdvisoryResolutionService.js";
 
 // Utilities
 function generateRequestId() {
@@ -120,6 +121,10 @@ function detectAmbiguousIntent(text) {
   if (lower.trim() === "help") return true;
 
   return false;
+}
+
+function isAdvisoryRuntimeV1Enabled() {
+  return String(process.env.FINNY_ADVISORY_RUNTIME_V1 || "").toLowerCase() === "true";
 }
 
 function determineResponseContract(message = "", classificationResult = {}) {
@@ -237,6 +242,53 @@ function buildResponseContractInstructions(
 function countQuestionMarks(text = "") {
   const matches = String(text).match(/\?/g);
   return matches ? matches.length : 0;
+}
+
+function enforceAdvisoryQuestionPolicy(responseText = "", advisoryRuntime = null) {
+  const text = String(responseText || "").trim();
+  if (!text || !advisoryRuntime?.resolution) return text;
+
+  const questionPolicy = advisoryRuntime.resolution.question_policy || "none";
+  const allowedQuestions =
+    questionPolicy === "required_one" || questionPolicy === "optional_one"
+      ? 1
+      : 0;
+
+  if (countQuestionMarks(text) <= allowedQuestions) return text;
+
+  const segments = text.split(/(?<=[.?!])\s+/).filter(Boolean);
+  const questionSegments = segments.filter((segment) => segment.includes("?"));
+  if (questionSegments.length === 0) return text;
+
+  if (allowedQuestions === 0) {
+    const nonQuestionSegments = segments.filter((segment) => !segment.includes("?"));
+    const repaired = nonQuestionSegments.join(" ").trim();
+    if (repaired) return repaired;
+
+    const strippedQuestions = text.replace(/\?/g, "").trim();
+    return strippedQuestions || text;
+  }
+
+  const keepQuestion =
+    questionPolicy === "optional_one"
+      ? questionSegments[questionSegments.length - 1]
+      : questionSegments[0];
+
+  let kept = false;
+  const repaired = segments
+    .filter((segment) => {
+      if (!segment.includes("?")) return true;
+      if (!kept && segment === keepQuestion) {
+        kept = true;
+        return true;
+      }
+      return false;
+    })
+    .join(" ")
+    .replace(/\s+\n/g, "\n")
+    .trim();
+
+  return repaired || text;
 }
 
 function detectAffordabilityContractIssues(message = "", responseText = "") {
@@ -3042,6 +3094,47 @@ async function handleAsk(
       context?.profile,
     );
 
+    const hasStockOverride = !!context?.stock_override?.ticker;
+    const advisoryRuntimeEnabled =
+      isAdvisoryRuntimeV1Enabled() &&
+      classificationResult?.intent === "ask_personalized" &&
+      !hasStockOverride &&
+      classificationResult?.intent !== "stock_query";
+
+    const financialDataForState = {
+      base: packs.base,
+      spend:
+        packs.spend ||
+        ((Array.isArray(packs.base?.spendByCategoryCurrentMonth) &&
+          packs.base.spendByCategoryCurrentMonth.length > 0) ||
+        (Array.isArray(packs.base?.spendByCategoryLastMonth) &&
+          packs.base.spendByCategoryLastMonth.length > 0) ||
+        (Array.isArray(packs.base?.spendByCategory) &&
+          packs.base.spendByCategory.length > 0)
+          ? { source: "summary_min" }
+          : null),
+      invest: packs.invest,
+      goals: packs.goals,
+      profileMonthlyIncome: context?.profile?.monthly_income || null,
+      categoryDetails: packs.categoryDetails,
+      transactions: packs.base?.recentTransactions || [],
+      accounts: packs.base?.accounts || packs.accounts || [],
+      emptyMerchantQueries: packs.emptyMerchantQueries || [],
+    };
+
+    logInfo(`🔍 [FINANCIAL_DATA] Building financialDataForState:`, {
+      hasBase: !!packs.base,
+      hasSpend: !!financialDataForState.spend,
+      hasCategoryDetails: !!packs.categoryDetails,
+      categoryDetailsTransactionCount:
+        packs.categoryDetails?.transactions?.length || 0,
+    });
+    const userState = detectUserState(
+      message,
+      financialDataForState,
+      classificationResult,
+    );
+
     // Decision risk and info sufficiency are used for runtime coaching flags
     // passed to the LLM (not for early returns - LLM handles all clarifications)
     let decisionRisk = classificationResult?.decision_risk || "unknown";
@@ -3075,7 +3168,8 @@ async function handleAsk(
     const hasCriticalGaps =
       insufficiencyState.missing_numeric_inputs.length > 0 ||
       insufficiencyState.missing_decision_context.length > 0;
-    const shouldHardClarify = decisionRisk === "high" && hasCriticalGaps;
+    const shouldHardClarify =
+      !advisoryRuntimeEnabled && decisionRisk === "high" && hasCriticalGaps;
 
     if (shouldHardClarify) {
       return buildHighRiskClarificationResponse(
@@ -3088,6 +3182,7 @@ async function handleAsk(
     // Ambiguous-intent clarification flag: passed to LLM via runtime coaching flags
     // The LLM will decide whether to ask clarification questions based on context
     const shouldClarifyAmbiguity =
+      !advisoryRuntimeEnabled &&
       ambiguousIntent &&
       !userRefused &&
       classificationResult?.intent !== "stock_query" &&
@@ -3211,7 +3306,6 @@ async function handleAsk(
 
     // 3.5) Check if this is a stock query after building context packs
     // Also check if we have stock_override (user confirmed ticker) - that's definitely a stock query!
-    const hasStockOverride = !!context?.stock_override?.ticker;
     const isStockQuery =
       looksLikeStockQuery(message, classificationResult) || hasStockOverride;
     logDebug("🔍 [STOCK_ROUTING] Stock query detection:", {
@@ -3699,43 +3793,7 @@ async function handleAsk(
       }
     }
 
-    // 4) Detect user state for context-aware prompting
-
-    const financialDataForState = {
-      base: packs.base,
-      spend:
-        packs.spend ||
-        ((Array.isArray(packs.base?.spendByCategoryCurrentMonth) &&
-          packs.base.spendByCategoryCurrentMonth.length > 0) ||
-        (Array.isArray(packs.base?.spendByCategoryLastMonth) &&
-          packs.base.spendByCategoryLastMonth.length > 0) ||
-        (Array.isArray(packs.base?.spendByCategory) &&
-          packs.base.spendByCategory.length > 0)
-          ? { source: "summary_min" }
-          : null),
-      invest: packs.invest, // Investment holdings
-      goals: packs.goals, // Financial goals
-      profileMonthlyIncome: context?.profile?.monthly_income || null,
-      categoryDetails: packs.categoryDetails, // Category transaction details for analysis
-      transactions: packs.base?.recentTransactions || [],
-      accounts: packs.base?.accounts || packs.accounts || [], // Include accounts for credit utilization detection
-      emptyMerchantQueries: packs.emptyMerchantQueries || [], // Empty merchant query results (explicitly queried but returned zero transactions)
-    };
-
-    logInfo(`🔍 [FINANCIAL_DATA] Building financialDataForState:`, {
-      hasBase: !!packs.base,
-      hasSpend: !!financialDataForState.spend,
-      hasCategoryDetails: !!packs.categoryDetails,
-      categoryDetailsTransactionCount:
-        packs.categoryDetails?.transactions?.length || 0,
-    });
-    const userState = detectUserState(
-      message,
-      financialDataForState,
-      classificationResult,
-    );
-
-    // Consolidated user state log with better formatting
+    // 4) User state is already derived for advisory runtime + prompt context
     console.log(`\n🎯 [USER_STATE] Detected:`);
     console.log(
       `   └─ Emotional: ${
@@ -3787,40 +3845,83 @@ async function handleAsk(
       feedbackContext,
     };
 
+    const advisoryRuntime = advisoryRuntimeEnabled
+      ? buildAdvisoryRuntime({
+          message,
+          classificationResult,
+          packs,
+          profile: context?.profile || {},
+          userState,
+          userRefused,
+        })
+      : null;
+
+    if (advisoryRuntimeEnabled && advisoryRuntime) {
+      logInfo("🧭 [ADVISORY_RUNTIME] Derived runtime:", {
+        advisory_job: advisoryRuntime.advisory_job,
+        decision_type: advisoryRuntime.decision?.type,
+        risk_level: advisoryRuntime.risk?.level,
+        info_coverage: advisoryRuntime.info?.coverage,
+        resolution_mode: advisoryRuntime.resolution?.mode,
+        question_policy: advisoryRuntime.resolution?.question_policy,
+        question_reason: advisoryRuntime.resolution?.question_reason,
+        user_refused: userRefused,
+        blockers: advisoryRuntime.info?.blockers || [],
+      });
+    }
+
     // Build complete prompt using 6-layer architecture
     // Prompt engine now handles: web context, feedback patterns, memories, intent context, user prompt
-    const shouldOfferCoachFollowUp =
-      !userRefused &&
-      (decisionRisk === "high" ||
-        decisionRisk === "medium" ||
-        infoSufficiency === "unknown") &&
-      deterministicChance(
-        `${userId}:${context?.chat_id || ""}:${message}`,
-        0.5,
-      );
+    const shouldOfferCoachFollowUp = advisoryRuntimeEnabled
+      ? advisoryRuntime?.resolution?.question_policy === "optional_one"
+      : !userRefused &&
+        (decisionRisk === "high" ||
+          decisionRisk === "medium" ||
+          infoSufficiency === "unknown") &&
+        deterministicChance(
+          `${userId}:${context?.chat_id || ""}:${message}`,
+          0.5,
+        );
     const responseContract = runtimeContract;
-    const responseContractHeader = buildResponseContractInstructions(
-      responseContract,
-      {
-        message,
-        classificationResult,
-        packs,
-        profile: context?.profile || {},
-      },
-    );
+    const responseContractHeader = advisoryRuntimeEnabled
+      ? null
+      : buildResponseContractInstructions(responseContract, {
+          message,
+          classificationResult,
+          packs,
+          profile: context?.profile || {},
+        });
 
-    const coachingRuntimeFlags = [
-      `COACHING_FLAGS:`,
-      `- ambiguous_intent_detected: ${ambiguousIntent}`,
-      `- clarify_one_question_only: ${shouldClarifyAmbiguity}`,
-      `- offer_single_followup_question: ${shouldOfferCoachFollowUp}`,
-      `- user_refused_to_answer: ${userRefused}`,
-      `- decision_risk: ${decisionRisk}`,
-      `- info_sufficiency: ${infoSufficiency}`,
-      `- response_contract: ${responseContract}`,
-      `- missing_numeric_inputs: [${insufficiencyState.missing_numeric_inputs.join(", ")}]`,
-      `- missing_decision_context: [${insufficiencyState.missing_decision_context.join(", ")}]`,
-    ].join("\n");
+    const coachingRuntimeFlags = advisoryRuntimeEnabled
+      ? [
+          `ADVISORY_RUNTIME_FLAGS:`,
+          `- advisory_runtime_enabled: true`,
+          `- user_refused_to_answer: ${userRefused}`,
+          `- offer_single_followup_question: ${shouldOfferCoachFollowUp}`,
+          `- classifier_decision_risk: ${decisionRisk}`,
+          `- classifier_info_sufficiency: ${infoSufficiency}`,
+          `- advisory_resolution_mode: ${
+            advisoryRuntime?.resolution?.mode || "answer_now"
+          }`,
+          `- advisory_question_policy: ${
+            advisoryRuntime?.resolution?.question_policy || "none"
+          }`,
+          `- advisory_question_reason: ${
+            advisoryRuntime?.resolution?.question_reason || "none"
+          }`,
+        ].join("\n")
+      : [
+          `COACHING_FLAGS:`,
+          `- ambiguous_intent_detected: ${ambiguousIntent}`,
+          `- clarify_one_question_only: ${shouldClarifyAmbiguity}`,
+          `- offer_single_followup_question: ${shouldOfferCoachFollowUp}`,
+          `- user_refused_to_answer: ${userRefused}`,
+          `- decision_risk: ${decisionRisk}`,
+          `- info_sufficiency: ${infoSufficiency}`,
+          `- response_contract: ${responseContract}`,
+          `- missing_numeric_inputs: [${insufficiencyState.missing_numeric_inputs.join(", ")}]`,
+          `- missing_decision_context: [${insufficiencyState.missing_decision_context.join(", ")}]`,
+        ].join("\n");
 
     const classificationHeader = classificationResult
       ? `CLASSIFICATION:\n- needs_clarification: ${
@@ -3882,6 +3983,7 @@ async function handleAsk(
       webSummary, // Web context
       runtimeHeader, // Context header (+ classification)
       recentTurns, // Recent conversation turns for context
+      advisoryRuntime,
     );
 
     const system = systemBuild.system;
@@ -4084,6 +4186,14 @@ async function handleAsk(
       }
     }
 
+    if (advisoryRuntimeEnabled && advisoryRuntime) {
+      const repaired = enforceAdvisoryQuestionPolicy(cleanText, advisoryRuntime);
+      if (repaired && repaired !== cleanText) {
+        logInfo("🧭 [ADVISORY_RUNTIME] Enforced question policy");
+        cleanText = repaired;
+      }
+    }
+
     // Memory saving will happen after topic detection (see below)
 
     // Basic response validation (log warnings, don't block)
@@ -4130,6 +4240,28 @@ async function handleAsk(
       if (hasLongTermTerms) {
         validationIssues.push(
           "Crisis mode: Response mentions long-term planning (should be immediate only)",
+        );
+      }
+    }
+
+    if (advisoryRuntimeEnabled && advisoryRuntime) {
+      const allowedQuestionCount =
+        advisoryRuntime.resolution?.question_policy === "required_one" ||
+        advisoryRuntime.resolution?.question_policy === "optional_one"
+          ? 1
+          : 0;
+      const questionCount = countQuestionMarks(cleanText);
+      logInfo("🧭 [ADVISORY_RUNTIME] Response metrics:", {
+        question_count: questionCount,
+        allowed_question_count: allowedQuestionCount,
+        feature_flag_enabled: advisoryRuntimeEnabled,
+        resolution_mode: advisoryRuntime.resolution?.mode,
+        question_policy: advisoryRuntime.resolution?.question_policy,
+        question_reason: advisoryRuntime.resolution?.question_reason,
+      });
+      if (questionCount > allowedQuestionCount) {
+        validationIssues.push(
+          `Question policy violated: expected <= ${allowedQuestionCount}, got ${questionCount}`,
         );
       }
     }

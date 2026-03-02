@@ -116,14 +116,14 @@ const CASES = [
     }),
     validate: (text) => {
       const lower = text.toLowerCase();
-      if (lower.includes("high-stakes decision")) {
-        return { status: "PASS", details: "high-risk clarify gate triggered" };
-      }
       if (lower.includes("having trouble reaching the model")) return { status: "SKIP", details: "model unavailable" };
-      if (countQuestionMarks(text) === 0) {
-        return { status: "FAIL", details: "expected targeted clarification questions" };
+      if (lower.includes("high-stakes decision")) {
+        return { status: "FAIL", details: "legacy hard-clarify gate should be bypassed under advisory runtime flag" };
       }
-      return { status: "PASS", details: "high-risk response included clarifying questions" };
+      if (countQuestionMarks(text) > 1) {
+        return { status: "FAIL", details: "expected at most one question in flagged high-risk response" };
+      }
+      return { status: "PASS", details: "high-risk response stayed within one-question policy" };
     },
   },
   {
@@ -163,6 +163,9 @@ const CASES = [
 async function runCase(testCase, index, total) {
   printCaseHeader(index, total, testCase.name, testCase.message);
 
+  const previous = process.env.FINNY_ADVISORY_RUNTIME_V1;
+  process.env.FINNY_ADVISORY_RUNTIME_V1 = "true";
+
   const response = await handleAsk(
     testCase.message,
     { user_id: TEST_USER_ID },
@@ -172,6 +175,8 @@ async function runCase(testCase, index, total) {
     false,
     null,
   );
+
+  process.env.FINNY_ADVISORY_RUNTIME_V1 = previous;
 
   const text = String(response?.message || response?.text || "");
   const verdict = testCase.validate(text);
