@@ -259,11 +259,9 @@ export default function ChatHistoryScreen({
 
       logger.debug("[History] Fetching sessions for user:", session.user.id);
 
-      // Query directly from table - don't load messages JSONB for list view (too slow)
-      // Messages will be loaded when user opens a specific session
       const { data, error: fetchError } = await supabase
         .from("chat_sessions")
-        .select("id, session_title, first_message, created_at, updated_at")
+        .select("id, session_title, first_message, created_at, updated_at, messages")
         .eq("user_id", session.user.id)
         .order("updated_at", { ascending: false })
         .limit(30);
@@ -274,13 +272,10 @@ export default function ChatHistoryScreen({
       }
 
       const filteredSessions = (data || []).filter((session: any) => {
-        if (!session?.created_at || !session?.updated_at) {
-          return false;
-        }
-        return (
-          new Date(session.updated_at).getTime() >
-          new Date(session.created_at).getTime()
-        );
+        const messages = Array.isArray(session?.messages) ? session.messages : [];
+        const hasUserMessage = messages.some((msg: any) => msg?.sender === "user");
+        const hasFinnyMessage = messages.some((msg: any) => msg?.sender === "finny");
+        return hasUserMessage && hasFinnyMessage;
       });
 
       logger.debug("[History] Fetched sessions:", filteredSessions.length);

@@ -1895,7 +1895,7 @@ export default async function handler(req, res) {
   };
 
   // === FLOW STATE CHECK: Bypass classification for active goal flows ===
-  const activeGoalFlow = sessionState?.goal_flow;
+  const activeGoalFlow = sessionState?.goal_flow || context?.goal_flow || null;
   if (
     (action === "classify" || action === "message") &&
     activeGoalFlow &&
