@@ -8,7 +8,7 @@ const MAX_MESSAGE_SIZE = 5000;
 
 // Initialize the model via OpenRouter
 const llm = new ChatOpenAI({
-  modelName: "openai/gpt-oss-20b:free",
+  modelName: "meta-llama/llama-4-scout",
   apiKey: "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",
   maxTokens: 1500, // Reduced for SMS/iMessage - roughly ~1000-1200 chars
   configuration: {

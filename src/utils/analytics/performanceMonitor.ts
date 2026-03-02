@@ -1,6 +1,6 @@
 // utils/performanceMonitor.ts
 
-import logger from "./logger";
+import logger from "@/src/utils/core/logger";
 
 export interface PerformanceMetric {
   name: string;
@@ -134,7 +134,6 @@ export const measurePerf = async <T>(
 ) => performanceMonitor.measure(name, fn, metadata);
 
 export default performanceMonitor;
-
 
 
 

@@ -2,7 +2,7 @@
 // Smooth counting animation component for currency values
 
 import React, { useEffect, useRef, useState, memo } from "react";
-import { Text, TextStyle, Animated, Easing } from "react-native";
+import { Text, TextStyle, Animated, Easing, StyleProp } from "react-native";
 
 interface AnimatedNumberProps {
   value: number;
@@ -10,7 +10,7 @@ interface AnimatedNumberProps {
   suffix?: string;
   duration?: number;
   decimals?: number;
-  style?: TextStyle;
+  style?: StyleProp<TextStyle>;
   formatOptions?: {
     useKM?: boolean;
     currency?: string;
@@ -106,7 +106,7 @@ export const AnimatedNumber: React.FC<AnimatedNumberProps> = memo(
       animatedValue.setValue(previousValue.current);
 
       // Create listener to update display value during animation
-      const subscription = animatedValue.addListener(({ value: animValue }) => {
+      const subscriptionId = animatedValue.addListener(({ value: animValue }) => {
         if (isMountedRef.current) {
           setDisplayValue(animValue);
         }
@@ -129,11 +129,7 @@ export const AnimatedNumber: React.FC<AnimatedNumberProps> = memo(
 
       return () => {
         isMountedRef.current = false;
-        if (typeof subscription?.remove === "function") {
-          subscription.remove();
-        } else {
-          animatedValue.removeListener(subscription);
-        }
+        animatedValue.removeListener(subscriptionId);
       };
     }, [value, duration, animatedValue]);
 

@@ -205,6 +205,7 @@ export interface PaywallModalProps {
 export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
   const insets = useSafeAreaInsets();
   const { applyCustomerInfo, refetch } = useSubscription();
+  const [rendered, setRendered] = useState(visible);
   const [selectedPlan, setSelectedPlan] = useState<"annual" | "monthly">(
     "annual",
   );
@@ -294,6 +295,17 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
     return () => {
       cancelled = true;
     };
+  }, [visible]);
+
+  useEffect(() => {
+    if (visible) {
+      setRendered(true);
+      return;
+    }
+
+    // Keep the modal mounted until the native close animation finishes.
+    const timeout = setTimeout(() => setRendered(false), 320);
+    return () => clearTimeout(timeout);
   }, [visible]);
 
   const handleSubscribe = async () => {
@@ -409,14 +421,19 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
     }
   };
 
-  if (!visible) return null;
+  if (!rendered) return null;
 
   return (
     <Modal
-      visible
+      visible={visible}
       transparent
       animationType="slide"
+      presentationStyle="overFullScreen"
+      statusBarTranslucent
       onRequestClose={handleClose}
+      onDismiss={() => {
+        if (!visible) setRendered(false);
+      }}
     >
       <TouchableWithoutFeedback onPress={handleClose}>
         <BlurView intensity={60} tint="dark" style={styles.overlay}>

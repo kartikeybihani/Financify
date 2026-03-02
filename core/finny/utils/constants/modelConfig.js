@@ -6,11 +6,12 @@
 // Default to a widely available Grok model to avoid invalid ID errors.
 export const OPENROUTER_PAID_MODEL = process.env.OPENROUTER_PAID_MODEL;
 export const OPENROUTER_MODEL =
-  process.env.OPENROUTER_MODEL || "openai/gpt-oss-20b:free";
-export const PRIMARY_OPENROUTER_MODEL = OPENROUTER_PAID_MODEL || OPENROUTER_MODEL;
+  process.env.OPENROUTER_MODEL || "meta-llama/llama-4-scout";
+export const PRIMARY_OPENROUTER_MODEL =
+  OPENROUTER_PAID_MODEL || OPENROUTER_MODEL;
 
 // Classification models - for intent detection and message classification
-// openai/gpt-oss-20b (paid) and openai/gpt-oss-20b:free
+// openai/gpt-oss-20b (paid) and meta-llama/llama-4-scout
 export const CLASSIFICATION_MODEL_PAID =
   process.env.CLASSIFICATION_MODEL_PAID ||
   OPENROUTER_PAID_MODEL ||
@@ -18,7 +19,7 @@ export const CLASSIFICATION_MODEL_PAID =
 export const CLASSIFICATION_MODEL_FREE =
   process.env.CLASSIFICATION_MODEL_FREE ||
   OPENROUTER_MODEL ||
-  "openai/gpt-oss-20b:free";
+  "meta-llama/llama-4-scout";
 
 // Reasoning model for ask_personalized queries
 // meta-llama/llama-4-scout

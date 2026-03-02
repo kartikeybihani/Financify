@@ -15,6 +15,11 @@ const SPENDING_CACHE_KEY = "spending_data";
 const SPENDING_CACHE_TIMESTAMP_KEY = "spending_data_timestamp";
 const CACHE_DURATION = CACHE_CONFIG.DURATIONS.MEDIUM; // 5 minutes
 
+type SpendingTransaction = Pick<
+  Transaction,
+  "amount" | "date" | "authorized_date" | "new_category" | "transaction_type"
+>;
+
 export interface SpendingData {
   threeMonths: number; // Average spending over last 3 months
   lastMonth: number; // Spending in last month
@@ -87,12 +92,12 @@ export function useSpendingData(
   };
 
   // Helper function to get effective date (authorized_date || date)
-  const getEffectiveDate = (tx: Transaction): string => {
+  const getEffectiveDate = (tx: SpendingTransaction): string => {
     return tx.authorized_date || tx.date;
   };
 
   // Helper function to check if transaction is an expense
-  const isExpense = (tx: Transaction): boolean => {
+  const isExpense = (tx: SpendingTransaction): boolean => {
     return (
       tx.amount > 0 &&
       tx.transaction_type !== "transfer" &&
@@ -102,7 +107,11 @@ export function useSpendingData(
 
   // Calculate spending for a date range
   const calculateSpending = useCallback(
-    (transactions: Transaction[], startDate: string, endDate: string): number => {
+    (
+      transactions: SpendingTransaction[],
+      startDate: string,
+      endDate: string
+    ): number => {
       return transactions
         .filter((tx) => {
           if (!isExpense(tx)) return false;
@@ -131,7 +140,7 @@ export function useSpendingData(
     async (userId: string, hasCache: boolean = false) => {
       try {
         if (isDemoMode) {
-          const txList = demoTransactions as Transaction[];
+          const txList = demoTransactions as SpendingTransaction[];
           const now = new Date();
           const today = formatDate(now);
           const lastMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -223,7 +232,7 @@ export function useSpendingData(
           return;
         }
 
-        const txList = (transactions || []) as Transaction[];
+        const txList = (transactions || []) as SpendingTransaction[];
 
         // Calculate spending for different periods
         const lastMonthSpending = calculateSpending(
@@ -401,7 +410,7 @@ export function useSpendingData(
 
       if (!transactions) return;
 
-      const txList = (transactions || []) as Transaction[];
+      const txList = (transactions || []) as SpendingTransaction[];
 
       // Calculate current month expenses
       const currentMonthExpenses = txList
@@ -461,4 +470,3 @@ export function useSpendingData(
     refresh,
   };
 }
-

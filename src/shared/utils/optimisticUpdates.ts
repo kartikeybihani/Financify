@@ -134,6 +134,10 @@ export class OptimisticUpdateManager {
    * Apply optimistic category update to a single transaction object
    */
   static applyCategoryUpdateToTransaction(transaction: Transaction): Transaction {
+    if (!transaction.id) {
+      return transaction;
+    }
+
     const update = this.getCategoryUpdate(transaction.id);
     if (!update) return transaction;
 
@@ -206,6 +210,10 @@ export class OptimisticUpdateManager {
    */
   static revertUpdates(transactions: Transaction[]): Transaction[] {
     const revertedTransactions = transactions.map(transaction => {
+      if (!transaction.id) {
+        return transaction;
+      }
+
       const optimisticUpdate = this.updates.get(transaction.id);
       if (optimisticUpdate) {
         // Revert to original data (remove the optimistic update)

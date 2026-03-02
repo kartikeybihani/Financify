@@ -89,7 +89,9 @@ export async function getPrimaryItemId(): Promise<string | null> {
 }
 
 // === Create Link Token ===
-export const fetchLinkToken = async (institution_id?: string) => {
+export const fetchLinkToken = async (
+  institution_id?: string
+): Promise<string> => {
   const { data: { user } } = await supabase.auth.getUser();
   
   const requestBody: any = { mode: "create", user_id: user?.id };
@@ -119,6 +121,11 @@ export const fetchLinkToken = async (institution_id?: string) => {
   }
   logger.info("📦 Link token response:", { ok: res.ok, hasToken: !!data?.link_token });
   if (!res.ok) throw new Error(data.error || "Failed to get link token");
+
+  if (!data.link_token) {
+    throw new Error("Link token missing from response");
+  }
+
   return data.link_token;
 };
 

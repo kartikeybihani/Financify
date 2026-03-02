@@ -26,6 +26,7 @@ export interface Transaction {
   top_category?: string; // Simplified top-level category (e.g., "Food", "Transportation")
   sub_category?: string; // Simplified sub-category (e.g., "Eating Out", "Groceries")
   new_category?: string; // User-overridden category (legacy - use category_id instead)
+  transaction_type?: string | null;
   category_id?: string | null; // Reference to categories table (preferred way to get category name)
   date: string; // Posted date (when transaction was posted to account)
   authorized_date?: string | null; // Authorization date (when user actually made the transaction) - optional
