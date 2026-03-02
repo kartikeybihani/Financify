@@ -102,13 +102,20 @@ const renderFormattedParagraphs = (
   text.split("\n").map((line, lineIndex) => (
     <Text
       key={`line-${lineIndex}`}
-      style={[baseTextStyle, lineIndex > 0 && styles.paragraphSpacing, paragraphStyle]}
+      style={[
+        baseTextStyle,
+        lineIndex > 0 && styles.paragraphSpacing,
+        paragraphStyle,
+      ]}
     >
       {line.split(/(\*\*[^*]+\*\*)/).map((chunk, chunkIndex) => {
         if (chunk.startsWith("**") && chunk.endsWith("**")) {
           return (
             <Text key={`${lineIndex}-${chunkIndex}`} style={styles.boldText}>
-              {parseTextWithLinks(chunk.slice(2, -2), [baseTextStyle, styles.boldText])}
+              {parseTextWithLinks(chunk.slice(2, -2), [
+                baseTextStyle,
+                styles.boldText,
+              ])}
             </Text>
           );
         }
@@ -212,7 +219,9 @@ export const ChatMessageComponent = memo(
     }, [fadeAnim, translateAnim]);
 
     const messageText =
-      typeof message.text === "string" ? message.text.trim() : String(message.text || "").trim();
+      typeof message.text === "string"
+        ? message.text.trim()
+        : String(message.text || "").trim();
 
     if (!messageText) {
       return null;
@@ -221,7 +230,10 @@ export const ChatMessageComponent = memo(
     const isUser = message.sender === "user";
     const isLastInGroup = nextSender !== message.sender;
     const showFeedback =
-      !isUser && isLastInGroup && message.id !== "welcome" && !message.hideFeedback;
+      !isUser &&
+      isLastInGroup &&
+      message.id !== "welcome" &&
+      !message.hideFeedback;
     const hasActions =
       !isUser && !!message.actions?.length && !message.hideActions;
     const showsDataSurface = hasActions || !!message.stockCandidate?.ticker;
@@ -301,14 +313,14 @@ export const ChatMessageComponent = memo(
                 onPress={() => onThumbUp?.(message.id)}
                 activeOpacity={0.75}
               >
-                <FontAwesome name="thumbs-o-up" size={13} color="#AAB4C3" />
+                <FontAwesome name="thumbs-o-up" size={12} color="#AAB4C3" />
               </TouchableOpacity>
               <TouchableOpacity
                 style={styles.feedbackButton}
                 onPress={() => onThumbDown?.(message.id)}
                 activeOpacity={0.75}
               >
-                <FontAwesome name="thumbs-o-down" size={13} color="#AAB4C3" />
+                <FontAwesome name="thumbs-o-down" size={12} color="#AAB4C3" />
               </TouchableOpacity>
             </View>
           )}
@@ -466,8 +478,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 4,
   },
   feedbackButton: {
-    width: 28,
-    height: 28,
+    width: 23,
+    height: 23,
     borderRadius: 14,
     justifyContent: "center",
     alignItems: "center",

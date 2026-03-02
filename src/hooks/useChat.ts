@@ -599,6 +599,15 @@ export const useChat = (userName?: string | null) => {
     return /^(-\s+|\*\s+|•\s+|\d+\.\s+)/.test(t);
   };
 
+  const getNextNonEmptyLine = (lines: string[], startIndex: number) => {
+    for (let i = Math.max(0, startIndex); i < lines.length; i++) {
+      if (lines[i].trim().length > 0) {
+        return lines[i];
+      }
+    }
+    return "";
+  };
+
   const isBreakpointInListContext = (text: string, breakpointIndex: number) => {
     const start = Math.max(0, breakpointIndex - 200);
     const end = Math.min(text.length, breakpointIndex + 200);
@@ -612,9 +621,17 @@ export const useChat = (userName?: string | null) => {
     const prevLine = lines[Math.max(0, lineIndex - 1)] || "";
     const currLine = lines[Math.max(0, lineIndex)] || "";
     const nextLine = lines[Math.min(lines.length - 1, lineIndex + 1)] || "";
+    const nextNonEmptyLine = getNextNonEmptyLine(lines, lineIndex + 1);
 
     // If we're near list lines, assume it's a list block and avoid splitting.
-    return isListLine(prevLine) || isListLine(currLine) || isListLine(nextLine);
+    // Also avoid splitting right before a list after blank lines, so short lead-in
+    // paragraphs like "Here are the costs:" stay attached to the list they introduce.
+    return (
+      isListLine(prevLine) ||
+      isListLine(currLine) ||
+      isListLine(nextLine) ||
+      isListLine(nextNonEmptyLine)
+    );
   };
 
   const findSplitCandidates = (text: string, allowWeak: boolean): FinnySplitCandidate[] => {
