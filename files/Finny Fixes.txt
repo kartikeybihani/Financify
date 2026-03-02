@@ -33,7 +33,7 @@ Goal: Prevent the worst-case scenario where a user sends a message and receives 
 - Mitigations (Backend):
   - Implement a multi-tier fallback chain with timeouts for the main generation call:
     - Primary: OPENROUTER_MODEL (if configured) OR a default free model.
-    - Secondary: STANDARD_MODEL (e.g., meta-llama/llama-3.2-3b-instruct).
+    - Secondary: STANDARD_MODEL (e.g., meta-llama/llama-4-scout).
     - Optional Tertiary: A different provider/model (e.g., mistral, qwen) to diversify availability.
   - Use withTimeout (12–20s) per attempt; on timeout/non-200, switch to next model.
   - If all fail, emit a final SSE "complete" with a generic apology. Never return empty.
@@ -197,8 +197,8 @@ Testing Playbook
 
 
 Suggested Model Constants (if not already present)
-- SMALLER_MODEL: meta-llama/llama-3.2-3b-instruct:free
-- STANDARD_MODEL: meta-llama/llama-3.2-3b-instruct
+- SMALLER_MODEL: meta-llama/llama-4-scout:free
+- STANDARD_MODEL: meta-llama/llama-4-scout
 - TERTIARY_MODEL: mistralai/mistral-small-latest or qwen/qwen2.5-7b-instruct (adjust to your providers)
 
 

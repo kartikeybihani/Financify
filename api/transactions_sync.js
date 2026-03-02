@@ -31,7 +31,7 @@ import { runRecurringAnalysis } from "../lib/recurringAnalysis.js";
 import crypto from "crypto";
 
 // Budget creation helper functions
-const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
+const STANDARD_MODEL = "meta-llama/llama-4-scout";
 const REASONING_MODEL_PAID_SCOUT =
   process.env.REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
 

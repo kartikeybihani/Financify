@@ -845,9 +845,9 @@ const CLASSIFICATION_MODEL_FREE = process.env.CLASSIFICATION_MODEL_FREE; // meta
 const REASONING_MODEL_PAID_SCOUT = process.env.REASONING_MODEL_PAID_SCOUT; // meta-llama/llama-4-scout
 
 // Memory extraction model - small, fast, free
-const SMALLER_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
+const SMALLER_MODEL = "meta-llama/llama-4-scout:free";
 // Standard non-free model to fallback to when the free model fails
-const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
+const STANDARD_MODEL = "meta-llama/llama-4-scout";
 // Tertiary model for resilience
 const TERTIARY_MODEL = "mistralai/mistral-small-3.1-24b-instruct";
 const MEMORY_LOAD_TIMEOUT_MS = Math.max(

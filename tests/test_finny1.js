@@ -16,8 +16,8 @@
 import "dotenv/config";
 
 // Override classification models for testing - use llama-3.2-3b-instruct
-process.env.CLASSIFICATION_MODEL_PAID = "meta-llama/llama-3.2-3b-instruct";
-process.env.CLASSIFICATION_MODEL_FREE = "meta-llama/llama-3.2-3b-instruct:free";
+process.env.CLASSIFICATION_MODEL_PAID = "meta-llama/llama-4-scout";
+process.env.CLASSIFICATION_MODEL_FREE = "meta-llama/llama-4-scout:free";
 
 import { handleClassify, handleAsk, handleOffTopic } from "../api/finny.js";
 import { loadUserMemory, loadUserProfile } from "../lib/memoryUtils.js";
@@ -59,7 +59,7 @@ async function testFullPipeline(message) {
       classification.missing_fields.length > 0
     ) {
       console.log(
-        `  missing_fields: ${JSON.stringify(classification.missing_fields)}`
+        `  missing_fields: ${JSON.stringify(classification.missing_fields)}`,
       );
     }
 
@@ -93,7 +93,7 @@ async function testFullPipeline(message) {
       response = await handleOffTopic(
         message,
         contextWithData,
-        null // conversationContext
+        null, // conversationContext
       );
     } else {
       // Determine intent for handleAsk
@@ -111,7 +111,7 @@ async function testFullPipeline(message) {
         null, // conversationContext
         null, // requestTimings
         false, // wantsStreaming
-        null // res
+        null, // res
       );
     }
 
@@ -143,7 +143,7 @@ async function testFullPipeline(message) {
     console.log("=".repeat(80));
     console.log(`  intent_type: ${classification.intent_type || "null"}`);
     console.log(
-      `  decisionRisk (final, post-adjustment): ${finalDecisionRisk}`
+      `  decisionRisk (final, post-adjustment): ${finalDecisionRisk}`,
     );
     console.log(`  clarification_triggered: ${clarificationTriggered}`);
     console.log(`\n  Response message:`);
@@ -151,7 +151,7 @@ async function testFullPipeline(message) {
     if (Array.isArray(response.message)) {
       // Response was split into multiple chunks by splitLongResponse() in handleAsk
       console.log(
-        `  (Split into ${response.message.length} chunks by backend)`
+        `  (Split into ${response.message.length} chunks by backend)`,
       );
       response.message.forEach((m, i) => {
         const content = m.content || m;
@@ -171,17 +171,17 @@ async function testFullPipeline(message) {
     console.log(
       `  ⏱️  Total Time (Message → Reply): ${timings.total}ms (${(
         timings.total / 1000
-      ).toFixed(2)}s)`
+      ).toFixed(2)}s)`,
     );
     console.log(
       `  📋 Classification Time: ${timings.classification}ms (${(
         timings.classification / 1000
-      ).toFixed(2)}s)`
+      ).toFixed(2)}s)`,
     );
     console.log(
       `  💬 Handler Time: ${timings.handler}ms (${(
         timings.handler / 1000
-      ).toFixed(2)}s)`
+      ).toFixed(2)}s)`,
     );
     console.log(
       `  📊 Breakdown: ${(
@@ -190,7 +190,7 @@ async function testFullPipeline(message) {
       ).toFixed(1)}% classification, ${(
         (timings.handler / timings.total) *
         100
-      ).toFixed(1)}% handler`
+      ).toFixed(1)}% handler`,
     );
 
     return {

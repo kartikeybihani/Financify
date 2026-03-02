@@ -27,10 +27,10 @@ export const REASONING_MODEL_PAID_SCOUT =
   process.env.REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
 
 // Memory extraction model - small, fast, free
-export const SMALLER_MODEL = "meta-llama/llama-3.2-3b-instruct:free";
+export const SMALLER_MODEL = "meta-llama/llama-4-scout:free";
 
 // Standard non-free model to fallback to when the free model fails
-export const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
+export const STANDARD_MODEL = "meta-llama/llama-4-scout";
 
 // Tertiary model for resilience
 export const TERTIARY_MODEL = "mistralai/mistral-small-3.1-24b-instruct";

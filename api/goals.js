@@ -18,7 +18,7 @@ function redactPII(text) {
   // Redact email addresses
   text = text.replace(
     /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g,
-    "[EMAIL]"
+    "[EMAIL]",
   );
   // Redact phone numbers
   text = text.replace(/\b\d{3}[-.]?\d{3}[-.]?\d{4}\b/g, "[PHONE]");
@@ -32,7 +32,7 @@ async function withTimeout(
   timeoutMs = 10000,
   onTimeoutValue = null,
   onTimeout = null,
-  label = "Operation"
+  label = "Operation",
 ) {
   const startTime = Date.now();
   let timeoutId;
@@ -42,7 +42,7 @@ async function withTimeout(
     timeoutId = setTimeout(() => {
       const duration = Date.now() - startTime;
       console.error(
-        `⏱️  [TIMEOUT] ${label} timed out after ${duration}ms (limit: ${timeoutMs}ms)`
+        `⏱️  [TIMEOUT] ${label} timed out after ${duration}ms (limit: ${timeoutMs}ms)`,
       );
       if (typeof onTimeout === "function") {
         try {
@@ -69,7 +69,7 @@ async function withTimeout(
           const duration = Date.now() - startTime;
           console.error(
             `⏱️  [TIMEOUT] ${label} errored in ${duration}ms:`,
-            err.message
+            err.message,
           );
           throw err;
         }),
@@ -101,7 +101,7 @@ function logConversation(logData) {
         } catch (e2) {
           console.error(
             "❌ [LOGGING] Failed to log conversation (fallback):",
-            e2
+            e2,
           );
           return;
         }
@@ -185,41 +185,41 @@ function parseTargetDate(text) {
 
   // Patterns like "by Dec", "by December 15", "by 12/31/2025", "by December 2025", "next month", "in 6 weeks"
   const byDate = normalizedText.match(
-    /\bby\s+([a-zA-Z]+\s+\d{1,2}(?:,\s*\d{4})?|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?|[a-zA-Z]+\s+\d{4}|[a-zA-Z]+)\b/i
+    /\bby\s+([a-zA-Z]+\s+\d{1,2}(?:,\s*\d{4})?|\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?|[a-zA-Z]+\s+\d{4}|[a-zA-Z]+)\b/i,
   );
   const onDate = normalizedText.match(
-    /\b(on|by)\s+(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/i
+    /\b(on|by)\s+(\d{1,2}[\/\-]\d{1,2}(?:[\/\-]\d{2,4})?)\b/i,
   );
   const monthOnly = normalizedText.match(
-    /\bby\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i
+    /\bby\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i,
   );
   const nextMonth = /\bnext\s+month\b/i.test(text);
   const inWeeks = text.match(/\bin\s+(\d{1,2})\s+weeks?\b/i);
   const inMonths = text.match(/\bin\s+(\d{1,2})\s+months?\b/i);
   const bareMonths = text.match(/\b(\d{1,2})\s+months?\b/i);
   const ddMonthYYYY = text.match(
-    /\bby\s+(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(\d{4})?\b/i
+    /\bby\s+(\d{1,2})\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s*(\d{4})?\b/i,
   );
   const monthYYYY = text.match(
-    /\bby\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})\b/i
+    /\bby\s+(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\s+(\d{4})\b/i,
   );
   // NEW: Standalone month-year patterns (without "by" prefix)
   const standaloneMonthYYYY = text.match(
-    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})\b/i
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})\b/i,
   );
   const standaloneDdMonthYYYY = text.match(
-    /\b(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})\b/i
+    /\b(\d{1,2})\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\s+(\d{4})\b/i,
   );
   const standaloneMonthOnly = text.match(
-    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i
+    /\b(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i,
   );
 
   // Handle "next" + seasonal terms and years
   const nextSeason = normalizedText.match(
-    /\bnext\s+(spring|summer|fall|autumn|winter|year)\b/i
+    /\bnext\s+(spring|summer|fall|autumn|winter|year)\b/i,
   );
   const nextMonthPattern = normalizedText.match(
-    /\bnext\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i
+    /\bnext\s+(jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t)?(?:ember)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)\b/i,
   );
   const nextYear = /\bnext\s+year\b/i.test(normalizedText);
   const inYear = normalizedText.match(/\bin\s+(\d{4})\b/i);
@@ -275,19 +275,19 @@ function parseTargetDate(text) {
     d = new Date(now.getFullYear(), now.getMonth() + 1, 1);
   } else if (inWeeks && inWeeks[1]) {
     d = new Date(
-      now.getTime() + parseInt(inWeeks[1]) * 7 * 24 * 60 * 60 * 1000
+      now.getTime() + parseInt(inWeeks[1]) * 7 * 24 * 60 * 60 * 1000,
     );
   } else if (inMonths && inMonths[1]) {
     d = new Date(
       now.getFullYear(),
       now.getMonth() + parseInt(inMonths[1]),
-      now.getDate()
+      now.getDate(),
     );
   } else if (bareMonths && bareMonths[1]) {
     d = new Date(
       now.getFullYear(),
       now.getMonth() + parseInt(bareMonths[1]),
-      now.getDate()
+      now.getDate(),
     );
   } else if (
     ddMonthYYYY &&
@@ -314,7 +314,7 @@ function parseTargetDate(text) {
       d = new Date(
         parseInt(ddMonthYYYY[3]),
         monthNum,
-        parseInt(ddMonthYYYY[1])
+        parseInt(ddMonthYYYY[1]),
       );
     }
   } else if (monthYYYY && monthYYYY[1] && monthYYYY[2]) {
@@ -408,7 +408,7 @@ function parseTargetDate(text) {
       d = new Date(
         parseInt(standaloneDdMonthYYYY[3]),
         monthNum,
-        parseInt(standaloneDdMonthYYYY[1])
+        parseInt(standaloneDdMonthYYYY[1]),
       );
     }
   } else if (standaloneMonthOnly && standaloneMonthOnly[1]) {
@@ -537,7 +537,7 @@ function extractLabel(text) {
     t.match(/goal\s+for\s+(.*?)(?:\s+for|\s+by|\s+in|\s+on|\s*\$|\s*\d|$)/i) ||
     t.match(/add\s+a?\s*goal\s*(?:for|to)?\s*(.*)/i) ||
     t.match(
-      /i\s*want\s*to\s*(?:add|set)\s*(?:a\s*)?goal\s*(?:for|to)?\s*(.*)/i
+      /i\s*want\s*to\s*(?:add|set)\s*(?:a\s*)?goal\s*(?:for|to)?\s*(.*)/i,
     );
   const raw = m && m[1] ? m[1].trim() : t;
   return raw.replace(/^[,\s:-]+|[,\s:-]+$/g, "").slice(0, 60) || null;
@@ -589,7 +589,7 @@ async function extractGoalIntent(message, context) {
     ];
 
     const hasGoalKeywords = goalKeywords.some((keyword) =>
-      message.toLowerCase().includes(keyword)
+      message.toLowerCase().includes(keyword),
     );
 
     const extractionPrompt = `
@@ -602,7 +602,7 @@ User context:
         label: g.label,
         amount: g.target_amount,
         date: g.target_date,
-      }))
+      })),
     )}
 - Net worth: $${userIncome}
 - Recent spending categories: ${JSON.stringify(userSpending.slice(0, 5))}
@@ -656,7 +656,7 @@ RULES:
             },
           ],
         }),
-      }
+      },
     );
 
     if (!response.ok) {
@@ -723,7 +723,7 @@ async function analyzeGoalFeasibility(goalData, userContext) {
     const monthlySpending = userContext?.transactions?.spendByCategory || [];
     const totalMonthlySpend = monthlySpending.reduce(
       (sum, cat) => sum + (cat.total_spend || 0),
-      0
+      0,
     );
     const estimatedMonthlyIncome = totalMonthlySpend * 1.2; // Rough estimate
 
@@ -739,7 +739,7 @@ User context:
         label: g.label,
         amount: g.target_amount,
         date: g.target_date,
-      }))
+      })),
     )}
 - Monthly spending: $${totalMonthlySpend}
 
@@ -784,7 +784,7 @@ RULES:
             },
           ],
         }),
-      }
+      },
     );
 
     if (!response.ok) {
@@ -863,7 +863,7 @@ async function handleGoalConversation(message, context) {
     const m = (message || "").toLowerCase();
     const wantsList =
       /\b(what are|show|list|see)\b.*\b(my|current)\b.*\b(goal|goals)\b/.test(
-        m
+        m,
       ) || /\b(my goals|current goals|goals overview)\b/.test(m);
 
     if (wantsList) {
@@ -886,7 +886,7 @@ async function handleGoalConversation(message, context) {
       return await handleGoalQuestion(
         { intent: "goal_question" },
         context,
-        message
+        message,
       );
     }
 
@@ -996,7 +996,7 @@ async function handleGoalCreation(extraction, context, message) {
     if (analysis.conflicts_with_existing.length > 0) {
       return {
         message: `⚠️ Heads up! This goal might conflict with your existing goals: ${analysis.conflicts_with_existing.join(
-          ", "
+          ", ",
         )}. ${analysis.advice}`,
         type: "assistant",
         intent: "goal_conversation",
@@ -1133,7 +1133,7 @@ async function handleGoalCreation(extraction, context, message) {
       label: "Cancel Goal",
       action: "cancel_goal",
       style: "secondary",
-    }
+    },
   );
 
   return {
@@ -1155,7 +1155,7 @@ async function handleGoalAdvice(extraction, context, message) {
   if (extraction.extracted.target_amount && extraction.extracted.target_date) {
     const analysis = await analyzeGoalFeasibility(
       extraction.extracted,
-      context
+      context,
     );
 
     let response = `${analysis.encouragement} `;
@@ -1170,7 +1170,7 @@ async function handleGoalAdvice(extraction, context, message) {
 
     if (analysis.suggestions.length > 0) {
       response += `\n\n💡 Here are some alternatives: ${analysis.suggestions.join(
-        ", "
+        ", ",
       )}`;
     }
 
@@ -1283,7 +1283,7 @@ async function createGoalFromSlots(
   slots,
   context,
   analysis,
-  showConfirmation = true
+  showConfirmation = true,
 ) {
   const userId = context?.user_id;
 
@@ -1304,7 +1304,7 @@ async function createGoalFromSlots(
     confirmationMessage += `📋 **Goal Details:**\n`;
     confirmationMessage += `• **Name:** ${slots.label}\n`;
     confirmationMessage += `• **Target Amount:** $${Number(
-      slots.target_amount
+      slots.target_amount,
     ).toLocaleString()}\n`;
     confirmationMessage += `• **Target Date:** ${formattedDate}\n`;
     confirmationMessage += `• **Category:** ${slots.category}\n\n`;
@@ -1383,9 +1383,8 @@ async function createGoalFromSlots(
     if (data && userId) {
       setImmediate(async () => {
         try {
-          const { storeGoalCreationMemory } = await import(
-            "../lib/memoryUtils.js"
-          );
+          const { storeGoalCreationMemory } =
+            await import("../lib/memoryUtils.js");
           await storeGoalCreationMemory(
             userId,
             {
@@ -1402,7 +1401,7 @@ async function createGoalFromSlots(
               chat_id: context?.chat_id,
               analysis: analysis,
               goal_flow_stage: "completed",
-            }
+            },
           );
         } catch (error) {
           console.error("❌ [GOAL MEMORY] Failed to store goal memory:", error);
@@ -1467,14 +1466,14 @@ async function handleGoal(message, context) {
 
   // Improve label parsing to avoid echoing the whole sentence
   const labelFromFor = message.match(
-    /\bgoal\b.*?\bfor\b\s+([^$\d\n]+?)(?:\s+for|\s+by|\s+in|\s+on|\s*\$|\s*\d|$)/i
+    /\bgoal\b.*?\bfor\b\s+([^$\d\n]+?)(?:\s+for|\s+by|\s+in|\s+on|\s*\$|\s*\d|$)/i,
   );
   const labelAlt = message.match(
-    /\bfor\b\s+([^$\d\n]+?)(?:\s+by|\s+in|\s+on|\s*\$|\s*\d|$)/i
+    /\bfor\b\s+([^$\d\n]+?)(?:\s+by|\s+in|\s+on|\s*\$|\s*\d|$)/i,
   );
   // Handle "Create a [ITEM] goal" pattern
   const labelFromCreatePattern = message.match(
-    /(?:create|set|add)\s+(?:a\s+)?([^$\d\n]+?)\s+goal(?:\s+of|\s+for|\s|$)/i
+    /(?:create|set|add)\s+(?:a\s+)?([^$\d\n]+?)\s+goal(?:\s+of|\s+for|\s|$)/i,
   );
   const lbl =
     (labelFromFor && labelFromFor[1]) ||
@@ -1690,7 +1689,7 @@ Ready to create this goal?`;
         cached: false,
         request_id: generateRequestId(),
         metrics: { intent: "goal", latency_ms: { insert: latency } },
-      })
+      }),
     );
 
     const niceAmt = `$${Number(goalRow.target_amount).toLocaleString()}`;
@@ -1718,8 +1717,8 @@ You're officially on your financial journey now. This is such a great step forwa
 // LLM Model constants (same as finny.js)
 const REASONING_MODEL_PAID_SCOUT =
   process.env.REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
-const STANDARD_MODEL = "meta-llama/llama-3.2-3b-instruct";
-const TERTIARY_MODEL = "mistralai/mistral-small-3.1-24b-instruct";
+const STANDARD_MODEL = "meta-llama/llama-4-scout";
+const TERTIARY_MODEL = "meta-llama/llama-4-scout";
 // Keep total analysis runtime safely under Vercel's 60s maxDuration.
 const ANALYSIS_TOTAL_BUDGET_MS = 50000;
 
@@ -1732,7 +1731,7 @@ async function callWithFallback(
   callFn,
   timeoutMs,
   label = "LLM",
-  options = {}
+  options = {},
 ) {
   const baseTimeoutMs = timeoutMs;
   const deadlineMs = options.deadlineMs;
@@ -1770,7 +1769,7 @@ async function callWithFallback(
         attemptTimeoutMs,
         { __timeout: true },
         () => controller.abort(),
-        `${label} (${model})`
+        `${label} (${model})`,
       );
       if (result && (result.__timeout || result.__aborted)) {
         throw new Error(`${label} timeout after ${attemptTimeoutMs}ms`);
@@ -1780,7 +1779,7 @@ async function callWithFallback(
       lastErr = err;
       console.warn(
         `⚠️ [GOAL ANALYSIS] ${label} failed for model ${model}:`,
-        err?.message
+        err?.message,
       );
     }
   }
@@ -1815,7 +1814,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
     const heartbeat = setInterval(() => {
       const elapsed = Date.now() - allSettledStartTime;
       console.log(
-        `    💓 [HEARTBEAT] Event loop active - ${elapsed}ms elapsed`
+        `    💓 [HEARTBEAT] Event loop active - ${elapsed}ms elapsed`,
       );
     }, 5000);
 
@@ -1825,7 +1824,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
     });
     setTimeout(() => {
       console.log(
-        "    💓 [HEARTBEAT] Initial heartbeat fired (setTimeout 100ms)"
+        "    💓 [HEARTBEAT] Initial heartbeat fired (setTimeout 100ms)",
       );
     }, 100);
 
@@ -1845,13 +1844,13 @@ async function analyzeGoalWithLLM(goalData, userId) {
         5000, // 5 second timeout - resolves to null on timeout
         null, // Return null on timeout instead of rejecting
         null,
-        "Composite Financial Data"
+        "Composite Financial Data",
       )
         .then((result) => {
           if (!result || result.error) {
             console.error(
               "    ❌ Composite RPC failed:",
-              result?.error?.message
+              result?.error?.message,
             );
             return {
               net_worth: null,
@@ -1867,22 +1866,22 @@ async function analyzeGoalWithLLM(goalData, userId) {
             console.log(
               `    ✅ Net worth: $${
                 data.net_worth.net_worth?.toLocaleString() || 0
-              }`
+              }`,
             );
           }
           if (data.recent_transactions?.length) {
             console.log(
-              `    ✅ Transactions: ${data.recent_transactions.length} found`
+              `    ✅ Transactions: ${data.recent_transactions.length} found`,
             );
           }
           if (data.spend_by_category?.length) {
             console.log(
-              `    ✅ Spending categories: ${data.spend_by_category.length} found`
+              `    ✅ Spending categories: ${data.spend_by_category.length} found`,
             );
           }
           if (data.cashflow?.length) {
             console.log(
-              `    ✅ Cashflow months: ${data.cashflow.length} found`
+              `    ✅ Cashflow months: ${data.cashflow.length} found`,
             );
           }
           return data;
@@ -1904,14 +1903,14 @@ async function analyzeGoalWithLLM(goalData, userId) {
         3000,
         null,
         null,
-        "User Profile"
+        "User Profile",
       )
         .then((result) => {
           if (result) {
             console.log(
               `    ✅ Profile: ${result.name || "N/A"} (${
                 result.finny_style || "conversational"
-              } style)`
+              } style)`,
             );
           }
           return result;
@@ -1924,7 +1923,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
         goalData.category || ""
       } goal savings financial`.trim();
       console.log(
-        `    🔍 [SUPERMEMORY] Searching memories with query: "${goalQuery}"`
+        `    🔍 [SUPERMEMORY] Searching memories with query: "${goalQuery}"`,
       );
 
       const supermemoryWithTimeout = withTimeout(
@@ -1936,7 +1935,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
               {
                 limit: 10,
                 threshold: 0.4,
-              }
+              },
             );
 
             // Transform Supermemory results to expected format
@@ -1965,7 +1964,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
               .filter(Boolean);
 
             console.log(
-              `    ✅ [SUPERMEMORY] Found ${memories.length} relevant memories`
+              `    ✅ [SUPERMEMORY] Found ${memories.length} relevant memories`,
             );
 
             return {
@@ -1975,7 +1974,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
           } catch (error) {
             console.error(
               `    ❌ [SUPERMEMORY] Error searching memories:`,
-              error.message
+              error.message,
             );
             return { memories: [], totalCount: 0 };
           }
@@ -1983,13 +1982,13 @@ async function analyzeGoalWithLLM(goalData, userId) {
         2000, // 2 second timeout
         { memories: [], totalCount: 0 }, // Return empty on timeout
         null,
-        "Supermemory Search"
+        "Supermemory Search",
       );
 
       const isTestId =
         goalData.id &&
         !goalData.id.match(
-          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
         );
       let goalsQuery = supabase
         .from("goals")
@@ -2004,7 +2003,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
         3000,
         { data: [] },
         null,
-        "Current Goals"
+        "Current Goals",
       )
         .then((result) => {
           if (result?.data) {
@@ -2023,7 +2022,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
           budget_entries (
             *
           )
-        `
+        `,
           )
           .eq("user_id", userId)
           .eq("status", "active")
@@ -2033,7 +2032,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
         3000,
         { data: null },
         null,
-        "Budget"
+        "Budget",
       )
         .then((result) => {
           if (result?.data) {
@@ -2060,10 +2059,10 @@ async function analyzeGoalWithLLM(goalData, userId) {
     const allSettledDuration = Date.now() - allSettledStartTime;
     const fetchTime = Date.now() - fetchStartTime;
     console.log(
-      `✅ [GOAL ANALYSIS] Promise.allSettled resolved in ${allSettledDuration}ms (total fetch time: ${fetchTime}ms)`
+      `✅ [GOAL ANALYSIS] Promise.allSettled resolved in ${allSettledDuration}ms (total fetch time: ${fetchTime}ms)`,
     );
     console.log(
-      `    📊 [GOAL ANALYSIS] Processing ${results.length} settled results...`
+      `    📊 [GOAL ANALYSIS] Processing ${results.length} settled results...`,
     );
 
     // Extract results from Promise.allSettled
@@ -2082,7 +2081,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
       } else {
         console.error(
           `    ⚠️ [${label || "Unknown"}] Promise rejected:`,
-          settledResult.reason?.message || settledResult.reason
+          settledResult.reason?.message || settledResult.reason,
         );
         return defaultValue;
       }
@@ -2098,19 +2097,19 @@ async function analyzeGoalWithLLM(goalData, userId) {
         spend_by_category: [],
         cashflow: [],
       },
-      "Composite Financial Data"
+      "Composite Financial Data",
     );
 
     const userProfile = getValue(userProfileResult, null, "User Profile");
     const supermemoryProfile = getValue(
       supermemoryProfileResult,
       { memories: [], totalCount: 0 },
-      "Supermemory Search"
+      "Supermemory Search",
     );
     const currentGoals = getValue(
       currentGoalsResult,
       { data: [] },
-      "Current Goals"
+      "Current Goals",
     );
     const budgetPeriod = getValue(budgetPeriodResult, { data: null }, "Budget");
 
@@ -2118,7 +2117,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
     const successCount = results.filter((r) => r.status === "fulfilled").length;
     const failureCount = results.filter((r) => r.status === "rejected").length;
     console.log(
-      `📊 [GOAL ANALYSIS] Data fetch summary: ${successCount} succeeded, ${failureCount} failed`
+      `📊 [GOAL ANALYSIS] Data fetch summary: ${successCount} succeeded, ${failureCount} failed`,
     );
 
     // Process financial data from composite result
@@ -2142,11 +2141,11 @@ async function analyzeGoalWithLLM(goalData, userId) {
     if (budget && budget.budget_entries) {
       // Only include entries that have a valid category_id (scope_type="category" entries should have category_id)
       const validEntries = budget.budget_entries.filter(
-        (entry) => entry.category_id != null
+        (entry) => entry.category_id != null,
       );
       const totalBudget = validEntries.reduce(
         (sum, entry) => sum + Number(entry.limit_amount || 0),
-        0
+        0,
       );
       formattedBudget = {
         currency_code: budget.currency_code || "USD",
@@ -2171,11 +2170,11 @@ async function analyzeGoalWithLLM(goalData, userId) {
       base: {
         liquidAssets: Math.round(toFiniteNumber(netWorthRecord?.liquid_assets)),
         totalLiabilities: Math.round(
-          toFiniteNumber(netWorthRecord?.total_liabilities)
+          toFiniteNumber(netWorthRecord?.total_liabilities),
         ),
         netWorth: Math.round(toFiniteNumber(netWorthRecord?.net_worth)),
         investmentsTotal: Math.round(
-          toFiniteNumber(netWorthRecord?.investments_total)
+          toFiniteNumber(netWorthRecord?.investments_total),
         ),
         accounts: Array.isArray(netWorthRecord?.bank_accounts)
           ? netWorthRecord.bank_accounts
@@ -2236,7 +2235,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
             max_tokens: 2000,
           }),
           signal: options.signal,
-        }
+        },
       );
 
       if (!response.ok) {
@@ -2248,7 +2247,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
           errorDetails = errorText;
         }
         throw new Error(
-          `OpenRouter error ${response.status}: ${JSON.stringify(errorDetails)}`
+          `OpenRouter error ${response.status}: ${JSON.stringify(errorDetails)}`,
         );
       }
 
@@ -2261,7 +2260,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
       callLLM,
       30000, // 30 second timeout
       "Goal Analysis LLM",
-      { deadlineMs: analysisDeadlineMs }
+      { deadlineMs: analysisDeadlineMs },
     );
 
     const content =
@@ -2273,7 +2272,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
 
     console.log(
       "✅ [GOAL ANALYSIS] Analysis generated, length:",
-      content.length
+      content.length,
     );
 
     // Store analysis in database
@@ -2289,7 +2288,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
       // This can happen if the goal doesn't exist in the DB (e.g., during testing)
       // Attach the analysis to the error so caller can access it
       const errorWithAnalysis = new Error(
-        `Analysis generated but DB update failed: ${updateError.message}`
+        `Analysis generated but DB update failed: ${updateError.message}`,
       );
       errorWithAnalysis.analysis = content;
       errorWithAnalysis.dbUpdateFailed = true;
@@ -2358,9 +2357,8 @@ export default async function handler(req, res) {
         : null;
 
     if (token) {
-      const { data: authData, error: authError } = await supabase.auth.getUser(
-        token
-      );
+      const { data: authData, error: authError } =
+        await supabase.auth.getUser(token);
       if (!authError && authData?.user?.id) {
         userId = authData.user.id;
       }
@@ -2410,7 +2408,7 @@ export default async function handler(req, res) {
       // because timers/callbacks wouldn't run once the invocation was considered complete.
       // To make this reliable, we run analysis within the request lifecycle.
       console.log(
-        `🧠 [GOAL_ANALYZE] Running analysis inline (await) for goal: ${goalId}`
+        `🧠 [GOAL_ANALYZE] Running analysis inline (await) for goal: ${goalId}`,
       );
 
       const analysis = await analyzeGoalWithLLM(goal, userId);
