@@ -1785,7 +1785,11 @@ export default async function handler(req, res) {
   const finalUserId = serverUserId || context?.user_id;
   const chatIdRaw = bodyChatId ?? body.chat_id ?? context?.chat_id ?? null;
   const chatId = chatIdRaw || null;
-  if (!chatIdRaw && !shouldSuppressLogs) {
+  if (
+    !chatIdRaw &&
+    action !== "prebuild_context" &&
+    !shouldSuppressLogs
+  ) {
     logWarn(`⚠️ [FINNY] chat_id missing for action=${action}`);
   }
 
