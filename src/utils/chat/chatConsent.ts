@@ -1,6 +1,12 @@
 import { supabase } from "@/src/lib/supabase/supabase";
 
-export async function persistChatAiConsent(
+export const CHAT_MEMORY_CONSENT_KEY = "chat_memory_consent_v2";
+export const ONBOARDING_AI_CONSENT_KEY = "onboarding_ai_consent_v1";
+
+export const getAiConsentStorageKey = (consentKey: string, userId: string) =>
+  `${consentKey}:${userId}`;
+
+export async function persistAiConsent(
   userId: string,
   consentKey: string,
   source = "chat_privacy_sheet",
@@ -21,4 +27,12 @@ export async function persistChatAiConsent(
   if (error) {
     throw error;
   }
+}
+
+export async function persistChatAiConsent(
+  userId: string,
+  consentKey: string,
+  source = "chat_privacy_sheet",
+) {
+  await persistAiConsent(userId, consentKey, source);
 }

@@ -3,6 +3,10 @@
 // Also handles DELETE and PUT for memory operations
 import { supabase } from "../lib/api/supabase.js";
 import {
+  hasAcceptedAiConsent,
+  ONBOARDING_AI_CONSENT_KEY,
+} from "../lib/aiConsent.js";
+import {
   fetchSupermemoryProfile,
   fetchSupermemoryProfileWithTimeout,
   fetchSupermemoryMemoriesList,
@@ -264,6 +268,21 @@ export default async function handler(req, res) {
       console.log(`🔍 [MEMORY_API] POST request - type: ${type}`);
 
       if (type === "onboarding_profile") {
+        const hasOnboardingConsent = await hasAcceptedAiConsent(
+          supabase,
+          serverUserId,
+          ONBOARDING_AI_CONSENT_KEY
+        );
+
+        if (!hasOnboardingConsent) {
+          console.log(
+            `⛔ [MEMORY_API] POST blocked - missing onboarding AI consent for ${serverUserId}`
+          );
+          return res.status(403).json({
+            error: "Onboarding AI consent required",
+          });
+        }
+
         // Store onboarding memory
         const { profileData, intentAnswers } = req.body;
         console.log(

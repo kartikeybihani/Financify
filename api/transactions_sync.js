@@ -29,6 +29,10 @@ import {
 import { getColorForCategoryName } from "../lib/categoryColors.js";
 import { runRecurringAnalysis } from "../lib/recurringAnalysis.js";
 import crypto from "crypto";
+import {
+  hasAcceptedAiConsent,
+  ONBOARDING_AI_CONSENT_KEY,
+} from "../lib/aiConsent.js";
 
 // Budget creation helper functions
 const STANDARD_MODEL = "meta-llama/llama-4-scout";
@@ -1457,6 +1461,12 @@ export default async function handler(req, res) {
       });
     }
 
+    const hasOnboardingAiConsent = await hasAcceptedAiConsent(
+      supabase,
+      userId,
+      ONBOARDING_AI_CONSENT_KEY,
+    );
+
     // Fetch user_id and transactions_cursor together in one query for efficiency
     const { data: itemData, error: fetchErr } = await supabase
       .from("user_items")
@@ -2406,7 +2416,11 @@ export default async function handler(req, res) {
 
     // 7.4) Run Finny recurring analysis AFTER transactions are synced (new account connect)
     // Must run after transaction upsert so analysis has data to work with
-    if (added.length > 0) {
+    if (!hasOnboardingAiConsent) {
+      console.log("[TRANSACTIONS_SYNC] recurring analysis: skipped (no consent)", {
+        userId,
+      });
+    } else if (added.length > 0) {
       try {
         console.log("[TRANSACTIONS_SYNC] recurring analysis: start", {
           userId,
@@ -2440,14 +2454,19 @@ export default async function handler(req, res) {
     // 7.5) Generate onboarding early_insights (best-effort, does not block sync)
     // Runs after transactions have been written, so it can read from DB.
     // Stores raw JSON in `profiles.early_insights`.
-    try {
-      console.log("[TRANSACTIONS_SYNC] early_insights: start", {
+    if (!hasOnboardingAiConsent) {
+      console.log("[TRANSACTIONS_SYNC] early_insights: skipped (no consent)", {
         userId,
-        item_id,
-        added: added.length,
-        modified: modified.length,
-        removed: removed.length,
       });
+    } else {
+      try {
+        console.log("[TRANSACTIONS_SYNC] early_insights: start", {
+          userId,
+          item_id,
+          added: added.length,
+          modified: modified.length,
+          removed: removed.length,
+        });
 
       const { data: profile, error: profileErr } = await supabase
         .from("profiles")
@@ -2688,32 +2707,33 @@ export default async function handler(req, res) {
           }
         }
       }
-    } catch (err) {
-      console.error(
-        "[TRANSACTIONS_SYNC] early_insights error (non-blocking)",
-        err,
-      );
-      // Store error marker on exception too
-      try {
-        const { error: upsertErr } = await supabase.from("profiles").upsert(
-          {
-            id: userId,
-            early_insights: { error: "LLM_FAILED" },
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" },
+      } catch (err) {
+        console.error(
+          "[TRANSACTIONS_SYNC] early_insights error (non-blocking)",
+          err,
         );
-        if (upsertErr) {
+        // Store error marker on exception too
+        try {
+          const { error: upsertErr } = await supabase.from("profiles").upsert(
+            {
+              id: userId,
+              early_insights: { error: "LLM_FAILED" },
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "id" },
+          );
+          if (upsertErr) {
+            console.error(
+              "[TRANSACTIONS_SYNC] early_insights: error marker upsert failed (exception path)",
+              upsertErr,
+            );
+          }
+        } catch (markerErr) {
           console.error(
-            "[TRANSACTIONS_SYNC] early_insights: error marker upsert failed (exception path)",
-            upsertErr,
+            "[TRANSACTIONS_SYNC] Failed to store error marker",
+            markerErr,
           );
         }
-      } catch (markerErr) {
-        console.error(
-          "[TRANSACTIONS_SYNC] Failed to store error marker",
-          markerErr,
-        );
       }
     }
 
@@ -2721,13 +2741,18 @@ export default async function handler(req, res) {
     // Runs after transactions have been written, so it can read from DB.
     // Stores raw JSON in `profiles.base_analysis`.
     // Only runs if base_analysis doesn't already exist (first account connection).
-    try {
-      const { data: profileForAnalysis, error: profileAnalysisErr } =
-        await supabase
-          .from("profiles")
-          .select("id, base_analysis")
-          .eq("id", userId)
-          .maybeSingle();
+    if (!hasOnboardingAiConsent) {
+      console.log("[TRANSACTIONS_SYNC] base_analysis: skipped (no consent)", {
+        userId,
+      });
+    } else {
+      try {
+        const { data: profileForAnalysis, error: profileAnalysisErr } =
+          await supabase
+            .from("profiles")
+            .select("id, base_analysis")
+            .eq("id", userId)
+            .maybeSingle();
 
       if (profileAnalysisErr) {
         console.error(
@@ -2895,32 +2920,33 @@ export default async function handler(req, res) {
           }
         }
       }
-    } catch (err) {
-      console.error(
-        "[TRANSACTIONS_SYNC] base_analysis error (non-blocking)",
-        err,
-      );
-      // Store error marker on exception too
-      try {
-        const { error: upsertErr } = await supabase.from("profiles").upsert(
-          {
-            id: userId,
-            base_analysis: { error: "LLM_FAILED" },
-            updated_at: new Date().toISOString(),
-          },
-          { onConflict: "id" },
+      } catch (err) {
+        console.error(
+          "[TRANSACTIONS_SYNC] base_analysis error (non-blocking)",
+          err,
         );
-        if (upsertErr) {
+        // Store error marker on exception too
+        try {
+          const { error: upsertErr } = await supabase.from("profiles").upsert(
+            {
+              id: userId,
+              base_analysis: { error: "LLM_FAILED" },
+              updated_at: new Date().toISOString(),
+            },
+            { onConflict: "id" },
+          );
+          if (upsertErr) {
+            console.error(
+              "[TRANSACTIONS_SYNC] base_analysis: error marker upsert failed (exception path)",
+              upsertErr,
+            );
+          }
+        } catch (markerErr) {
           console.error(
-            "[TRANSACTIONS_SYNC] base_analysis: error marker upsert failed (exception path)",
-            upsertErr,
+            "[TRANSACTIONS_SYNC] Failed to store error marker",
+            markerErr,
           );
         }
-      } catch (markerErr) {
-        console.error(
-          "[TRANSACTIONS_SYNC] Failed to store error marker",
-          markerErr,
-        );
       }
     }
 
@@ -2930,16 +2956,23 @@ export default async function handler(req, res) {
 
     // 8) Detect notification patterns (fire and forget - don't block response)
     // Always run pattern detection, even if no new transactions - analyzes last 60 days
-    (async () => {
-      try {
-        const { detectNotificationPatterns } =
-          await import("../lib/notificationPatternDetection.js");
-        await detectNotificationPatterns(userId, added);
-      } catch (error) {
-        console.error("[TRANSACTIONS_SYNC] Pattern detection error:", error);
-        // Non-critical, don't throw
-      }
-    })();
+    if (!hasOnboardingAiConsent) {
+      console.log(
+        "[TRANSACTIONS_SYNC] notification patterns: skipped (no consent)",
+        { userId },
+      );
+    } else {
+      (async () => {
+        try {
+          const { detectNotificationPatterns } =
+            await import("../lib/notificationPatternDetection.js");
+          await detectNotificationPatterns(userId, added);
+        } catch (error) {
+          console.error("[TRANSACTIONS_SYNC] Pattern detection error:", error);
+          // Non-critical, don't throw
+        }
+      })();
+    }
 
     // 9) Return transaction sync summary
     return res.status(200).json({

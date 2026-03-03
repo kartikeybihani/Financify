@@ -21,7 +21,13 @@ import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid/plaid";
 import { BlurView } from "expo-blur";
 import * as WebBrowser from "expo-web-browser";
 import logger from "@/src/utils/core/logger";
+import { authenticatedFetch } from "@/src/utils/auth/authToken";
 import { logOnboardingEvent } from "@/src/utils/auth/onboarding";
+import {
+  getAiConsentStorageKey,
+  ONBOARDING_AI_CONSENT_KEY,
+  persistAiConsent,
+} from "@/src/utils/chat/chatConsent";
 import AppStorage from "@/src/utils/storage/storage";
 import { useDemoMode } from "@/src/contexts/DemoContext";
 
@@ -54,6 +60,8 @@ interface AccountAnalysisResult {
   error?: string;
   error_message?: string;
 }
+
+const ONBOARDING_AI_CONSENT_SOURCE = "onboarding_bank_connection";
 
 export default function AccountConnectionScreen() {
   const CONNECTION_DOT_COUNT = 8;
@@ -166,6 +174,12 @@ export default function AccountConnectionScreen() {
     return `onboarding:tx_preview_logged:${userId}${suffix}`;
   };
 
+  const getOnboardingConsentStorageKey = (userId: string) =>
+    getAiConsentStorageKey(ONBOARDING_AI_CONSENT_KEY, userId);
+
+  const getOnboardingMemoryStoredKey = (userId: string) =>
+    `onboarding:memory_stored:${userId}`;
+
   const fetchLast30DaysTransactions = async (userId: string) => {
     const end = new Date();
     const start = new Date();
@@ -272,6 +286,87 @@ export default function AccountConnectionScreen() {
     AppStorage.setItemSync(key, "1");
   };
 
+  const persistOnboardingConsent = async () => {
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (!user?.id) {
+      throw new Error("User not authenticated");
+    }
+
+    const consentStorageKey = getOnboardingConsentStorageKey(user.id);
+    AppStorage.setItemSync(consentStorageKey, "accepted");
+
+    try {
+      await persistAiConsent(
+        user.id,
+        ONBOARDING_AI_CONSENT_KEY,
+        ONBOARDING_AI_CONSENT_SOURCE,
+      );
+    } catch (error) {
+      AppStorage.removeItemSync(consentStorageKey);
+      throw error;
+    }
+  };
+
+  const triggerOnboardingMemoryStorage = async (userId: string) => {
+    const memoryStoredKey = getOnboardingMemoryStoredKey(userId);
+    if (AppStorage.getItemSync(memoryStoredKey)) {
+      return;
+    }
+
+    try {
+      const profileDataStr = AppStorage.getItemSync("pending_profile_data");
+      const profileData = profileDataStr ? JSON.parse(profileDataStr) : null;
+      const intentAnswersStr = AppStorage.getItemSync("pending_intent_answers");
+      const intentAnswers = intentAnswersStr ? JSON.parse(intentAnswersStr) : null;
+
+      if (!profileData && !intentAnswers) {
+        return;
+      }
+
+      const BASE_URL =
+        process.env.EXPO_PUBLIC_APP_BASE_URL ||
+        "https://financify-rose.vercel.app";
+
+      const response = await authenticatedFetch(`${BASE_URL}/api/memory`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          type: "onboarding_profile",
+          profileData,
+          intentAnswers,
+        }),
+      });
+
+      if (!response.ok) {
+        let errorMessage = `Request failed with status ${response.status}`;
+
+        try {
+          const errorData = await response.json();
+          errorMessage = errorData?.error || errorData?.message || errorMessage;
+        } catch {
+          // Ignore body parsing errors for logging.
+        }
+
+        throw new Error(errorMessage);
+      }
+
+      AppStorage.setItemSync(memoryStoredKey, "1");
+      logger.info(
+        "✅ AccountConnectionScreen: Stored onboarding memory after consent",
+      );
+    } catch (error) {
+      logger.warn(
+        "⚠️ AccountConnectionScreen: Failed to store onboarding memory",
+        error,
+      );
+    }
+  };
+
   useEffect(() => {
     logOnboardingEvent({ stage: "plaid", action: "view" });
 
@@ -294,6 +389,13 @@ export default function AccountConnectionScreen() {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user?.id) return;
+
+        const consentState = AppStorage.getItemSync(
+          getOnboardingConsentStorageKey(user.id),
+        );
+        if (consentState === "accepted") {
+          setHasAcceptedAiDisclosure(true);
+        }
 
         const accounts = await fetchConnectedAccounts(user.id);
         if (accounts.length > 0) {
@@ -479,6 +581,18 @@ export default function AccountConnectionScreen() {
     setIsLoading(true);
 
     try {
+      await persistOnboardingConsent();
+    } catch (error) {
+      logger.error("Failed to persist onboarding AI consent:", error);
+      Alert.alert(
+        "Permission Error",
+        "We couldn't record your AI personalization permission. Please try again.",
+      );
+      setIsLoading(false);
+      return;
+    }
+
+    try {
       await handlePlaidConnect(
         linkToken,
         async (itemId: string) => {
@@ -507,6 +621,11 @@ export default function AccountConnectionScreen() {
             // Run account completeness analysis only on first account connection
             if (previousAccountCount === 0 && isFirstConnection) {
               setIsFirstConnection(false);
+
+              triggerOnboardingMemoryStorage(user.id).catch(() => {
+                // Silently fail - user can continue without onboarding memory.
+              });
+
               // Run analysis in background (don't block UI)
               analyzeAccountCompleteness(user.id).catch(() => {
                 // Silently fail - UI will handle gracefully
@@ -598,6 +717,15 @@ export default function AccountConnectionScreen() {
       );
       setIsLoading(false);
     }
+  };
+
+  const toggleAiDisclosureAcceptance = () => {
+    if (hasAcceptedAiDisclosure && !hasConnectedBank) {
+      setHasAcceptedAiDisclosure(false);
+      return;
+    }
+
+    setHasAcceptedAiDisclosure(true);
   };
 
   const toggleAiDisclosure = () => {
@@ -862,9 +990,7 @@ export default function AccountConnectionScreen() {
                   <View style={styles.aiDisclosureHeaderRow}>
                     <TouchableOpacity
                       style={styles.aiDisclosureCheckbox}
-                      onPress={() =>
-                        setHasAcceptedAiDisclosure((current) => !current)
-                      }
+                      onPress={toggleAiDisclosureAcceptance}
                       activeOpacity={0.8}
                     >
                       <Ionicons
@@ -943,8 +1069,9 @@ export default function AccountConnectionScreen() {
                         To personalize your financial guidance, Finny shares
                         transaction details such as account balances,
                         transaction amounts, merchant names, spending
-                        categories, and transaction dates with OpenRouter and
-                        the AI model provider used to generate your insights.
+                        categories, and transaction dates with Supermemory,
+                        OpenRouter, and the AI model provider used to
+                        personalize your experience and generate your insights.
                         If you later chat with Finny or create goals, those
                         messages and goal details may also be shared for the
                         same purpose. This data is used only to generate your

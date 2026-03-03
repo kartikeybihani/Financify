@@ -116,6 +116,18 @@ CREATE TABLE public.category_rules (
   amount numeric,
   CONSTRAINT category_rules_pkey PRIMARY KEY (id)
 );
+CREATE TABLE public.chat_ai_consents (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  consent_key text NOT NULL,
+  accepted boolean NOT NULL DEFAULT true,
+  accepted_at timestamp with time zone NOT NULL DEFAULT now(),
+  source text NOT NULL DEFAULT 'chat_privacy_sheet'::text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT chat_ai_consents_pkey PRIMARY KEY (id),
+  CONSTRAINT chat_ai_consents_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.chat_sessions (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   user_id uuid NOT NULL,

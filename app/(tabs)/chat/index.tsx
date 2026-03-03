@@ -48,10 +48,12 @@ import { useDemoMode } from "@/src/contexts/DemoContext";
 import { useSubscription } from "@/src/contexts/SubscriptionContext";
 import { useFreeMessageLimit } from "@/src/hooks/useFreeMessageLimit";
 import logger from "@/src/utils/core/logger";
-import { persistChatAiConsent } from "@/src/utils/chat/chatConsent";
+import {
+  CHAT_MEMORY_CONSENT_KEY,
+  getAiConsentStorageKey,
+  persistChatAiConsent,
+} from "@/src/utils/chat/chatConsent";
 import * as WebBrowser from "expo-web-browser";
-
-const CHAT_MEMORY_CONSENT_KEY = "chat_memory_consent_v2";
 
 interface Suggestion {
   text: string;
@@ -123,7 +125,7 @@ function ChatScreenContent() {
   const inputFocusAnimation = useRef(new Animated.Value(0)).current;
 
   const getMemoryConsentKey = useCallback(
-    (id: string) => `${CHAT_MEMORY_CONSENT_KEY}:${id}`,
+    (id: string) => getAiConsentStorageKey(CHAT_MEMORY_CONSENT_KEY, id),
     [],
   );
 
