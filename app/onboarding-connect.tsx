@@ -945,8 +945,11 @@ export default function AccountConnectionScreen() {
                         transaction amounts, merchant names, spending
                         categories, and transaction dates with OpenRouter and
                         the AI model provider used to generate your insights.
-                        This data is used only to generate your insights and is
-                        never sold or used for advertising or training.
+                        If you later chat with Finny or create goals, those
+                        messages and goal details may also be shared for the
+                        same purpose. This data is used only to generate your
+                        insights and is never sold or used for advertising or
+                        training.
                       </Text>
                       <Text style={styles.aiDisclosureText}>
                         <Text
