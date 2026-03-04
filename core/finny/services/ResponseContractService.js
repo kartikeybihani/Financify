@@ -631,6 +631,52 @@ export function buildContractRepairPrompt({
   return lines.join("\n");
 }
 
+export function buildGuidedSpendingTipRepairPrompt({
+  message = "",
+  continuityDirective = null,
+  spendingTipEvidence = null,
+} = {}) {
+  const lines = [
+    "You are writing a grounded spending-tip answer for Finny.",
+    "Return ONLY the final assistant reply.",
+    "Write exactly 3 sentences.",
+    "Sentence 1 must name the spend category and include the dollar amount.",
+    "Sentence 2 must explain why this is the priority using income/cash-pressure context.",
+    "Sentence 3 must give one direct action the user should take now.",
+    "Do not ask questions.",
+    "Do not mention process, revisions, or future help offers.",
+    "Do not tell the user to track, review, or analyze spending manually.",
+  ];
+
+  if (continuityDirective?.source_user_message) {
+    lines.push(`Original user question: ${continuityDirective.source_user_message}`);
+  } else if (message) {
+    lines.push(`Current user message: ${message}`);
+  }
+
+  if (spendingTipEvidence?.label) {
+    lines.push(`Required category: ${spendingTipEvidence.label}`);
+  }
+  if (Number.isFinite(spendingTipEvidence?.amount)) {
+    lines.push(
+      `Required amount: $${Number(spendingTipEvidence.amount).toFixed(2)}`,
+    );
+  }
+  if (spendingTipEvidence?.timeframe) {
+    lines.push(`Reference timeframe: ${spendingTipEvidence.timeframe}`);
+  }
+  if (Number.isFinite(spendingTipEvidence?.income_reference)) {
+    lines.push(
+      `Income reference: $${Number(spendingTipEvidence.income_reference).toFixed(2)}`,
+    );
+  }
+  if (spendingTipEvidence?.cash_pressure && spendingTipEvidence.cash_pressure !== "none") {
+    lines.push(`Cash pressure: ${spendingTipEvidence.cash_pressure}`);
+  }
+
+  return lines.join("\n");
+}
+
 export function renderDeterministicFallback({
   contract,
   continuityDirective = null,

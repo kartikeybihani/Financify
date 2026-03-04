@@ -74,6 +74,7 @@ import {
   extractSpendingTipEvidence,
   validateResponseContract,
   buildContractRepairPrompt,
+  buildGuidedSpendingTipRepairPrompt,
   renderDeterministicFallback,
   countQuestionMarks as countQuestionMarksImpl,
 } from "../core/finny/services/ResponseContractService.js";
@@ -107,6 +108,22 @@ function responseHasVisibleContent(response) {
   if (Array.isArray(response.actions) && response.actions.length > 0)
     return true;
   return false;
+}
+
+function responsePreview(response) {
+  if (!response || typeof response !== "object") return "";
+  if (typeof response.message === "string") return response.message.slice(0, 180);
+  if (typeof response.text === "string") return response.text.slice(0, 180);
+  if (Array.isArray(response.message)) {
+    return String(
+      response.message
+        .map((entry) =>
+          typeof entry === "string" ? entry : (entry?.content ?? ""),
+        )
+        .join(" "),
+    ).slice(0, 180);
+  }
+  return "";
 }
 
 function detectRefusalToAnswer(text) {
@@ -1593,6 +1610,7 @@ export default async function handler(req, res) {
     llm_ms: 0,
     total_ms: 0,
   };
+  const requestId = generateRequestId();
 
   // Parse body if raw (some platforms pass string/buffer)
   let body = req.body;
@@ -1632,6 +1650,7 @@ export default async function handler(req, res) {
 
   if (!shouldSuppressLogs) {
     logInfo("🤖 [FINNY] Request received:", req.method);
+    logInfo("🆔 [FINNY] Request ID:", requestId);
   }
 
   if (req.method !== "POST") {
@@ -1657,7 +1676,6 @@ export default async function handler(req, res) {
   // Derive user from Supabase JWT instead of trusting client context
   let serverUserId = null;
   let userProfile = { name: null, age: null, monthly_income: null };
-  const requestId = generateRequestId();
   const authStartTime = Date.now();
   let hadAuthHeader = false;
   try {
@@ -1802,6 +1820,7 @@ export default async function handler(req, res) {
     ...(context || {}),
     user_id: finalUserId,
     chat_id: chatId,
+    request_id: requestId,
     profile: {
       name: userProfile.name,
       age: userProfile.age,
@@ -2675,7 +2694,13 @@ export default async function handler(req, res) {
       scheduleUserMessageStorageAsync();
     }
     if (!shouldSuppressLogs) {
-      console.log("🔍 [FINNY] Response:", response);
+      console.log("🔍 [FINNY] Response:", {
+        request_id: requestId,
+        action: finalAction,
+        has_visible_content: responseHasVisibleContent(response),
+        response_preview: responsePreview(response),
+        response,
+      });
     }
   } catch (error) {
     console.error("❌ [FINNY] Error:", error);
@@ -4267,11 +4292,15 @@ async function handleAsk(
         logWarn("⚠️ [CONTRACT_SHADOW] Validation issues detected but enforcement disabled:", {
           contract: responseContract,
           issues: contractValidationResult.issues,
+          request_id: requestId,
+          response_preview: String(cleanText || "").slice(0, 220),
         });
       } else if (contractValidationResult.severity === "fail") {
         logWarn("⚠️ [CONTRACT] Validation failed, attempting constrained regeneration:", {
           contract: responseContract,
           issues: contractValidationResult.issues,
+          request_id: requestId,
+          response_preview: String(cleanText || "").slice(0, 220),
         });
 
         try {
@@ -4326,12 +4355,105 @@ async function handleAsk(
               continuityDirective: continuityOverride,
               spendingTipEvidence,
             });
+            if (contractValidationResult.issues.length === 0) {
+              logInfo("✅ [CONTRACT] Constrained regeneration passed:", {
+                contract: responseContract,
+                request_id: requestId,
+                response_preview: String(cleanText || "").slice(0, 220),
+              });
+            } else {
+              logWarn("⚠️ [CONTRACT] Constrained regeneration still failing:", {
+                contract: responseContract,
+                issues: contractValidationResult.issues,
+                request_id: requestId,
+                response_preview: String(cleanText || "").slice(0, 220),
+              });
+            }
           }
         } catch (repairError) {
           logWarn(
             "⚠️ [CONTRACT] Constrained regeneration failed:",
             repairError?.message,
           );
+        }
+
+        const spendingTipLikeContract =
+          responseContract === "spending_tip_grounded" ||
+          (responseContract === "repair_previous_answer" &&
+            continuityOverride?.source_contract === "spending_tip_grounded");
+
+        if (
+          contractValidationResult.issues.length > 0 &&
+          spendingTipLikeContract &&
+          spendingTipEvidence?.label
+        ) {
+          logInfo(
+            "🛠️ [CONTRACT] Attempting guided spending-tip rewrite before deterministic fallback",
+            {
+              contract: responseContract,
+              request_id: requestId,
+              issues: contractValidationResult.issues,
+            },
+          );
+
+          try {
+            const guidedRepairPrompt = buildGuidedSpendingTipRepairPrompt({
+              message: routingMessage,
+              continuityDirective: continuityOverride,
+              spendingTipEvidence,
+            });
+            const guidedRepairResult = await llmService.callWithFallback(
+              llmModels,
+              (model, options) =>
+                callContractRepairLLM(model, guidedRepairPrompt, options),
+              12000,
+              "LLM Guided Spending Tip Repair",
+            );
+            const guidedRepairPayload = await guidedRepairResult.result.json();
+            const guidedRepairedText =
+              guidedRepairPayload?.choices?.[0]?.message?.content?.trim() || "";
+
+            if (guidedRepairedText) {
+              contractRepairUsed = true;
+              cleanText = guidedRepairedText;
+              if (advisoryRuntimeEnabled && advisoryRuntime) {
+                cleanText = enforceAdvisoryQuestionPolicy(
+                  cleanText,
+                  advisoryRuntime,
+                );
+              }
+
+              contractValidationResult = validateResponseContract({
+                contract: responseContract,
+                responseText: cleanText,
+                message: routingMessage,
+                packs,
+                classificationResult,
+                continuityDirective: continuityOverride,
+                spendingTipEvidence,
+              });
+
+              if (contractValidationResult.issues.length === 0) {
+                logInfo("✅ [CONTRACT] Guided spending-tip rewrite passed:", {
+                  contract: responseContract,
+                  request_id: requestId,
+                  response_preview: String(cleanText || "").slice(0, 220),
+                });
+              } else {
+                logWarn("⚠️ [CONTRACT] Guided spending-tip rewrite still failing:", {
+                  contract: responseContract,
+                  request_id: requestId,
+                  issues: contractValidationResult.issues,
+                  response_preview: String(cleanText || "").slice(0, 220),
+                });
+              }
+            }
+          } catch (guidedRepairError) {
+            logWarn(
+              "⚠️ [CONTRACT] Guided spending-tip rewrite failed:",
+              guidedRepairError?.message,
+            );
+          }
         }
 
         if (contractValidationResult.issues.length > 0) {
@@ -4352,7 +4474,12 @@ async function handleAsk(
               continuityDirective: continuityOverride,
               spendingTipEvidence,
             });
-            logWarn("⚠️ [CONTRACT] Deterministic fallback used after failed repair");
+            logWarn("⚠️ [CONTRACT] Deterministic fallback used after failed repair", {
+              contract: responseContract,
+              request_id: requestId,
+              issues: contractValidationResult.issues,
+              response_preview: String(cleanText || "").slice(0, 220),
+            });
           }
         }
       }
@@ -4496,6 +4623,13 @@ async function handleAsk(
       message: cleanedMessage,
       type: "assistant",
     };
+    logInfo("📤 [ASK] Final response prepared:", {
+      request_id: context?.request_id || null,
+      contract: responseContract,
+      repair_used: contractRepairUsed,
+      fallback_used: contractFallbackUsed,
+      response_preview: String(cleanedMessage || "").slice(0, 220),
+    });
 
     // Build prompt_used: FULL prompt sent to LLM (system with financial context, recent turns, user message)
     // system = buildContextAwarePrompt output (6-layer architecture: identity, situation, strategy, etc.)
