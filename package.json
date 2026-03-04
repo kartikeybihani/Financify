@@ -102,7 +102,7 @@
     "stream-browserify": "^3.0.0",
     "text-encoding": "^0.7.0",
     "uuid": "^11.1.0",
-    "vercel": "^50.4.9"
+    "vercel": "^50.26.1"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
