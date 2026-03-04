@@ -7,7 +7,6 @@ import {
   ONBOARDING_AI_CONSENT_KEY,
 } from "../lib/aiConsent.js";
 import {
-  fetchSupermemoryProfile,
   fetchSupermemoryProfileWithTimeout,
   fetchSupermemoryMemoriesList,
   fetchSupermemoryMemories,
@@ -16,10 +15,6 @@ import {
   storeOnboardingMemory,
   storeGoalCreationMemory,
   storeGoalDeletionMemory,
-  storeMessageFeedback,
-  loadUserProfile,
-  getCachedSupermemoryDocuments,
-  cacheSupermemoryDocuments,
   deleteCachedSupermemoryDocument,
   updateCachedSupermemoryDocument,
 } from "../lib/memoryUtils.js";
@@ -310,82 +305,14 @@ export default async function handler(req, res) {
         console.log(`✅ [MEMORY_API] POST success - stored onboarding memory`);
         return res.status(200).json({ success: true, result });
       } else if (type === "message_feedback") {
-        // Store message feedback (like/dislike)
-        const {
-          messageId,
-          feedbackType,
-          finnyResponse,
-          userMessage,
-          messageMetadata,
-          reportText,
-        } = req.body;
-
         console.log(
-          `🔍 [MEMORY_API] POST - message_feedback, messageId: ${messageId}, feedbackType: ${feedbackType}`
+          `⚠️ [MEMORY_API] POST - message_feedback is deprecated for user ${serverUserId}`
         );
-
-        if (!messageId || !feedbackType || !finnyResponse || !userMessage) {
-          console.log(`⚠️ [MEMORY_API] POST - missing required fields`);
-          return res.status(400).json({
-            error:
-              "Missing required fields: messageId, feedbackType, finnyResponse, userMessage",
-          });
-        }
-
-        if (feedbackType !== "positive" && feedbackType !== "negative") {
-          console.log(
-            `⚠️ [MEMORY_API] POST - invalid feedbackType: ${feedbackType}`
-          );
-          return res.status(400).json({
-            error: "feedbackType must be 'positive' or 'negative'",
-          });
-        }
-
-        // Load user profile to get finny_style preference and user name
-        let finnyStyle = null;
-        let userName = null;
-        try {
-          const profile = await loadUserProfile(serverUserId);
-          finnyStyle = profile?.finny_style || null;
-          userName = profile?.name || null;
-        } catch (error) {
-          console.warn(
-            `⚠️ [MEMORY_API] Could not load profile, continuing without it:`,
-            error.message
-          );
-        }
-
-        // Add finny_style and userName to messageMetadata if available
-        const enrichedMetadata = {
-          ...(messageMetadata || {}),
-          finny_style: finnyStyle,
-          userName: userName,
-        };
-
-        const result = await storeMessageFeedback(
-          serverUserId,
-          messageId,
-          feedbackType,
-          finnyResponse,
-          userMessage,
-          enrichedMetadata,
-          reportText || null
-        );
-
-        if (!result) {
-          console.log(
-            `⚠️ [MEMORY_API] POST - failed to store message feedback`
-          );
-          return res.status(500).json({
-            error: "Failed to store message feedback",
-          });
-        }
-
-        // Invalidate cache after storing new memory
-        invalidateListCache(serverUserId);
-
-        console.log(`✅ [MEMORY_API] POST success - stored message feedback`);
-        return res.status(200).json({ success: true, result });
+        return res.status(410).json({
+          error: "message_feedback is deprecated",
+          message:
+            "Chat feedback is now stored in reports and is no longer written to Supermemory.",
+        });
       } else if (type === "goal_creation") {
         // Store goal creation memory
         const { goalData, createdVia } = req.body;
@@ -465,7 +392,6 @@ export default async function handler(req, res) {
           error: "Unsupported type",
           supportedTypes: [
             "onboarding_profile",
-            "message_feedback",
             "goal_creation",
             "goal_deletion",
           ],

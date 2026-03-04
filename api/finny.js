@@ -12,11 +12,9 @@ import {
   invalidateProfileCache,
   loadUserMemory,
   loadUserProfile,
-  storeConversationMemory,
+  storeUserMessageMemory,
   retrieveFeedbackPatterns,
   buildFeedbackContext,
-  setPrebuildContextActive,
-  clearPrebuildContextActive,
   loadUserMemoryWithTimeout,
   fetchSupermemoryProfileWithTimeout,
   // saveMemoryCandidates removed - migrating to Supermemory
@@ -2192,6 +2190,54 @@ export default async function handler(req, res) {
     });
   }
 
+  const shouldStoreUserMessageInSupermemory =
+    action === "message" &&
+    finalUserId &&
+    message &&
+    finalAction !== "stock_query" &&
+    finalAction !== "stock_conversation" &&
+    finalAction !== "goal_conversation";
+
+  const storeUserMessageAfterResponse =
+    shouldStoreUserMessageInSupermemory
+      ? () => {
+          const messageMemoryMetadata = {
+            chat_id: chatId || null,
+            request_action: action,
+            final_action: finalAction,
+            classified_intent: effectiveClassification?.intent || null,
+            intent_type: effectiveClassification?.intent_type || null,
+            decision_risk: effectiveClassification?.decision_risk || null,
+          };
+
+          storeUserMessageMemory(
+            finalUserId,
+            message,
+            messageMemoryMetadata,
+          ).catch((error) => {
+            console.error(
+              "❌ [FINNY] Failed to store user message memory:",
+              error?.message || error,
+            );
+          });
+        }
+      : null;
+  let userMessageStorageScheduled = false;
+  const scheduleUserMessageStorageOnFinish = () => {
+    if (!storeUserMessageAfterResponse || !res || userMessageStorageScheduled) {
+      return;
+    }
+    userMessageStorageScheduled = true;
+    res.once("finish", storeUserMessageAfterResponse);
+  };
+  const scheduleUserMessageStorageAsync = () => {
+    if (!storeUserMessageAfterResponse || userMessageStorageScheduled) {
+      return;
+    }
+    userMessageStorageScheduled = true;
+    setImmediate(storeUserMessageAfterResponse);
+  };
+
   try {
     let response;
     const handlerStartTime = Date.now();
@@ -2563,17 +2609,10 @@ export default async function handler(req, res) {
         break;
       }
       case "prebuild_context":
-        // Set flag to suppress memory storage warnings during prebuild_context
-        setPrebuildContextActive(finalUserId);
-        try {
-          response = await handlePrebuildContext(
-            finalUserId,
-            shouldSuppressLogs,
-          );
-        } finally {
-          // Always clear the flag, even if there's an error
-          clearPrebuildContextActive(finalUserId);
-        }
+        response = await handlePrebuildContext(
+          finalUserId,
+          shouldSuppressLogs,
+        );
         break;
       default:
         return res.status(400).json({ error: "Invalid action" });
@@ -2621,6 +2660,8 @@ export default async function handler(req, res) {
     // Handle streaming vs regular response
     if (wantsStreaming) {
       console.log("🔄 [STREAMING] Starting streaming response");
+
+      scheduleUserMessageStorageOnFinish();
 
       const streamWatchdog = startStreamWatchdog(res, {
         timeoutMs: 30000,
@@ -2699,6 +2740,7 @@ export default async function handler(req, res) {
       }
     } else {
       res.status(200).json(response);
+      scheduleUserMessageStorageAsync();
     }
     if (!shouldSuppressLogs) {
       console.log("🔍 [FINNY] Response:", response);
@@ -2706,6 +2748,7 @@ export default async function handler(req, res) {
   } catch (error) {
     console.error("❌ [FINNY] Error:", error);
     if (wantsStreaming && res && !res.writableEnded) {
+      scheduleUserMessageStorageOnFinish();
       sendStreamEvent(
         res,
         "complete",
@@ -2717,6 +2760,7 @@ export default async function handler(req, res) {
       return;
     }
     res.status(500).json({ error: error.message });
+    scheduleUserMessageStorageAsync();
   }
 }
 
@@ -3663,31 +3707,8 @@ async function handleAsk(
             ),
           );
 
-          // Store conversation memory AFTER response is sent (non-blocking)
           if (userId && conversationalResponse) {
             recordConversationTurns(conversationalResponse);
-
-            const storeMemoryAfterResponse = () => {
-              storeConversationMemory(userId, message, conversationalResponse, {
-                intent: "ask_personalized",
-                userName: context?.profile?.name || null,
-                chat_id: context?.chat_id,
-                stock_ticker: stockData.ticker,
-              }).catch((error) => {
-                console.error(
-                  "❌ [FINNY] Failed to store stock conversation memory:",
-                  error,
-                );
-                // Non-fatal, don't break conversation flow
-              });
-            };
-
-            // For streaming: store after res.end(), for non-streaming: store after response sent
-            if (wantsStreaming && res) {
-              res.once("finish", storeMemoryAfterResponse);
-            } else {
-              setImmediate(storeMemoryAfterResponse);
-            }
           }
 
           return response;
@@ -3756,31 +3777,8 @@ async function handleAsk(
             ),
           );
 
-          // Store conversation memory AFTER response is sent (non-blocking)
           if (userId && fallbackResponse) {
             recordConversationTurns(fallbackResponse);
-
-            const storeMemoryAfterResponse = () => {
-              storeConversationMemory(userId, message, fallbackResponse, {
-                intent: "ask_personalized",
-                userName: context?.profile?.name || null,
-                chat_id: context?.chat_id,
-                fallback_used: true,
-              }).catch((error) => {
-                console.error(
-                  "❌ [FINNY] Failed to store fallback conversation memory:",
-                  error,
-                );
-                // Non-fatal, don't break conversation flow
-              });
-            };
-
-            // For streaming: store after res.end(), for non-streaming: store after response sent
-            if (wantsStreaming && res) {
-              res.once("finish", storeMemoryAfterResponse);
-            } else {
-              setImmediate(storeMemoryAfterResponse);
-            }
           }
 
           return response;
@@ -4345,8 +4343,6 @@ async function handleAsk(
       );
     });
 
-    // Store conversation memory AFTER response is sent (non-blocking)
-    // Use cleanedMessage (actual response text) instead of cleanText (raw LLM output)
     const responseTextForStorage =
       cleanedMessage ||
       cleanText ||
@@ -4356,30 +4352,6 @@ async function handleAsk(
 
     if (userId && responseTextForStorage) {
       recordConversationTurns(responseTextForStorage);
-
-      // Store memory after response is sent (for both streaming and non-streaming)
-      const storeMemoryAfterResponse = () => {
-        storeConversationMemory(userId, message, responseTextForStorage, {
-          intent: intent,
-          chat_id: context?.chat_id,
-          userName: context?.profile?.name || null,
-        }).catch((error) => {
-          console.error(
-            "❌ [FINNY] Failed to store conversation memory:",
-            error,
-          );
-          // Non-fatal, don't break conversation flow
-        });
-      };
-
-      // For streaming: store after res.end(), for non-streaming: store after response sent
-      if (wantsStreaming && res) {
-        // Will be called after res.end() in streaming handler
-        res.once("finish", storeMemoryAfterResponse);
-      } else {
-        // For non-streaming, use setImmediate to ensure response is sent first
-        setImmediate(storeMemoryAfterResponse);
-      }
     }
 
     // Update handler time in parent timings if provided
@@ -6069,19 +6041,17 @@ async function handleOffTopic(
   ].join("\n");
 
   try {
-    // OPTIMIZED: Load memory and profile in parallel for better performance
+    // Load off-topic memory context plus a lightweight Supermemory profile.
     let userMemory = { memories: [], totalCount: 0 };
     let userProfileForFinny = null;
     sendProgress("Brewing...");
     if (userId) {
       try {
         console.log(
-          "🧠 [OFF_TOPIC] Loading user memories and profile in parallel for user:",
+          "🧠 [OFF_TOPIC] Loading user memories and profile for off-topic context for user:",
           userId,
         );
 
-        // Load memory and profile in parallel with 5s timeout (non-blocking)
-        // Using wrapper functions that automatically fallback to defaults on timeout
         const [loadedMemory, loadedProfile] = await Promise.all([
           loadUserMemoryWithTimeout(
             userId,
@@ -6091,12 +6061,9 @@ async function handleOffTopic(
             console.log("⚠️ [OFF_TOPIC] Error loading memory:", error?.message);
             return { memories: [], totalCount: 0 };
           }),
-          fetchSupermemoryProfileWithTimeout(
-            userId,
-            MEMORY_LOAD_TIMEOUT_MS,
-          ).catch((error) => {
+          fetchSupermemoryProfileWithTimeout(userId, 2000).catch((error) => {
             console.log(
-              "⚠️ [OFF_TOPIC] Error loading profile:",
+              "⚠️ [OFF_TOPIC] Error loading Supermemory profile:",
               error?.message,
             );
             return null;
@@ -6105,11 +6072,16 @@ async function handleOffTopic(
 
         userMemory = loadedMemory;
         userProfileForFinny = loadedProfile;
+
         sendProgress("Brewing about you...");
         console.log("🧠 [OFF_TOPIC] User memories:", userMemory);
+        if (userProfileForFinny?.profile) {
+          console.log("🧠 [OFF_TOPIC] Supermemory profile loaded");
+        }
       } catch (error) {
         console.log("⚠️ [OFF_TOPIC] Could not load user data:", error?.message);
         userMemory = { memories: [], totalCount: 0 };
+        userProfileForFinny = null;
       }
     }
 
@@ -6131,8 +6103,6 @@ async function handleOffTopic(
           })
           .filter(Boolean)
       : [];
-
-    console.log("🧠 [OFF_TOPIC] User profile for Finny:", userProfileForFinny);
     const userContextParts = [
       `Message: ${messageText}`,
       `Mode hint: ${isVenting ? "venting" : "general_off_topic"}`,
@@ -6146,14 +6116,19 @@ async function handleOffTopic(
           )}`
         : null,
       userProfileForFinny?.profile
-        ? `User profile:\n${
-            userProfileForFinny.profile.static?.length > 0
+        ? `Supermemory profile:\n${
+            Array.isArray(userProfileForFinny.profile.static) &&
+            userProfileForFinny.profile.static.length > 0
               ? `Static: ${userProfileForFinny.profile.static.join(", ")}\n`
               : ""
-          }Dynamic: ${
-            Array.isArray(userProfileForFinny.profile.dynamic)
-              ? userProfileForFinny.profile.dynamic.join(", ")
-              : userProfileForFinny.profile.dynamic
+          }${
+            userProfileForFinny.profile.dynamic
+              ? `Dynamic: ${
+                  Array.isArray(userProfileForFinny.profile.dynamic)
+                    ? userProfileForFinny.profile.dynamic.join(", ")
+                    : userProfileForFinny.profile.dynamic
+                }`
+              : ""
           }`
         : null,
       userProfile?.finny_style
@@ -6245,30 +6220,6 @@ async function handleOffTopic(
     const content =
       data.choices?.[0]?.message?.content ||
       "I'm all about finance. What money questions can I help you with?";
-
-    // Store conversation memory AFTER response is sent (non-blocking)
-    if (userId && content) {
-      const storeMemoryAfterResponse = () => {
-        storeConversationMemory(userId, messageText, content, {
-          intent: "off_topic",
-          chat_id: context?.chat_id,
-          category: category,
-          userName: userProfile?.name || null,
-        }).catch((error) => {
-          console.error(
-            "❌ [OFF_TOPIC] Failed to store conversation memory:",
-            error,
-          );
-        });
-      };
-
-      // For streaming: store after res.end(), for non-streaming: store after response sent
-      if (wantsStreaming && res) {
-        res.once("finish", storeMemoryAfterResponse);
-      } else {
-        setImmediate(storeMemoryAfterResponse);
-      }
-    }
 
     // Log in background (non-blocking)
     setImmediate(() =>

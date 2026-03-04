@@ -7,8 +7,7 @@ export default function SettingsLayout() {
         headerShown: false,
         presentation: "modal",
         animation: "slide_from_bottom",
-        gestureEnabled: true,
-        gestureDirection: "vertical",
+        gestureEnabled: false,
       }}
     >
       <Stack.Screen name="index" />

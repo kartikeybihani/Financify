@@ -14,8 +14,6 @@ import {
 import { AntDesign } from "@expo/vector-icons";
 import { submitChatMessageReport } from "@/src/utils/analytics/reports";
 import IconButton from "@/src/components/shared/IconButton";
-import { authenticatedFetch } from "@/src/utils/auth/authToken";
-import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 
 interface ReportModalProps {
   visible: boolean;
@@ -36,7 +34,6 @@ export default function ReportModal({
   messageSender,
   chatSessionId,
   messageMetadata,
-  userMessage,
 }: ReportModalProps) {
   const [report, setReport] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -71,35 +68,6 @@ export default function ReportModal({
       });
 
       if (result.success) {
-        // Store negative feedback in Supermemory (Phase 1.1)
-        try {
-          const BASE_URL = API_BASE_URL;
-
-          await authenticatedFetch(`${BASE_URL}/api/memory`, {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              type: "message_feedback",
-              messageId,
-              feedbackType: "negative",
-              finnyResponse: messageContent,
-              userMessage: userMessage || "Unknown user message",
-              messageMetadata: messageMetadata || {},
-              reportText: report.trim(),
-            }),
-          });
-
-          console.log("✅ Negative feedback stored in Supermemory");
-        } catch (error) {
-          console.error(
-            "Error storing negative feedback in Supermemory:",
-            error
-          );
-          // Non-critical, don't break user experience
-        }
-
         Alert.alert(
           "Thank You!",
           "Your report has been submitted successfully. We'll review it shortly.",

@@ -16,8 +16,7 @@ export default function ChatLayout() {
           options={{
             presentation: "modal",
             animation: "slide_from_bottom",
-            gestureEnabled: true,
-            gestureDirection: "vertical",
+            gestureEnabled: false,
           }}
         />
         <Stack.Screen

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import {
   View,
   Text,
@@ -7,6 +7,7 @@ import {
   Platform,
   Animated,
   Dimensions,
+  Keyboard,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -253,6 +254,60 @@ export default function FinnySettingsScreen() {
   const [currentCheckinFrequency, setCurrentCheckinFrequency] = useState<
     "daily" | "3times" | "weekly" | "never" | null
   >(null);
+  const hasActiveSubview =
+    showMemories ||
+    showStyle ||
+    showCheckin ||
+    showLegalSummary ||
+    showHowFinnyWorks ||
+    showHistory;
+
+  const stopAllAnimations = useCallback(() => {
+    slideAnimation.stopAnimation();
+    styleSlideAnimation.stopAnimation();
+    checkinSlideAnimation.stopAnimation();
+    legalSummarySlideAnimation.stopAnimation();
+    howFinnyWorksSlideAnimation.stopAnimation();
+    historySlideAnimation.stopAnimation();
+  }, [
+    checkinSlideAnimation,
+    historySlideAnimation,
+    howFinnyWorksSlideAnimation,
+    legalSummarySlideAnimation,
+    slideAnimation,
+    styleSlideAnimation,
+  ]);
+
+  const resetSubviewState = useCallback(() => {
+    setShowMemories(false);
+    setShowStyle(false);
+    setShowCheckin(false);
+    setShowLegalSummary(false);
+    setShowHowFinnyWorks(false);
+    setShowHistory(false);
+    slideAnimation.setValue(0);
+    styleSlideAnimation.setValue(0);
+    checkinSlideAnimation.setValue(0);
+    legalSummarySlideAnimation.setValue(0);
+    howFinnyWorksSlideAnimation.setValue(0);
+    historySlideAnimation.setValue(0);
+  }, [
+    checkinSlideAnimation,
+    historySlideAnimation,
+    howFinnyWorksSlideAnimation,
+    legalSummarySlideAnimation,
+    slideAnimation,
+    styleSlideAnimation,
+  ]);
+
+  const handleCloseSettings = useCallback(() => {
+    Keyboard.dismiss();
+    stopAllAnimations();
+    resetSubviewState();
+    router.back();
+  }, [resetSubviewState, router, stopAllAnimations]);
+
+  useEffect(() => () => stopAllAnimations(), [stopAllAnimations]);
 
   const loadSettings = async () => {
     // Step 1: Load from memory cache immediately (truly instant, synchronous)
@@ -442,13 +497,14 @@ export default function FinnySettingsScreen() {
   };
 
   const closeHistoryAndSettings = () => {
-    historySlideAnimation.setValue(0);
-    setShowHistory(false);
-    router.back();
+    handleCloseSettings();
   };
 
   const handleClearChat = async () => {
     await clearChat();
+    Keyboard.dismiss();
+    stopAllAnimations();
+    resetSubviewState();
     router.replace("/(tabs)/chat");
     router.back();
   };
@@ -559,6 +615,7 @@ export default function FinnySettingsScreen() {
       <SafeAreaView style={{ flex: 1 }}>
         {/* Settings View */}
         <Animated.View
+          pointerEvents={hasActiveSubview ? "none" : "auto"}
           style={[
             styles.modalContainer,
             {
@@ -582,7 +639,7 @@ export default function FinnySettingsScreen() {
         >
           {/* Header */}
           <View style={styles.header}>
-            <IconButton icon="close" onPress={() => router.back()} size={19} />
+            <IconButton icon="close" onPress={handleCloseSettings} size={19} />
             <Text style={styles.headerTitle}>Finny settings</Text>
             <View style={{ width: 34 }} />
           </View>
@@ -682,6 +739,7 @@ export default function FinnySettingsScreen() {
         {/* Memories View */}
         {showMemories && (
           <Animated.View
+            pointerEvents="auto"
             style={[
               styles.modalContainer,
               styles.memoriesContainer,
@@ -697,6 +755,7 @@ export default function FinnySettingsScreen() {
         {/* Style View */}
         {showStyle && (
           <Animated.View
+            pointerEvents="auto"
             style={[
               styles.modalContainer,
               styles.memoriesContainer,
@@ -712,6 +771,7 @@ export default function FinnySettingsScreen() {
         {/* Check-in View */}
         {showCheckin && (
           <Animated.View
+            pointerEvents="auto"
             style={[
               styles.modalContainer,
               styles.memoriesContainer,
@@ -727,6 +787,7 @@ export default function FinnySettingsScreen() {
         {/* Legal Summary View */}
         {showLegalSummary && (
           <Animated.View
+            pointerEvents="auto"
             style={[
               styles.modalContainer,
               styles.memoriesContainer,
@@ -742,6 +803,7 @@ export default function FinnySettingsScreen() {
         {/* How Finny Works View */}
         {showHowFinnyWorks && (
           <Animated.View
+            pointerEvents="auto"
             style={[
               styles.modalContainer,
               styles.memoriesContainer,
@@ -757,6 +819,7 @@ export default function FinnySettingsScreen() {
         {/* History View */}
         {showHistory && (
           <Animated.View
+            pointerEvents="auto"
             style={[
               styles.modalContainer,
               styles.memoriesContainer,
