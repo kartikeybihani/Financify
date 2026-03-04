@@ -46,6 +46,27 @@ export function cleanResponseFormatting(response) {
     return response;
   }
 
+  const insertReadableParagraphBreaks = (text) => {
+    const value = String(text || "");
+    if (!value) return value;
+    if (value.includes("\n")) return value;
+    if (value.length < 360) return value;
+    if (/^\s*[-*]\s/m.test(value)) return value;
+
+    const sentences = value
+      .split(/(?<=[.!?])\s+(?=[A-Z$])/)
+      .map((sentence) => sentence.trim())
+      .filter(Boolean);
+
+    if (sentences.length < 4) return value;
+
+    const chunks = [];
+    for (let index = 0; index < sentences.length; index += 2) {
+      chunks.push(sentences.slice(index, index + 2).join(" "));
+    }
+    return chunks.join("\n\n");
+  };
+
   let cleaned = response;
 
   // Remove markdown headers (### Header, ## Header, # Header)
@@ -93,6 +114,8 @@ export function cleanResponseFormatting(response) {
   // Clean up excessive whitespace
   cleaned = cleaned.replace(/\n{3,}/g, "\n\n");
   cleaned = cleaned.replace(/[ \t]+$/gm, "");
+
+  cleaned = insertReadableParagraphBreaks(cleaned);
 
   // Remove standalone hashtags
   cleaned = cleaned.replace(/^#+\s*$/gm, "");

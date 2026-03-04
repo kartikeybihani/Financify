@@ -1437,8 +1437,35 @@ function extractBasePacksSummary(packs) {
 }
 
 async function logConversation(conversationData) {
-  const maxRetries = 3;
-  const retryDelay = 1000; // 1 second
+  const maxRetries = 2;
+  const retryDelay = 800;
+  const insertTimeoutMs = 3500;
+
+  const truncateForStorage = (value, maxChars = 6000) => {
+    const text = String(value || "");
+    if (text.length <= maxChars) return text;
+    return `${text.slice(0, maxChars)}… [truncated ${text.length - maxChars} chars]`;
+  };
+
+  const compactPromptForStorage = (prompt) => {
+    if (!prompt) return null;
+    const promptText = String(prompt);
+    const maxChars = 12000;
+    if (promptText.length <= maxChars) return promptText;
+
+    const promptHash = crypto
+      .createHash("sha256")
+      .update(promptText)
+      .digest("hex")
+      .slice(0, 16);
+
+    return JSON.stringify({
+      truncated: true,
+      hash: promptHash,
+      original_chars: promptText.length,
+      preview: promptText.slice(0, maxChars),
+    });
+  };
 
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
@@ -1446,8 +1473,8 @@ async function logConversation(conversationData) {
       const baseRow = {
         user_id: conversationData.user_id,
         chat_id: conversationData.chat_id || null,
-        user_message: conversationData.user_message,
-        finny_response: conversationData.finny_response,
+        user_message: truncateForStorage(conversationData.user_message, 4000),
+        finny_response: truncateForStorage(conversationData.finny_response, 8000),
         timestamp: conversationData.timestamp,
         intent: conversationData.intent,
         entities: conversationData.entities,
@@ -1465,16 +1492,22 @@ async function logConversation(conversationData) {
           conversationData.classification_result ||
           conversationData.classification_details ||
           null,
-        prompt_used: conversationData.prompt_used || null,
+        prompt_used: compactPromptForStorage(conversationData.prompt_used),
       };
 
       const insertResult = await withTimeout(
         supabase.from("conversation_logs").insert([baseRow]),
-        5000, // 5 second timeout
+        insertTimeoutMs,
+        null,
       );
 
       if (!insertResult) {
-        throw new Error("Insert timed out");
+        logWarn("⚠️ [CONVERSATION_LOG] Insert timed out; skipping retry to avoid duplicate writes", {
+          request_id: baseRow.request_id || null,
+          chat_id: baseRow.chat_id || null,
+          timeout_ms: insertTimeoutMs,
+        });
+        return;
       }
 
       const { error } = insertResult;
@@ -1506,10 +1539,16 @@ async function logConversation(conversationData) {
           } = baseRow;
           const retry = await withTimeout(
             supabase.from("conversation_logs").insert([fallbackRow]),
-            5000,
+            insertTimeoutMs,
+            null,
           );
           if (!retry) {
-            throw new Error("Fallback insert timed out");
+            logWarn("⚠️ [CONVERSATION_LOG] Fallback insert timed out; dropping log", {
+              request_id: baseRow.request_id || null,
+              chat_id: baseRow.chat_id || null,
+              timeout_ms: insertTimeoutMs,
+            });
+            return;
           }
           if (retry.error) {
             throw new Error(`Fallback insert failed: ${retry.error.message}`);
@@ -1535,9 +1574,22 @@ async function logConversation(conversationData) {
         return; // Success
       }
     } catch (error) {
-      logError(
+      const errorMessage = String(error?.message || "unknown");
+      if (/timed out|timeout/i.test(errorMessage)) {
+        logWarn("⚠️ [CONVERSATION_LOG] Insert timeout; dropping log entry", {
+          attempt,
+          max_retries: maxRetries,
+          error: errorMessage,
+          request_id: conversationData?.request_id || null,
+          chat_id: conversationData?.chat_id || null,
+        });
+        return;
+      }
+
+      const logMethod = attempt === maxRetries ? logError : logWarn;
+      logMethod(
         `❌ [CONVERSATION_LOG] Attempt ${attempt}/${maxRetries} failed:`,
-        error.message,
+        errorMessage,
       );
 
       if (attempt === maxRetries) {
@@ -2128,6 +2180,7 @@ export default async function handler(req, res) {
     ...(context || {}),
     user_id: finalUserId,
     chat_id: chatId,
+    request_id: requestId,
     profile: enrichedProfile,
     session: sessionState,
     memory: userMemory,
@@ -2817,6 +2870,7 @@ async function handleAsk(
 ) {
   logInfo("🔍 [FINNY] Starting ask handler for message:", message);
   const startTime = Date.now();
+  const requestId = context?.request_id || null;
   const timings = {
     user_data_ms: 0,
     market_ms: 0,
@@ -3873,7 +3927,11 @@ async function handleAsk(
           0.5,
         );
     const responseContract = runtimeContract;
-    if (responseContract === "spending_tip_grounded") {
+    if (
+      responseContract === "spending_tip_grounded" ||
+      (responseContract === "repair_previous_answer" &&
+        continuityOverride?.source_contract === "spending_tip_grounded")
+    ) {
       spendingTipEvidence = shadowSpendingTipEvidence
         || extractSpendingTipEvidence(packs, context?.profile || {});
     }
@@ -4624,7 +4682,7 @@ async function handleAsk(
       type: "assistant",
     };
     logInfo("📤 [ASK] Final response prepared:", {
-      request_id: context?.request_id || null,
+      request_id: requestId,
       contract: responseContract,
       repair_used: contractRepairUsed,
       fallback_used: contractFallbackUsed,
@@ -4656,7 +4714,7 @@ async function handleAsk(
       cached: false,
       context_packs: Object.keys(packs),
       data_gaps: gaps,
-      request_id: generateRequestId(),
+      request_id: requestId,
       web_research: webResults.length > 0,
       classification_result: classificationResult,
       classification_details: classificationResult, // Alias for clarity
@@ -6620,6 +6678,7 @@ async function handleOffTopic(
         sources_used: [],
         cached: false,
         category: category,
+        request_id: context?.request_id || null,
         classification_details: context?.classification_result || {
           intent: "off_topic",
           confidence: 1.0,

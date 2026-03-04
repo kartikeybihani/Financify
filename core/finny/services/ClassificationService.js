@@ -18,13 +18,82 @@ import {
   isReferentialFollowupMessage,
 } from "./ContinuityService.js";
 
+const FINANCE_TOPIC_PATTERN =
+  /\b(afford|budget|debt|spend|spending|expense|expenses|income|savings?|goal|goals|invest|investment|portfolio|net worth|cash|liabilit|credit|loan|rent|payment|trip|travel|camping|vacation|watch|buy|purchase)\b/i;
+
+const FINANCE_ASK_PATTERN =
+  /\b(can i|should i|how much|how about|what about|would|could|i wanna|i want to|is it okay|help me|plan)\b/i;
+
+const FINANCE_CONTEXTUAL_FOLLOWUP_PATTERN =
+  /^(how about|what about|and what about|instead|then what about|ok what about|okay what about|maybe)\b/i;
+
 function looksLikeFactualLookup(message = "") {
   const lower = String(message).toLowerCase();
   return (
-    /\b(how much|how many|what is my|what's my|show me|did i spend|spent this month|spent last month)\b/.test(
-      lower,
+      /\b(how much|how many|what is my|what's my|show me|did i spend|spent this month|spent last month)\b/.test(
+        lower,
     ) && !/\b(should i|can i afford|worth it|help me decide)\b/.test(lower)
   );
+}
+
+function shouldForceAskFromOffTopic(message = "", context = {}, result = {}) {
+  if (result?.intent !== "off_topic") return false;
+  const text = String(message || "").trim();
+  if (!text) return false;
+
+  const hasFinanceTopic = FINANCE_TOPIC_PATTERN.test(text);
+  const hasFinanceAskShape = FINANCE_ASK_PATTERN.test(text);
+  if (hasFinanceTopic && hasFinanceAskShape) {
+    return true;
+  }
+
+  const hint = context?.classification_hint || null;
+  if (!hint?.same_chat_last_turn_was_finance_advice) {
+    return false;
+  }
+
+  const lowerText = text.toLowerCase();
+  const subject = String(hint.previous_subject || "")
+    .toLowerCase()
+    .trim();
+  const referencesPreviousSubject = subject && lowerText.includes(subject);
+  const contextualFollowupShape =
+    FINANCE_CONTEXTUAL_FOLLOWUP_PATTERN.test(lowerText);
+
+  return (
+    contextualFollowupShape &&
+    (hasFinanceTopic || referencesPreviousSubject)
+  );
+}
+
+function applyFinanceOffTopicOverride(result = {}, message = "") {
+  const lowerMessage = String(message || "").toLowerCase();
+  const riskPattern = /\b(can i|should i|buy|purchase|trip|travel|vacation|watch)\b/;
+  const decisionRisk = riskPattern.test(lowerMessage) ? "medium" : "low";
+
+  return {
+    ...result,
+    intent: "ask_personalized",
+    intent_type:
+      result?.intent_type && result.intent_type !== "exploratory"
+        ? result.intent_type
+        : "actionable",
+    needs_user_data: true,
+    needs_web: false,
+    needs_clarification: false,
+    info_sufficiency: result?.info_sufficiency || "unknown",
+    missing_fields: Array.isArray(result?.missing_fields)
+      ? result.missing_fields
+      : [],
+    decision_risk: decisionRisk,
+    confidence: Math.max(0.82, Number(result?.confidence) || 0),
+    data_requirements: canonicalizeDataRequirements(
+      result?.data_requirements,
+      true,
+      message,
+    ),
+    classification_guardrail_override: "off_topic_to_ask_finance",
+  };
 }
 
 function canonicalizeDataRequirements(
@@ -638,6 +707,21 @@ export class ClassificationService {
       classificationResult.needs_user_data === true,
       message,
     );
+
+    if (shouldForceAskFromOffTopic(message, context, classificationResult)) {
+      logWarn(
+        "⚠️ [CLASSIFICATION] Guardrail override: off_topic → ask_personalized for finance-like query",
+        {
+          message_preview: String(message || "").slice(0, 120),
+          previous_contract: context?.classification_hint?.previous_contract || null,
+          previous_subject: context?.classification_hint?.previous_subject || null,
+        },
+      );
+      classificationResult = applyFinanceOffTopicOverride(
+        classificationResult,
+        message,
+      );
+    }
 
     // Cache the result
     this.setCached(message, classificationResult, context);

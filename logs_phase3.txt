@@ -3,10 +3,14 @@
 
 "Give me a spending tip"
 
-2026-03-04 23:21:17.611 [info] 🤖 [FINNY] Request received: POST
-2026-03-04 23:21:17.611 [info] 📝 [FINNY] Action: message
-2026-03-04 23:21:17.611 [info] 📊 [FINNY] Context provided: Yes
-2026-03-04 23:21:17.915 [info] 🧭 [CONTINUITY] Evaluation: {
+2026-03-04 23:37:17.896 [info] 🔄 [CACHE] Initializing periodic cache cleanup...
+2026-03-04 23:37:17.896 [info] ✅ [CACHE] Periodic cleanup initialized
+2026-03-04 23:37:17.955 [info] 🤖 [FINNY] Request received: POST
+2026-03-04 23:37:17.955 [info] 🆔 [FINNY] Request ID: bc21ee76-3e47-4cff-af21-9226153f1988
+2026-03-04 23:37:17.955 [info] 📝 [FINNY] Action: message
+2026-03-04 23:37:17.955 [info] 📊 [FINNY] Context provided: Yes
+2026-03-04 23:37:18.077 [info] ✅ [CACHE] No existing duplicates found
+2026-03-04 23:37:18.450 [info] 🧭 [CONTINUITY] Evaluation: {
   message_preview: 'Give me a spending tip',
   normalized_message_preview: 'give me a spending tip',
   previous_contract: null,
@@ -15,64 +19,67 @@
   reason: 'no_last_turn_meta',
   applied: false
 }
-2026-03-04 23:21:17.916 [info] 🔍 [FINNY] Starting classification...
-2026-03-04 23:21:17.917 [info] 🔍 [FINNY] Cache miss, calling LLM for classification...
-2026-03-04 23:21:19.668 [info] 🔍 [CLASSIFICATION] LLM response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"needs_clarification":false,"info_sufficiency":"unknown","missing_fields":[],"decision_risk":"low","state":null,"entities":[],"ticker":null,"confidence":0.95,"data_requirements":{"required_packs":["summary_min"],"optional_packs":[],"filters":{},"granularity":"summary_level","time_range":"current"}}}
-2026-03-04 23:21:19.670 [info] ✅ [FINNY] Classification complete (1754ms)
-2026-03-04 23:21:19.670 [info] 📊 [FINNY] Classification result: {
+2026-03-04 23:37:18.450 [info] 🔍 [FINNY] Starting classification...
+2026-03-04 23:37:18.450 [info] 🔍 [FINNY] Cache miss, calling LLM for classification...
+2026-03-04 23:37:20.298 [info] 🔍 [CLASSIFICATION] LLM response: {"intent":"ask_personalized","intent_type":"actionable","emotional_state":"neutral","needs_web":false,"needs_user_data":true,"needs_clarification":false,"info_sufficiency":"unknown","missing_fields":[],"decision_risk":"low","state":null,"entities":[],"ticker":null,"confidence":0.95,"data_requirements":{"required_packs":["summary_min"],"optional_packs":[],"filters":{},"granularity":"summary_level","time_range":"current"}}}
+2026-03-04 23:37:20.300 [info] ✅ [FINNY] Classification complete (1853ms)
+2026-03-04 23:37:20.300 [info] 📊 [FINNY] Classification result: {
   intent: 'ask_personalized',
   intent_type: 'actionable',
   needs_user_data: true,
   decision_risk: 'low'
 }
-2026-03-04 23:21:19.671 [info] 🧠 [MEMORY] Loading memories from Supermemory for user: 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:21:19.672 [info] 👤 [PROFILE] Loading fresh profile data for user: 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:21:19.722 [info] ✅ [FEEDBACK_PATTERNS] Retrieved 2 reports → 3 preferences, 2 deep insights
-2026-03-04 23:21:19.722 [info] 💾 [FEEDBACK_CACHE] Cached feedback patterns for user: 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:21:19.743 [info] 👤 [PROFILE] Loaded profile for user 79952f35-b607-40d6-a32e-d81386882eb7 - finny_style: conversational
-2026-03-04 23:21:23.288 [info] ✅ [SUPERMEMORY] Found 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (query: "Give me a spending tip...", avg similarity: 0.66, timing: 3246ms)
-2026-03-04 23:21:23.288 [info] 🧠 [MEMORY] Loaded 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (avg similarity: 0.66)
-2026-03-04 23:21:23.288 [info] ⚡ [PARALLEL_PREP] Loaded memory, profile, and feedback in 3618ms (parallel)
-2026-03-04 23:21:23.289 [info] 📝 [SESSION] Storing chat_id for session: d619e4bc-a70f-4332-b728-b1ec90a14850
-2026-03-04 23:21:23.289 [warning] ⚠️ [PROFILE] Age mismatch: user_metadata.age=97, profiles.age=20 (using profiles.age)
-2026-03-04 23:21:23.291 [info] 🔍 [FINNY] Starting ask handler for message: Give me a spending tip
-2026-03-04 23:21:23.292 [info] 📦 [PACK_SELECTOR] Selected packs from classification: {
+2026-03-04 23:37:20.301 [info] 🧠 [MEMORY] Loading memories from Supermemory for user: 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:37:20.303 [info] 👤 [PROFILE] Loading fresh profile data for user: 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:37:20.367 [info] 👤 [PROFILE] Loaded profile for user 79952f35-b607-40d6-a32e-d81386882eb7 - finny_style: conversational
+2026-03-04 23:37:20.379 [info] ✅ [FEEDBACK_PATTERNS] Retrieved 2 reports → 3 preferences, 2 deep insights
+2026-03-04 23:37:20.379 [info] 💾 [FEEDBACK_CACHE] Cached feedback patterns for user: 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:37:22.865 [info] ✅ [SUPERMEMORY] Found 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (query: "Give me a spending tip...", avg similarity: 0.67, timing: 2231ms)
+2026-03-04 23:37:22.865 [info] 🧠 [MEMORY] Loaded 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (avg similarity: 0.67)
+2026-03-04 23:37:22.865 [info] ⚡ [PARALLEL_PREP] Loaded memory, profile, and feedback in 2565ms (parallel)
+2026-03-04 23:37:22.865 [info] 📝 [SESSION] Storing chat_id for session: c6fdf737-a58a-4ea5-9b14-e40bb9d4a7ab
+2026-03-04 23:37:22.866 [warning] ⚠️ [PROFILE] Age mismatch: user_metadata.age=97, profiles.age=20 (using profiles.age)
+2026-03-04 23:37:22.868 [info] 🔍 [FINNY] Starting ask handler for message: Give me a spending tip
+2026-03-04 23:37:22.869 [info] 📦 [PACK_SELECTOR] Selected packs from classification: {
   needs: [ 'summary_min' ],
   filters: { merchant: null, category: null, period: null },
   useMerchantRPC: false,
   required_packs: [ 'summary_min' ],
   optional_packs: []
 }
-2026-03-04 23:21:23.293 [info] 🎯 [SLOTS] Final slots (classification overrides keyword): {
+2026-03-04 23:37:22.870 [info] 🎯 [SLOTS] Final slots (classification overrides keyword): {
   "intent": "ask",
   "topic": "spend",
   "useMerchantRPC": false,
   "time_range": "current"
 }
-2026-03-04 23:21:23.293 [info] 🎯 [FINNY] Selected needs from classification: [ 'summary_min' ]
-2026-03-04 23:21:23.293 [info] 🌍 [FINNY] Web search decision: {
+2026-03-04 23:37:22.870 [info] 🎯 [FINNY] Selected needs from classification: [ 'summary_min' ]
+2026-03-04 23:37:22.871 [info] 🌍 [FINNY] Web search decision: {
   classification_needs_web: false,
   keyword_fallback: false,
   final_decision: false
 }
-2026-03-04 23:21:23.294 [info] ✅ [DATA_CACHE] In-memory cache HIT for summary_min (summary_min_79952f35-b607-40d6-a32e-d81386882eb7)
-2026-03-04 23:21:23.294 [info] ✅ [FINNY] Using pre-built context for: summary_min
-2026-03-04 23:21:23.294 [info] 🎯 [FINNY] All contexts pre-built, returning cached data
-2026-03-04 23:21:23.294 [info] 📦 [FINNY] Context packs built: [ 'base' ]
-2026-03-04 23:21:23.294 [info] ⚠️ [FINNY] Data gaps: []
-2026-03-04 23:21:23.294 [info] 🔍 [FINANCIAL_DATA] Building financialDataForState: {
+2026-03-04 23:37:22.872 [info] 🔍 [DATA_CACHE] Checking persistent cache for summary_min (summary_min_79952f35-b607-40d6-a32e-d81386882eb7)
+2026-03-04 23:37:22.873 [info] 🔍 [DATA_CACHE] Checking persistent cache for summary_min (summary_min_79952f35-b607-40d6-a32e-d81386882eb7)
+2026-03-04 23:37:22.924 [info] 🔍 [PERSISTENT_CACHE] Checking expiration for summary_min: now=1772667442919, expires=1772669477575, expired=false
+2026-03-04 23:37:22.924 [info] ✅ [PERSISTENT_CACHE] Cache HIT for summary_min (summary_min_79952f35-b607-40d6-a32e-d81386882eb7)
+2026-03-04 23:37:22.924 [info] ✅ [FINNY] Using pre-built context for: summary_min
+2026-03-04 23:37:22.924 [info] 🎯 [FINNY] All contexts pre-built, returning cached data
+2026-03-04 23:37:22.924 [info] 📦 [FINNY] Context packs built: [ 'base' ]
+2026-03-04 23:37:22.924 [info] ⚠️ [FINNY] Data gaps: []
+2026-03-04 23:37:22.924 [info] 🔍 [FINANCIAL_DATA] Building financialDataForState: {
   hasBase: true,
   hasSpend: true,
   hasCategoryDetails: false,
   categoryDetailsTransactionCount: 0
 }
-2026-03-04 23:21:23.296 [info] 📊 [USER_DATA] Summary data: netWorth=$668.27, liquidAssets=$1766.86, investmentsTotal=$2751.60, liabilities=$3850.19, accounts=7 (1 investment)
-2026-03-04 23:21:23.296 [info] 📊 [USER_DATA] Accounts: BILT WORLD ELITE MASTERCARD�� ...7492: $141.89 (credit/credit card) | 360 Checking: $426.84 (depository/checking) | Blue Cash Everyday®: $226.84 (credit/credit card) | Individual - TOD: $2749.89 (investment/investment) | CREDIT CARD: $3481.46 (credit/credit card) | CHASE COLLEGE: $3904.67 (depository/checking) | yb40mOZev0fAaLL5RRbMHEqoqXBOxXhDAY6ve: $116.52 (null/N/A)
-2026-03-04 23:21:23.296 [info] 🎯 [USER_STATE] Detected:
-2026-03-04 23:21:23.296 [info] └─ Emotional: neutral (confidence: 0.95) | Urgency: normal
-2026-03-04 23:21:23.296 [info] └─ Classification: ask_personalized (actionable) | Confidence: 0.95
-2026-03-04 23:21:23.296 [info] 📋 [ADAPTATION] Feedback Context Added: 3 preferences, 2 deep insights | 1. Message length: User prefers medium responses (1 positive feedback) | 2. Tone: User prefers neutral tone in responses (1 positive feedback) | 3. Topic-specific: User prefers detailed responses about budgeting (1 feedback difference)
-2026-03-04 23:21:23.302 [info] 🧭 [ADVISORY_RUNTIME] Derived runtime: {
+2026-03-04 23:37:22.924 [info] 📊 [USER_DATA] Summary data: netWorth=$668.27, liquidAssets=$1766.86, investmentsTotal=$2751.60, liabilities=$3850.19, accounts=7 (1 investment)
+2026-03-04 23:37:22.924 [info] 📊 [USER_DATA] Accounts: BILT WORLD ELITE MASTERCARD�� ...7492: $141.89 (credit/credit card) | 360 Checking: $426.84 (depository/checking) | Blue Cash Everyday®: $226.84 (credit/credit card) | Individual - TOD: $2749.89 (investment/investment) | CREDIT CARD: $3481.46 (credit/credit card) | CHASE COLLEGE: $3904.67 (depository/checking) | yb40mOZev0fAaLL5RRbMHEqoqXBOxXhDAY6ve: $116.52 (null/N/A)
+2026-03-04 23:37:22.924 [info] 🎯 [USER_STATE] Detected:
+2026-03-04 23:37:22.925 [info] └─ Emotional: neutral (confidence: 0.95) | Urgency: normal
+2026-03-04 23:37:22.925 [info] └─ Classification: ask_personalized (actionable) | Confidence: 0.95
+2026-03-04 23:37:22.925 [info] 📋 [ADAPTATION] Feedback Context Added: 3 preferences, 2 deep insights | 1. Message length: User prefers medium responses (1 positive feedback) | 2. Tone: User prefers neutral tone in responses (1 positive feedback) | 3. Topic-specific: User prefers detailed responses about budgeting (1 feedback difference)
+2026-03-04 23:37:22.929 [info] 🧭 [ADVISORY_RUNTIME] Derived runtime: {
   advisory_job: 'improve',
   decision_type: 'none',
   risk_level: 'low',
@@ -83,28 +90,30 @@
   user_refused: false,
   blockers: []
 }
-2026-03-04 23:21:23.303 [info] 🧠 [MEMORY] Filtered advice memories for grounded spending prompt: { removed_count: 2, response_contract: 'spending_tip_grounded' }
-2026-03-04 23:21:23.304 [info] ✅ [DATA_CACHE] In-memory cache HIT for summary_min (summary_min_79952f35-b607-40d6-a32e-d81386882eb7)
-2026-03-04 23:21:23.304 [info] ✅ [CACHE] summary_min already cached for user 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:21:23.304 [info] ✅ [DATA_CACHE] In-memory cache HIT for investments_all (investments_all_79952f35-b607-40d6-a32e-d81386882eb7)
-2026-03-04 23:21:23.304 [info] ✅ [CACHE] invest_holdings already cached for user 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:21:23.305 [info] ✅ [DATA_CACHE] In-memory cache HIT for goals_overview (goals_overview_79952f35-b607-40d6-a32e-d81386882eb7)
-2026-03-04 23:21:23.305 [info] ✅ [CACHE] goals_overview already cached for user 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:21:23.356 [info] ⚠️ [GET_TURNS] No conversation logs found in database for user: 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:21:23.356 [info] ⚠️ [RECENT_TURNS] No recent turns found: {
+2026-03-04 23:37:22.930 [info] 🧠 [MEMORY] Filtered advice memories for grounded spending prompt: { removed_count: 2, response_contract: 'spending_tip_grounded' }
+2026-03-04 23:37:22.932 [info] 🔍 [PERSISTENT_CACHE] Checking expiration for summary_min: now=1772667442931, expires=1772669477575, expired=false
+2026-03-04 23:37:22.932 [info] ✅ [PERSISTENT_CACHE] Cache HIT for summary_min (summary_min_79952f35-b607-40d6-a32e-d81386882eb7)
+2026-03-04 23:37:22.932 [info] ✅ [CACHE] summary_min already cached for user 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:37:22.932 [info] 🔍 [DATA_CACHE] Checking persistent cache for investments_all (investments_all_79952f35-b607-40d6-a32e-d81386882eb7)
+2026-03-04 23:37:22.967 [info] 🔍 [PERSISTENT_CACHE] Checking expiration for investments_all: now=1772667442967, expires=1772669477769, expired=false
+2026-03-04 23:37:22.967 [info] ✅ [PERSISTENT_CACHE] Cache HIT for investments_all (investments_all_79952f35-b607-40d6-a32e-d81386882eb7)
+2026-03-04 23:37:22.967 [info] ✅ [CACHE] invest_holdings already cached for user 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:37:22.967 [info] 🔍 [DATA_CACHE] Checking persistent cache for goals_overview (goals_overview_79952f35-b607-40d6-a32e-d81386882eb7)
+2026-03-04 23:37:22.971 [info] ⚠️ [GET_TURNS] No conversation logs found in database for user: 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:37:22.971 [info] ⚠️ [RECENT_TURNS] No recent turns found: {
   userId: '79952f35-b607-40d6-a32e-d81386882eb7',
-  chat_id: 'd619e4bc-a70f-4332-b728-b1ec90a14850',
-  cacheKey: '79952f35-b607-40d6-a32e-d81386882eb7:d619e4bc-a70f-4332-b728-b1ec90a14850'
+  chat_id: 'c6fdf737-a58a-4ea5-9b14-e40bb9d4a7ab',
+  cacheKey: '79952f35-b607-40d6-a32e-d81386882eb7:c6fdf737-a58a-4ea5-9b14-e40bb9d4a7ab'
 }
-2026-03-04 23:21:23.357 [info] 📊 [FINANCIAL_DATA] Formatting financial data:
-2026-03-04 23:21:23.357 [info] - Base pack: netWorth=$668.27, liquidAssets=$1766.86, liabilities=$3850.19
-2026-03-04 23:21:23.357 [info] - Transactions: 5 transactions
-2026-03-04 23:21:23.357 [info] - Accounts: 7 accounts
-2026-03-04 23:21:23.357 [info] - Spend: present
-2026-03-04 23:21:23.357 [info] - CategoryDetails: missing
-2026-03-04 23:21:23.388 [info] 📦 [PROMPT_ENGINE] 6-Layer Architecture: 1. Core Identity | 2. Current Situation (actionable intent) | 3. Response Strategy (1 strategies) | 4. Personalization (8 memories) | 5. Communication Style (conversational) | 6. Response Guidelines
-2026-03-04 23:21:23.388 [info] --------------------------------
-2026-03-04 23:21:23.389 [info] === CORE IDENTITY ===
+2026-03-04 23:37:22.973 [info] 📊 [FINANCIAL_DATA] Formatting financial data:
+2026-03-04 23:37:22.973 [info] - Base pack: netWorth=$668.27, liquidAssets=$1766.86, liabilities=$3850.19
+2026-03-04 23:37:22.973 [info] - Transactions: 5 transactions
+2026-03-04 23:37:22.973 [info] - Accounts: 7 accounts
+2026-03-04 23:37:22.973 [info] - Spend: present
+2026-03-04 23:37:22.973 [info] - CategoryDetails: missing
+2026-03-04 23:37:23.009 [info] 📦 [PROMPT_ENGINE] 6-Layer Architecture: 1. Core Identity | 2. Current Situation (actionable intent) | 3. Response Strategy (1 strategies) | 4. Personalization (8 memories) | 5. Communication Style (conversational) | 6. Response Guidelines
+2026-03-04 23:37:23.009 [info] --------------------------------
+2026-03-04 23:37:23.010 [info] === CORE IDENTITY ===
 
 You are Finny, the user's personal financial advisor.
 Your job is to give realistic, useful, direct money advice using the user's actual financial data.
@@ -482,16 +491,14 @@ FINAL QUALITY CHECK:
 - I did not use filler or finance-blog language.
 - I did not ask more than one question.
 - I sound like a human being, not a template.
-2026-03-04 23:21:23.389 [info] --------------------------------
-2026-03-04 23:21:23.389 [info] 📝 [PROMPT] Ready (system: 15.5k chars)
-2026-03-04 23:21:24.915 [info] ✅ [LLM] Response received (status: 200)
-2026-03-04 23:21:24.915 [info] 📝 [LLM] Response length: 236 chars
-2026-03-04 23:21:24.918 [warning] ⚠️ [CONTRACT] Validation failed, attempting constrained regeneration: {
-  contract: 'spending_tip_grounded',
-  issues: [ 'missing_spending_anchor', 'missing_direct_adjustment' ]
-}
-2026-03-04 23:21:26.196 [warning] ⚠️ [CONTRACT] Deterministic fallback used after failed repair
-2026-03-04 23:21:26.196 [info] 🧭 [ADVISORY_RUNTIME] Response metrics: {
+2026-03-04 23:37:23.010 [info] --------------------------------
+2026-03-04 23:37:23.010 [info] 📝 [PROMPT] Ready (system: 15.5k chars)
+2026-03-04 23:37:23.020 [info] 🔍 [PERSISTENT_CACHE] Checking expiration for goals_overview: now=1772667443019, expires=1772669477685, expired=false
+2026-03-04 23:37:23.020 [info] ✅ [PERSISTENT_CACHE] Cache HIT for goals_overview (goals_overview_79952f35-b607-40d6-a32e-d81386882eb7)
+2026-03-04 23:37:23.020 [info] ✅ [CACHE] goals_overview already cached for user 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:37:24.510 [info] ✅ [LLM] Response received (status: 200)
+2026-03-04 23:37:24.510 [info] 📝 [LLM] Response length: 313 chars
+2026-03-04 23:37:24.512 [info] 🧭 [ADVISORY_RUNTIME] Response metrics: {
   question_count: 0,
   allowed_question_count: 0,
   feature_flag_enabled: true,
@@ -499,17 +506,30 @@ FINAL QUALITY CHECK:
   question_policy: 'none',
   question_reason: 'none'
 }
-2026-03-04 23:21:26.196 [info] ✅ [VALIDATION] Response passed basic validation checks
-2026-03-04 23:21:26.253 [info] ✅ [APPEND_TURNS] Stored 2 total turns for key: 79952f35-b607-40d6-a32e-d81386882eb7:d619e4bc-a70f-4332-b728-b1ec90a14850
-2026-03-04 23:21:26.253 [info] ⏱️  [TIMING] Total: 8.643s
-2026-03-04 23:21:26.253 [info] └─ Handler: 2.965s | LLM: 0.154s | Memory: 3.618s | Profile: 3.618s
-2026-03-04 23:21:26.253 [info] 🔄 [STREAMING] Starting streaming response
-2026-03-04 23:21:26.253 [info] 🔄 [STREAMING] Starting stream (8.643s to first chunk)
-2026-03-04 23:21:26.253 [info] 🔄 [STREAMING] Streaming text: The clearest place to cut right now is Travel. You spent $5262.93 there last month, which is too lar...
-2026-03-04 23:21:26.362 [info] ✅ [STREAMING] Streaming completed
-2026-03-04 23:21:26.362 [info] 🔍 [FINNY] Response: {
-  message: 'The clearest place to cut right now is Travel. You spent $5262.93 there last month, which is too large relative to your current cash pressure. Cut that first before worrying about smaller categories.',
-  type: 'assistant'
+2026-03-04 23:37:24.513 [info] ✅ [VALIDATION] Response passed basic validation checks
+2026-03-04 23:37:24.559 [info] 📤 [ASK] Final response prepared: {
+  request_id: null,
+  contract: 'spending_tip_grounded',
+  repair_used: false,
+  fallback_used: false,
+  response_preview: 'You spent $5,262.93 on travel last month, which is a significant portion of your income. To reduce spending, consider cutting back on non-essential travel expenses or finding more affordable alternatives. A cautious appr'
+}
+2026-03-04 23:37:24.561 [info] ✅ [APPEND_TURNS] Stored 2 total turns for key: 79952f35-b607-40d6-a32e-d81386882eb7:c6fdf737-a58a-4ea5-9b14-e40bb9d4a7ab
+2026-03-04 23:37:24.561 [info] ⏱️  [TIMING] Total: 6.607s
+2026-03-04 23:37:24.561 [info] └─ Handler: 1.695s | LLM: 0.139s | Memory: 2.565s | Profile: 2.565s
+2026-03-04 23:37:24.561 [info] 🔄 [STREAMING] Starting streaming response
+2026-03-04 23:37:24.561 [info] 🔄 [STREAMING] Starting stream (6.608s to first chunk)
+2026-03-04 23:37:24.561 [info] 🔄 [STREAMING] Streaming text: You spent $5,262.93 on travel last month, which is a significant portion of your income. To reduce s...
+2026-03-04 23:37:24.658 [info] ✅ [STREAMING] Streaming completed
+2026-03-04 23:37:24.658 [info] 🔍 [FINNY] Response: {
+  request_id: 'bc21ee76-3e47-4cff-af21-9226153f1988',
+  action: 'ask',
+  has_visible_content: true,
+  response_preview: 'You spent $5,262.93 on travel last month, which is a significant portion of your income. To reduce spending, consider cutting back on non-essential travel expenses or finding more ',
+  response: {
+    message: 'You spent $5,262.93 on travel last month, which is a significant portion of your income. To reduce spending, consider cutting back on non-essential travel expenses or finding more affordable alternatives. A cautious approach would be to aim for a 50% reduction in travel spending, which would be around $2,631.46.',
+    type: 'assistant'
+  }
 }
 
 ------------------------------------------------------------------------------------------------------------
@@ -517,102 +537,49 @@ FINAL QUALITY CHECK:
 
 "But that's your job"
 
-2026-03-04 23:21:51.571 [error] ⏱️ [FETCH_TIMEOUT] Request timeout triggered [1772666486364-584qa7225] {
-  method: 'POST',
-  url: 'https://api.supermemory.ai/v3/documents',
-  timeoutMs: 4500,
-  elapsedMs: 25198,
-  timestamp: '2026-03-04T23:21:51.563Z'
-}
-2026-03-04 23:21:51.571 [error] ❌ [FETCH_TIMEOUT] Request aborted (timeout) [1772666486364-584qa7225] {
-  method: 'POST',
-  url: 'https://api.supermemory.ai/v3/documents',
-  timeoutMs: 4500,
-  totalDurationMs: 25201,
-  errorName: 'AbortError',
-  errorMessage: 'This operation was aborted',
-  timestamp: '2026-03-04T23:21:51.565Z'
-}
-2026-03-04 23:21:51.571 [warning] ⚠️ [SUPERMEMORY] user message storage failed (attempt 1/2), retrying in 709ms: Request timeout after 4500ms: https://api.supermemory.ai/v3/documents
-2026-03-04 23:21:51.571 [info] 🤖 [FINNY] Request received: POST
-2026-03-04 23:21:51.571 [info] 📝 [FINNY] Action: message
-2026-03-04 23:21:51.571 [info] 📊 [FINNY] Context provided: Yes
-2026-03-04 23:21:51.743 [info] 🧭 [CONTINUITY] Evaluation: {
-  message_preview: "But that's your job",
-  normalized_message_preview: "but that's your job",
-  previous_contract: 'spending_tip_grounded',
-  previous_subject: 'Travel',
-  was_finance_advice: true,
-  reason: 'complaint_match',
-  applied: true
-}
-2026-03-04 23:21:51.743 [info] 🧭 [CONTINUITY] Applied pre-classification override: {
-  mode: 'repair_previous_answer',
-  source_contract: 'spending_tip_grounded',
-  source_subject: 'Travel'
-}
-2026-03-04 23:21:51.743 [info] 🧠 [MEMORY] Loading memories from Supermemory for user: 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:21:51.743 [info] 👤 [PROFILE] Using cached profile data for user: 79952f35-b607-40d6-a32e-d81386882eb7 - finny_style: conversational
-2026-03-04 23:21:51.743 [info] ⚡ [FEEDBACK_CACHE] Using cached feedback patterns for user: 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:21:53.408 [info] ✅ [SUPERMEMORY] Stored user message for user 79952f35-b607-40d6-a32e-d81386882eb7 (after 1 retry): dJG58pCasT5FogMU6ksigk
-2026-03-04 23:21:53.454 [info] ✅ [CACHE] Invalidated supermemory documents cache for user 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:21:56.246 [error] ⏱️ [FETCH_TIMEOUT] Request timeout triggered [1772666511743-s0k44t0hl] {
-  method: 'POST',
-  url: 'https://api.supermemory.ai/v4/search',
-  timeoutMs: 4500,
-  elapsedMs: 4500,
-  timestamp: '2026-03-04T23:21:56.243Z'
-}
-2026-03-04 23:21:56.246 [error] ❌ [FETCH_TIMEOUT] Request aborted (timeout) [1772666511743-s0k44t0hl] {
-  method: 'POST',
-  url: 'https://api.supermemory.ai/v4/search',
-  timeoutMs: 4500,
-  totalDurationMs: 4503,
-  errorName: 'AbortError',
-  errorMessage: 'This operation was aborted',
-  timestamp: '2026-03-04T23:21:56.246Z'
-}
-2026-03-04 23:21:56.246 [warning] ⚠️ [SUPERMEMORY] Search failed (Request timeout after 4500ms: https://api.supermemory.ai/v4/search) (attempt 1/2), retrying in 338ms
-2026-03-04 23:21:56.943 [warning] ⏱️ [MEMORY] Memory loading timeout after 5200ms, using empty fallback
-2026-03-04 23:21:56.944 [info] ⚡ [PARALLEL_PREP] Loaded memory, profile, and feedback in 5200ms (parallel)
-2026-03-04 23:21:56.944 [warning] ⚠️ [PROFILE] Age mismatch: user_metadata.age=97, profiles.age=20 (using profiles.age)
-2026-03-04 23:21:56.944 [info] 🔍 [FINNY] Starting ask handler for message: But that's your job
-2026-03-04 23:21:56.944 [info] 📦 [PACK_SELECTOR] Selected packs from classification: {
+2026-03-04 23:37:48.998 [info] ✅ [SUPERMEMORY] Stored user message for user 79952f35-b607-40d6-a32e-d81386882eb7 (after 1 retry): kV3aq4Cd5thxqgiYWKs9tx
+2026-03-04 23:37:49.069 [info] ✅ [CACHE] Invalidated supermemory documents cache for user 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:37:49.644 [info] ✅ [SUPERMEMORY] Found 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (query: "But that's your job...", avg similarity: 0.55, timing: 2016ms)
+2026-03-04 23:37:49.644 [info] 🧠 [MEMORY] Loaded 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (avg similarity: 0.55)
+2026-03-04 23:37:49.644 [info] ⚡ [PARALLEL_PREP] Loaded memory, profile, and feedback in 2279ms (parallel)
+2026-03-04 23:37:49.644 [warning] ⚠️ [PROFILE] Age mismatch: user_metadata.age=97, profiles.age=20 (using profiles.age)
+2026-03-04 23:37:49.644 [info] 🔍 [FINNY] Starting ask handler for message: But that's your job
+2026-03-04 23:37:49.644 [info] 📦 [PACK_SELECTOR] Selected packs from classification: {
   needs: [ 'summary_min' ],
   filters: { merchant: null, category: null, period: null },
   useMerchantRPC: false,
   required_packs: [ 'summary_min' ],
   optional_packs: []
 }
-2026-03-04 23:21:56.944 [info] 🎯 [SLOTS] Final slots (classification overrides keyword): {
+2026-03-04 23:37:49.644 [info] 🎯 [SLOTS] Final slots (classification overrides keyword): {
   "intent": "ask",
   "useMerchantRPC": false,
   "time_range": "current"
 }
-2026-03-04 23:21:56.944 [info] 🎯 [FINNY] Selected needs from classification: [ 'summary_min' ]
-2026-03-04 23:21:56.945 [info] 🌍 [FINNY] Web search decision: {
+2026-03-04 23:37:49.645 [info] 🎯 [FINNY] Selected needs from classification: [ 'summary_min' ]
+2026-03-04 23:37:49.645 [info] 🌍 [FINNY] Web search decision: {
   classification_needs_web: false,
   keyword_fallback: false,
   final_decision: false
 }
-2026-03-04 23:21:56.945 [info] ✅ [DATA_CACHE] In-memory cache HIT for summary_min (summary_min_79952f35-b607-40d6-a32e-d81386882eb7)
-2026-03-04 23:21:56.945 [info] ✅ [FINNY] Using pre-built context for: summary_min
-2026-03-04 23:21:56.945 [info] 🎯 [FINNY] All contexts pre-built, returning cached data
-2026-03-04 23:21:56.945 [info] 📦 [FINNY] Context packs built: [ 'base' ]
-2026-03-04 23:21:56.945 [info] ⚠️ [FINNY] Data gaps: []
-2026-03-04 23:21:56.945 [info] 🔍 [FINANCIAL_DATA] Building financialDataForState: {
+2026-03-04 23:37:49.645 [info] ✅ [DATA_CACHE] In-memory cache HIT for summary_min (summary_min_79952f35-b607-40d6-a32e-d81386882eb7)
+2026-03-04 23:37:49.645 [info] ✅ [FINNY] Using pre-built context for: summary_min
+2026-03-04 23:37:49.645 [info] 🎯 [FINNY] All contexts pre-built, returning cached data
+2026-03-04 23:37:49.645 [info] 📦 [FINNY] Context packs built: [ 'base' ]
+2026-03-04 23:37:49.645 [info] ⚠️ [FINNY] Data gaps: []
+2026-03-04 23:37:49.645 [info] 🔍 [FINANCIAL_DATA] Building financialDataForState: {
   hasBase: true,
   hasSpend: true,
   hasCategoryDetails: false,
   categoryDetailsTransactionCount: 0
 }
-2026-03-04 23:21:56.945 [info] 📊 [USER_DATA] Summary data: netWorth=$668.27, liquidAssets=$1766.86, investmentsTotal=$2751.60, liabilities=$3850.19, accounts=7 (1 investment)
-2026-03-04 23:21:56.945 [info] 📊 [USER_DATA] Accounts: BILT WORLD ELITE MASTERCARD�� ...7492: $141.89 (credit/credit card) | 360 Checking: $426.84 (depository/checking) | Blue Cash Everyday®: $226.84 (credit/credit card) | Individual - TOD: $2749.89 (investment/investment) | CREDIT CARD: $3481.46 (credit/credit card) | CHASE COLLEGE: $3904.67 (depository/checking) | yb40mOZev0fAaLL5RRbMHEqoqXBOxXhDAY6ve: $116.52 (null/N/A)
-2026-03-04 23:21:56.945 [info] 🎯 [USER_STATE] Detected:
-2026-03-04 23:21:56.945 [info] └─ Emotional: neutral (confidence: 1.00) | Urgency: normal
-2026-03-04 23:21:56.945 [info] └─ Classification: ask_personalized (actionable) | Confidence: 1.00
-2026-03-04 23:21:56.945 [info] 📋 [ADAPTATION] Feedback Context Added: 3 preferences, 2 deep insights | 1. Message length: User prefers medium responses (1 positive feedback) | 2. Tone: User prefers neutral tone in responses (1 positive feedback) | 3. Topic-specific: User prefers detailed responses about budgeting (1 feedback difference)
-2026-03-04 23:21:56.947 [info] 🧭 [ADVISORY_RUNTIME] Derived runtime: {
+2026-03-04 23:37:49.646 [info] 📊 [USER_DATA] Summary data: netWorth=$668.27, liquidAssets=$1766.86, investmentsTotal=$2751.60, liabilities=$3850.19, accounts=7 (1 investment)
+2026-03-04 23:37:49.646 [info] 📊 [USER_DATA] Accounts: BILT WORLD ELITE MASTERCARD�� ...7492: $141.89 (credit/credit card) | 360 Checking: $426.84 (depository/checking) | Blue Cash Everyday®: $226.84 (credit/credit card) | Individual - TOD: $2749.89 (investment/investment) | CREDIT CARD: $3481.46 (credit/credit card) | CHASE COLLEGE: $3904.67 (depository/checking) | yb40mOZev0fAaLL5RRbMHEqoqXBOxXhDAY6ve: $116.52 (null/N/A)
+2026-03-04 23:37:49.646 [info] 🎯 [USER_STATE] Detected:
+2026-03-04 23:37:49.646 [info] └─ Emotional: neutral (confidence: 1.00) | Urgency: normal
+2026-03-04 23:37:49.646 [info] └─ Classification: ask_personalized (actionable) | Confidence: 1.00
+2026-03-04 23:37:49.646 [info] 📋 [ADAPTATION] Feedback Context Added: 3 preferences, 2 deep insights | 1. Message length: User prefers medium responses (1 positive feedback) | 2. Tone: User prefers neutral tone in responses (1 positive feedback) | 3. Topic-specific: User prefers detailed responses about budgeting (1 feedback difference)
+2026-03-04 23:37:49.648 [info] 🧭 [ADVISORY_RUNTIME] Derived runtime: {
   advisory_job: 'improve',
   decision_type: 'none',
   risk_level: 'low',
@@ -623,17 +590,17 @@ FINAL QUALITY CHECK:
   user_refused: false,
   blockers: []
 }
-2026-03-04 23:21:56.947 [info] ✅ [GET_TURNS] Returning 2 turns from cache (from 2 total) for key: 79952f35-b607-40d6-a32e-d81386882eb7:d619e4bc-a70f-4332-b728-b1ec90a14850
-2026-03-04 23:21:56.947 [info] ✅ [RECENT_TURNS] Found 2 recent turns
-2026-03-04 23:21:56.947 [info] 📊 [FINANCIAL_DATA] Formatting financial data:
-2026-03-04 23:21:56.947 [info] - Base pack: netWorth=$668.27, liquidAssets=$1766.86, liabilities=$3850.19
-2026-03-04 23:21:56.948 [info] - Transactions: 5 transactions
-2026-03-04 23:21:56.948 [info] - Accounts: 7 accounts
-2026-03-04 23:21:56.948 [info] - Spend: present
-2026-03-04 23:21:56.948 [info] - CategoryDetails: missing
-2026-03-04 23:21:56.949 [info] 📦 [PROMPT_ENGINE] 6-Layer Architecture: 1. Core Identity | 2. Current Situation (actionable intent) | 3. Response Strategy (1 strategies) | 4. Personalization (0 memories) | 5. Communication Style (conversational) | 6. Response Guidelines
-2026-03-04 23:21:56.949 [info] --------------------------------
-2026-03-04 23:21:56.950 [info] === CORE IDENTITY ===
+2026-03-04 23:37:49.648 [info] ✅ [GET_TURNS] Returning 2 turns from cache (from 2 total) for key: 79952f35-b607-40d6-a32e-d81386882eb7:c6fdf737-a58a-4ea5-9b14-e40bb9d4a7ab
+2026-03-04 23:37:49.648 [info] ✅ [RECENT_TURNS] Found 2 recent turns
+2026-03-04 23:37:49.648 [info] 📊 [FINANCIAL_DATA] Formatting financial data:
+2026-03-04 23:37:49.648 [info] - Base pack: netWorth=$668.27, liquidAssets=$1766.86, liabilities=$3850.19
+2026-03-04 23:37:49.648 [info] - Transactions: 5 transactions
+2026-03-04 23:37:49.648 [info] - Accounts: 7 accounts
+2026-03-04 23:37:49.648 [info] - Spend: present
+2026-03-04 23:37:49.648 [info] - CategoryDetails: missing
+2026-03-04 23:37:49.650 [info] 📦 [PROMPT_ENGINE] 6-Layer Architecture: 1. Core Identity | 2. Current Situation (actionable intent) | 3. Response Strategy (1 strategies) | 4. Personalization (10 memories) | 5. Communication Style (conversational) | 6. Response Guidelines
+2026-03-04 23:37:49.650 [info] --------------------------------
+2026-03-04 23:37:49.651 [info] === CORE IDENTITY ===
 
 You are Finny, the user's personal financial advisor.
 Your job is to give realistic, useful, direct money advice using the user's actual financial data.
@@ -708,7 +675,7 @@ GROUNDING_RULES:
 CONTINUITY_OVERRIDE:
 - mode: repair_previous_answer
 - original_user_question: Give me a spending tip
-- previous_answer_excerpt: The clearest place to cut right now is Travel. You spent $5262.93 there last month, which is too large relative to your current cash pressure. Cut that first before worrying about smaller categories.
+- previous_answer_excerpt: You spent $5,262.93 on travel last month, which is a significant portion of your income. To reduce spending, consider cutting back on non-essential travel expenses or finding more affordable alternatives. A cautious approach would be to aim for a 50% reduction in travel spending, which would be around $2,631.46.
 - instruction: Replace the previous answer directly. Do not defend it.
 
 RESPONSE_CONTRACT: repair_previous_answer
@@ -912,6 +879,23 @@ User views money as a tool for freedom. User indicated they could cover a $1,000
 - User preferences for style/tone apply fully
 - Provide complete answers that fully address the question, but keep them concise and well-formatted with hyphen lists, bullet characters (•), or numbered lists when needed
 
+RELEVANT CONTEXT FROM PREVIOUS CONVERSATIONS:
+1. Kartik Bihani has a goal to purchase a watch by 2026-10-25.
+2. Kartik Bihani has been stressed this week.
+3. Kartikey Bihani is working on controlling his spending.
+4. Kartikey Bihani wants to reduce his spending.
+5. Kartikey Bihani wants to buy a mansion in Geneva.
+6. Kartikey Bihani cannot afford a $4,000 watch right now.
+7. Kartikey Bihani is interested in building wealth rather than just moving money around.
+8. Kartikey Bihani's laptop purchase was a necessary upgrade, not an impulse buy.
+9. Kartikey Bihani prefers personalized financial guidance over generic advice.
+10. Kartikey Bihani's sister paid for his $1600 laptop.
+
+When answering personal or reflective questions (e.g. "what do you know about me"),
+prefer referencing identity and life-stage memories (age, student/working/occupational status, goals)
+before mentioning financial numbers.
+Use past memories only when they materially help answer the current question. Ignore irrelevant memories.
+
 === COMMUNICATION STYLE (CONVERSATIONAL) ===
 - Use warm, approachable language without sounding playful or casual-for-the-sake-of-it
 - Avoid corporate financial jargon when simpler words work
@@ -997,37 +981,91 @@ FINAL QUALITY CHECK:
 - I did not use filler or finance-blog language.
 - I did not ask more than one question.
 - I sound like a human being, not a template.
-2026-03-04 23:21:56.950 [info] --------------------------------
-2026-03-04 23:21:56.950 [info] 📝 [PROMPT] Ready (system: 14.7k chars)
-2026-03-04 23:21:58.373 [info] ✅ [SUPERMEMORY] Found 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (query: "But that's your job...", avg similarity: 0.54, timing: 1443ms)
-2026-03-04 23:21:58.373 [info] 🧠 [MEMORY] Loaded 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (avg similarity: 0.54)
-
-------------------------------------------------------------------------------------------------------------
-------------------------------------------------------------------------------------------------------------
-
-2026-03-04 23:22:29.489 [error] ❌ [CONVERSATION_LOG] Attempt 1/3 failed: Insert timed out
-2026-03-04 23:22:29.489 [error] ⏱️ [FETCH_TIMEOUT] Request timeout triggered [1772666525032-n7w2gas7l] {
-  method: 'POST',
-  url: 'https://api.supermemory.ai/v3/documents',
-  timeoutMs: 4500,
-  elapsedMs: 24455,
-  timestamp: '2026-03-04T23:22:29.487Z'
+2026-03-04 23:37:49.651 [info] --------------------------------
+2026-03-04 23:37:49.651 [info] 📝 [PROMPT] Ready (system: 15.8k chars)
+2026-03-04 23:37:52.041 [info] ✅ [LLM] Response received (status: 200)
+2026-03-04 23:37:52.041 [info] 📝 [LLM] Response length: 830 chars
+2026-03-04 23:37:52.041 [info] 🧭 [ADVISORY_RUNTIME] Enforced question policy
+2026-03-04 23:37:52.043 [info] 🧭 [ADVISORY_RUNTIME] Response metrics: {
+  question_count: 0,
+  allowed_question_count: 0,
+  feature_flag_enabled: true,
+  resolution_mode: 'answer_now',
+  question_policy: 'none',
+  question_reason: 'none'
 }
-2026-03-04 23:22:29.489 [error] ❌ [FETCH_TIMEOUT] Request aborted (timeout) [1772666525032-n7w2gas7l] {
+2026-03-04 23:37:52.043 [info] ✅ [VALIDATION] Response passed basic validation checks
+2026-03-04 23:37:52.091 [info] 📤 [ASK] Final response prepared: {
+  request_id: null,
+  contract: 'repair_previous_answer',
+  repair_used: false,
+  fallback_used: false,
+  response_preview: "I apologize for the previous generic response. Let's take a closer look at your current financial situation. Your liquid assets are $1,766.86, and your monthly burn is $6,720.90, which is significantly higher than your m"
+}
+2026-03-04 23:37:52.091 [info] ✅ [APPEND_TURNS] Stored 4 total turns for key: 79952f35-b607-40d6-a32e-d81386882eb7:c6fdf737-a58a-4ea5-9b14-e40bb9d4a7ab
+2026-03-04 23:37:52.092 [info] ⏱️  [TIMING] Total: 4.931s
+2026-03-04 23:37:52.092 [info] └─ Handler: 2.447s | LLM: 0.137s | Memory: 2.279s | Profile: 2.279s
+2026-03-04 23:37:52.092 [info] 🔄 [STREAMING] Starting streaming response
+2026-03-04 23:37:52.092 [info] 🔄 [STREAMING] Starting stream (4.931s to first chunk)
+2026-03-04 23:37:52.092 [info] 🔄 [STREAMING] Streaming text: I apologize for the previous generic response. Let's take a closer look at your current financial si...
+2026-03-04 23:37:52.371 [info] ✅ [STREAMING] Streaming completed
+2026-03-04 23:37:52.371 [info] 🔍 [FINNY] Response: {
+  request_id: '0568fae3-6f79-4ff7-a716-178542378e37',
+  action: 'ask',
+  has_visible_content: true,
+  response_preview: "I apologize for the previous generic response. Let's take a closer look at your current financial situation. Your liquid assets are $1,766.86, and your monthly burn is $6,720.90, w",
+  response: {
+    message: "I apologize for the previous generic response. Let's take a closer look at your current financial situation. Your liquid assets are $1,766.86, and your monthly burn is $6,720.90, which is significantly higher than your monthly income of $1,500.00. This indicates a high cash pressure. A spending tip for you would be to focus on reducing your monthly burn. You have a credit card debt of $3,850.19, which is near your liquid assets. I would recommend prioritizing debt reduction and building an emergency fund. Consider allocating a significant portion of your income towards debt repayment and savings. A possible approach could be to cut back on discretionary spending, such as dining out or entertainment, and allocate that amount towards debt repayment.",
+    type: 'assistant'
+  }
+}
+2026-03-04 23:37:47.127 [error] ❌ [CONVERSATION_LOG] Attempt 1/3 failed: Insert timed out
+2026-03-04 23:37:47.127 [error] ⏱️ [FETCH_TIMEOUT] Request timeout triggered [1772667444659-eh2hjn22k] {
   method: 'POST',
   url: 'https://api.supermemory.ai/v3/documents',
   timeoutMs: 4500,
-  totalDurationMs: 24456,
+  elapsedMs: 22466,
+  timestamp: '2026-03-04T23:37:47.125Z'
+}
+2026-03-04 23:37:47.128 [error] ❌ [FETCH_TIMEOUT] Request aborted (timeout) [1772667444659-eh2hjn22k] {
+  method: 'POST',
+  url: 'https://api.supermemory.ai/v3/documents',
+  timeoutMs: 4500,
+  totalDurationMs: 22468,
   errorName: 'AbortError',
   errorMessage: 'This operation was aborted',
-  timestamp: '2026-03-04T23:22:29.488Z'
+  timestamp: '2026-03-04T23:37:47.127Z'
 }
-2026-03-04 23:22:29.489 [warning] ⚠️ [SUPERMEMORY] user message storage failed (attempt 1/2), retrying in 615ms: Request timeout after 4500ms: https://api.supermemory.ai/v3/documents
-2026-03-04 23:22:29.513 [info] 🤖 [FINNY] Request received: POST
-2026-03-04 23:22:29.513 [info] 📝 [FINNY] Action: message
-2026-03-04 23:22:29.513 [info] 📊 [FINNY] Context provided: Yes
-2026-03-04 23:22:30.186 [info] 🧭 [CONTINUITY] Evaluation: {
-  message_preview: 'Why?',
+2026-03-04 23:37:47.128 [warning] ⚠️ [SUPERMEMORY] user message storage failed (attempt 1/2), retrying in 742ms: Request timeout after 4500ms: https://api.supermemory.ai/v3/documents
+2026-03-04 23:37:47.161 [info] 🤖 [FINNY] Request received: POST
+2026-03-04 23:37:47.161 [info] 🆔 [FINNY] Request ID: 0568fae3-6f79-4ff7-a716-178542378e37
+2026-03-04 23:37:47.161 [info] 📝 [FINNY] Action: message
+2026-03-04 23:37:47.161 [info] 📊 [FINNY] Context provided: Yes
+2026-03-04 23:37:47.366 [info] 🧭 [CONTINUITY] Evaluation: {
+  message_preview: "But that's your job",
+  normalized_message_preview: "but that's your job",
+  previous_contract: 'spending_tip_grounded',
+  previous_subject: 'Travel',
+  was_finance_advice: true,
+  reason: 'complaint_match',
+  applied: true
+}
+2026-03-04 23:37:47.366 [info] 🧭 [CONTINUITY] Applied pre-classification override: {
+  mode: 'repair_previous_answer',
+  source_contract: 'spending_tip_grounded',
+  source_subject: 'Travel'
+}
+2026-03-04 23:37:47.366 [info] 🧠 [MEMORY] Loading memories from Supermemory for user: 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:37:47.367 [info] 👤 [PROFILE] Using cached profile data for user: 79952f35-b607-40d6-a32e-d81386882eb7 - finny_style: conversational
+2026-03-04 23:37:47.367 [info] ⚡ [FEEDBACK_CACHE] Using cached feedback patterns for user: 79952f35-b607-40d6-a32e-d81386882eb7
+
+------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------
+
+"why?"
+
+2026-03-04 23:38:26.023 [info] 🧭 [CONTINUITY] Evaluation: {
+  message_preview: 'why?',
   normalized_message_preview: 'why?',
   previous_contract: 'repair_previous_answer',
   previous_subject: 'Travel',
@@ -1035,57 +1073,57 @@ FINAL QUALITY CHECK:
   reason: 'referential_followup_match',
   applied: true
 }
-2026-03-04 23:22:30.186 [info] 🧭 [CONTINUITY] Applied pre-classification override: {
+2026-03-04 23:38:26.024 [info] 🧭 [CONTINUITY] Applied pre-classification override: {
   mode: 'ask_followup_contextual',
   source_contract: 'repair_previous_answer',
   source_subject: 'Travel'
 }
-2026-03-04 23:22:30.186 [info] 🧠 [MEMORY] Loading memories from Supermemory for user: 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:22:30.187 [info] 👤 [PROFILE] Using cached profile data for user: 79952f35-b607-40d6-a32e-d81386882eb7 - finny_style: conversational
-2026-03-04 23:22:30.187 [info] ⚡ [FEEDBACK_CACHE] Using cached feedback patterns for user: 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:22:32.805 [info] ✅ [SUPERMEMORY] Stored user message for user 79952f35-b607-40d6-a32e-d81386882eb7 (after 1 retry): QnQ1BbzLvJcZfGnuXNyqyZ
-2026-03-04 23:22:33.035 [info] ✅ [CACHE] Invalidated supermemory documents cache for user 79952f35-b607-40d6-a32e-d81386882eb7
-2026-03-04 23:22:33.731 [info] ✅ [SUPERMEMORY] Found 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (query: "Why?...", avg similarity: 0.60, timing: 3267ms)
-2026-03-04 23:22:33.731 [info] 🧠 [MEMORY] Loaded 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (avg similarity: 0.60)
-2026-03-04 23:22:33.731 [info] ⚡ [PARALLEL_PREP] Loaded memory, profile, and feedback in 3545ms (parallel)
-2026-03-04 23:22:33.731 [warning] ⚠️ [PROFILE] Age mismatch: user_metadata.age=97, profiles.age=20 (using profiles.age)
-2026-03-04 23:22:33.731 [info] 🔍 [FINNY] Starting ask handler for message: Why?
-2026-03-04 23:22:33.732 [info] 📦 [PACK_SELECTOR] Selected packs from classification: {
+2026-03-04 23:38:26.024 [info] 🧠 [MEMORY] Loading memories from Supermemory for user: 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:38:26.024 [info] 👤 [PROFILE] Using cached profile data for user: 79952f35-b607-40d6-a32e-d81386882eb7 - finny_style: conversational
+2026-03-04 23:38:26.024 [info] ⚡ [FEEDBACK_CACHE] Using cached feedback patterns for user: 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:38:27.569 [info] ✅ [SUPERMEMORY] Stored user message for user 79952f35-b607-40d6-a32e-d81386882eb7 (after 1 retry): 1mYG9tovRQDEDnCMwDP7WW
+2026-03-04 23:38:27.628 [info] ✅ [CACHE] Invalidated supermemory documents cache for user 79952f35-b607-40d6-a32e-d81386882eb7
+2026-03-04 23:38:28.877 [info] ✅ [SUPERMEMORY] Found 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (query: "why?...", avg similarity: 0.61, timing: 2509ms)
+2026-03-04 23:38:28.877 [info] 🧠 [MEMORY] Loaded 10 relevant memories for user 79952f35-b607-40d6-a32e-d81386882eb7 (avg similarity: 0.61)
+2026-03-04 23:38:28.877 [info] ⚡ [PARALLEL_PREP] Loaded memory, profile, and feedback in 2853ms (parallel)
+2026-03-04 23:38:28.877 [warning] ⚠️ [PROFILE] Age mismatch: user_metadata.age=97, profiles.age=20 (using profiles.age)
+2026-03-04 23:38:28.877 [info] 🔍 [FINNY] Starting ask handler for message: why?
+2026-03-04 23:38:28.877 [info] 📦 [PACK_SELECTOR] Selected packs from classification: {
   needs: [ 'summary_min' ],
   filters: { merchant: null, category: null, period: null },
   useMerchantRPC: false,
   required_packs: [ 'summary_min' ],
   optional_packs: []
 }
-2026-03-04 23:22:33.732 [info] 🎯 [SLOTS] Final slots (classification overrides keyword): {
+2026-03-04 23:38:28.877 [info] 🎯 [SLOTS] Final slots (classification overrides keyword): {
   "intent": "ask",
   "useMerchantRPC": false,
   "time_range": "current"
 }
-2026-03-04 23:22:33.732 [info] 🎯 [FINNY] Selected needs from classification: [ 'summary_min' ]
-2026-03-04 23:22:33.733 [info] 🌍 [FINNY] Web search decision: {
+2026-03-04 23:38:28.877 [info] 🎯 [FINNY] Selected needs from classification: [ 'summary_min' ]
+2026-03-04 23:38:28.878 [info] 🌍 [FINNY] Web search decision: {
   classification_needs_web: false,
   keyword_fallback: false,
   final_decision: false
 }
-2026-03-04 23:22:33.733 [info] ✅ [DATA_CACHE] In-memory cache HIT for summary_min (summary_min_79952f35-b607-40d6-a32e-d81386882eb7)
-2026-03-04 23:22:33.733 [info] ✅ [FINNY] Using pre-built context for: summary_min
-2026-03-04 23:22:33.733 [info] 🎯 [FINNY] All contexts pre-built, returning cached data
-2026-03-04 23:22:33.733 [info] 📦 [FINNY] Context packs built: [ 'base' ]
-2026-03-04 23:22:33.733 [info] ⚠️ [FINNY] Data gaps: []
-2026-03-04 23:22:33.738 [info] 🔍 [FINANCIAL_DATA] Building financialDataForState: {
+2026-03-04 23:38:28.878 [info] ✅ [DATA_CACHE] In-memory cache HIT for summary_min (summary_min_79952f35-b607-40d6-a32e-d81386882eb7)
+2026-03-04 23:38:28.878 [info] ✅ [FINNY] Using pre-built context for: summary_min
+2026-03-04 23:38:28.878 [info] 🎯 [FINNY] All contexts pre-built, returning cached data
+2026-03-04 23:38:28.878 [info] 📦 [FINNY] Context packs built: [ 'base' ]
+2026-03-04 23:38:28.878 [info] ⚠️ [FINNY] Data gaps: []
+2026-03-04 23:38:28.878 [info] 🔍 [FINANCIAL_DATA] Building financialDataForState: {
   hasBase: true,
   hasSpend: true,
   hasCategoryDetails: false,
   categoryDetailsTransactionCount: 0
 }
-2026-03-04 23:22:33.738 [info] 📊 [USER_DATA] Summary data: netWorth=$668.27, liquidAssets=$1766.86, investmentsTotal=$2751.60, liabilities=$3850.19, accounts=7 (1 investment)
-2026-03-04 23:22:33.738 [info] 📊 [USER_DATA] Accounts: BILT WORLD ELITE MASTERCARD�� ...7492: $141.89 (credit/credit card) | 360 Checking: $426.84 (depository/checking) | Blue Cash Everyday®: $226.84 (credit/credit card) | Individual - TOD: $2749.89 (investment/investment) | CREDIT CARD: $3481.46 (credit/credit card) | CHASE COLLEGE: $3904.67 (depository/checking) | yb40mOZev0fAaLL5RRbMHEqoqXBOxXhDAY6ve: $116.52 (null/N/A)
-2026-03-04 23:22:33.738 [info] 🎯 [USER_STATE] Detected:
-2026-03-04 23:22:33.738 [info] └─ Emotional: neutral (confidence: 1.00) | Urgency: normal
-2026-03-04 23:22:33.738 [info] └─ Classification: ask_personalized (actionable) | Confidence: 1.00
-2026-03-04 23:22:33.738 [info] 📋 [ADAPTATION] Feedback Context Added: 3 preferences, 2 deep insights | 1. Message length: User prefers medium responses (1 positive feedback) | 2. Tone: User prefers neutral tone in responses (1 positive feedback) | 3. Topic-specific: User prefers detailed responses about budgeting (1 feedback difference)
-2026-03-04 23:22:33.738 [info] 🧭 [ADVISORY_RUNTIME] Derived runtime: {
+2026-03-04 23:38:28.878 [info] 📊 [USER_DATA] Summary data: netWorth=$668.27, liquidAssets=$1766.86, investmentsTotal=$2751.60, liabilities=$3850.19, accounts=7 (1 investment)
+2026-03-04 23:38:28.878 [info] 📊 [USER_DATA] Accounts: BILT WORLD ELITE MASTERCARD�� ...7492: $141.89 (credit/credit card) | 360 Checking: $426.84 (depository/checking) | Blue Cash Everyday®: $226.84 (credit/credit card) | Individual - TOD: $2749.89 (investment/investment) | CREDIT CARD: $3481.46 (credit/credit card) | CHASE COLLEGE: $3904.67 (depository/checking) | yb40mOZev0fAaLL5RRbMHEqoqXBOxXhDAY6ve: $116.52 (null/N/A)
+2026-03-04 23:38:28.878 [info] 🎯 [USER_STATE] Detected:
+2026-03-04 23:38:28.878 [info] └─ Emotional: neutral (confidence: 1.00) | Urgency: normal
+2026-03-04 23:38:28.878 [info] └─ Classification: ask_personalized (actionable) | Confidence: 1.00
+2026-03-04 23:38:28.878 [info] 📋 [ADAPTATION] Feedback Context Added: 3 preferences, 2 deep insights | 1. Message length: User prefers medium responses (1 positive feedback) | 2. Tone: User prefers neutral tone in responses (1 positive feedback) | 3. Topic-specific: User prefers detailed responses about budgeting (1 feedback difference)
+2026-03-04 23:38:28.879 [info] 🧭 [ADVISORY_RUNTIME] Derived runtime: {
   advisory_job: 'improve',
   decision_type: 'none',
   risk_level: 'low',
@@ -1096,17 +1134,17 @@ FINAL QUALITY CHECK:
   user_refused: false,
   blockers: []
 }
-2026-03-04 23:22:33.738 [info] ✅ [GET_TURNS] Returning 4 turns from cache (from 4 total) for key: 79952f35-b607-40d6-a32e-d81386882eb7:d619e4bc-a70f-4332-b728-b1ec90a14850
-2026-03-04 23:22:33.738 [info] ✅ [RECENT_TURNS] Found 4 recent turns
-2026-03-04 23:22:33.739 [info] 📊 [FINANCIAL_DATA] Formatting financial data:
-2026-03-04 23:22:33.739 [info] - Base pack: netWorth=$668.27, liquidAssets=$1766.86, liabilities=$3850.19
-2026-03-04 23:22:33.739 [info] - Transactions: 5 transactions
-2026-03-04 23:22:33.739 [info] - Accounts: 7 accounts
-2026-03-04 23:22:33.739 [info] - Spend: present
-2026-03-04 23:22:33.739 [info] - CategoryDetails: missing
-2026-03-04 23:22:33.739 [info] 📦 [PROMPT_ENGINE] 6-Layer Architecture: 1. Core Identity | 2. Current Situation (actionable intent) | 3. Response Strategy (1 strategies) | 4. Personalization (10 memories) | 5. Communication Style (conversational) | 6. Response Guidelines
-2026-03-04 23:22:33.739 [info] --------------------------------
-2026-03-04 23:22:33.740 [info] === CORE IDENTITY ===
+2026-03-04 23:38:28.879 [info] ✅ [GET_TURNS] Returning 4 turns from cache (from 4 total) for key: 79952f35-b607-40d6-a32e-d81386882eb7:c6fdf737-a58a-4ea5-9b14-e40bb9d4a7ab
+2026-03-04 23:38:28.879 [info] ✅ [RECENT_TURNS] Found 4 recent turns
+2026-03-04 23:38:28.879 [info] 📊 [FINANCIAL_DATA] Formatting financial data:
+2026-03-04 23:38:28.879 [info] - Base pack: netWorth=$668.27, liquidAssets=$1766.86, liabilities=$3850.19
+2026-03-04 23:38:28.879 [info] - Transactions: 5 transactions
+2026-03-04 23:38:28.879 [info] - Accounts: 7 accounts
+2026-03-04 23:38:28.879 [info] - Spend: present
+2026-03-04 23:38:28.879 [info] - CategoryDetails: missing
+2026-03-04 23:38:28.881 [info] 📦 [PROMPT_ENGINE] 6-Layer Architecture: 1. Core Identity | 2. Current Situation (actionable intent) | 3. Response Strategy (1 strategies) | 4. Personalization (10 memories) | 5. Communication Style (conversational) | 6. Response Guidelines
+2026-03-04 23:38:28.881 [info] --------------------------------
+2026-03-04 23:38:28.881 [info] === CORE IDENTITY ===
 
 You are Finny, the user's personal financial advisor.
 Your job is to give realistic, useful, direct money advice using the user's actual financial data.
@@ -1181,7 +1219,7 @@ GROUNDING_RULES:
 CONTINUITY_OVERRIDE:
 - mode: ask_followup_contextual
 - original_user_question: Give me a spending tip
-- previous_answer_excerpt: Kartikey, considering your current cash pressure with liquid assets at $1766.86 and liabilities of $3850.19, a spending tip would be to immediately cut back on non-essential travel expenses. Your travel spending was $5262.93 last month, which is significantly high. I recommend reducing your travel budget for the curre…
+- previous_answer_excerpt: I apologize for the previous generic response. Let's take a closer look at your current financial situation. Your liquid assets are $1,766.86, and your monthly burn is $6,720.90, which is significantly higher than your monthly income of $1,500.00. This indicates a high cash pressure. A spending tip for you would be to…
 - instruction: Continue the same subject directly. Do not restart or redirect.
 
 RESPONSE_CONTRACT: followup_contextual
@@ -1387,14 +1425,14 @@ User views money as a tool for freedom. User indicated they could cover a $1,000
 RELEVANT CONTEXT FROM PREVIOUS CONVERSATIONS:
 1. Kartikey Bihani should prioritize debt repayment over luxury purchases.
 2. Kartikey Bihani is spending significantly more than his income.
-3. Kartikey Bihani's monthly burn rate ($6,720.90) exceeds his income ($1,500.00).
-4. Kartikey Bihani's spending for February 2026 was $5,262.93 for Travel and $875.91 for Housing.
-5. Kartik Bihani has been stressed this week.
-6. Kartikey Bihani has a debt of $4,342.11.
-7. Kartikey Bihani has a credit card debt of $3,850.19.
-8. Kartikey Bihani is assessing his travel, housing, and food expenses for spending insights.
+3. Kartikey Bihani is advised to implement a 30-day waiting period for non-essential purchases.
+4. Kartikey Bihani's laptop purchase was a necessary upgrade, not an impulse buy.
+5. Kartikey Bihani's monthly burn rate ($6,720.90) exceeds his income ($1,500.00).
+6. Kartik Bihani has been stressed this week.
+7. Kartikey Bihani cannot afford a $4,000 watch right now.
+8. Kartikey Bihani is considering buying a $2500 art piece.
 9. Kartikey Bihani is overspent by 5125%.
-10. Kartikey Bihani is considering buying a $2500 art piece.
+10. Kartikey Bihani was advised to implement a 30-day waiting period for non-essential purchases to curb shopping expenses.
 
 When answering personal or reflective questions (e.g. "what do you know about me"),
 prefer referencing identity and life-stage memories (age, student/working/occupational status, goals)
@@ -1486,27 +1524,51 @@ FINAL QUALITY CHECK:
 - I did not use filler or finance-blog language.
 - I did not ask more than one question.
 - I sound like a human being, not a template.
-2026-03-04 23:22:33.740 [info] --------------------------------
-2026-03-04 23:22:33.740 [info] 📝 [PROMPT] Ready (system: 15.7k chars)
-2026-03-04 23:22:36.050 [info] ✅ [LLM] Response received (status: 200)
-2026-03-04 23:22:36.050 [info] 📝 [LLM] Response length: 475 chars
-2026-03-04 23:22:36.050 [info] 🧭 [ADVISORY_RUNTIME] Response metrics: {
-  question_count: 0,
-  allowed_question_count: 0,
-  feature_flag_enabled: true,
-  resolution_mode: 'answer_now',
-  question_policy: 'none',
-  question_reason: 'none'
+2026-03-04 23:38:28.881 [info] --------------------------------
+2026-03-04 23:38:28.881 [info] 📝 [PROMPT] Ready (system: 15.8k chars)
+2026-03-04 23:38:25.769 [error] ⏱️ [FETCH_TIMEOUT] Request timeout triggered [1772667472371-q5c7pqhu7] {
+  method: 'POST',
+  url: 'https://api.supermemory.ai/v3/documents',
+  timeoutMs: 4500,
+  elapsedMs: 33394,
+  timestamp: '2026-03-04T23:38:25.765Z'
 }
-2026-03-04 23:22:36.050 [info] ✅ [VALIDATION] Response passed basic validation checks
-2026-03-04 23:22:36.169 [info] ✅ [APPEND_TURNS] Stored 6 total turns for key: 79952f35-b607-40d6-a32e-d81386882eb7:d619e4bc-a70f-4332-b728-b1ec90a14850
-2026-03-04 23:22:36.169 [info] ⏱️  [TIMING] Total: 6.656s
-2026-03-04 23:22:36.169 [info] └─ Handler: 2.438s | LLM: 0.429s | Memory: 3.545s | Profile: 3.545s
-2026-03-04 23:22:36.169 [info] 🔄 [STREAMING] Starting streaming response
-2026-03-04 23:22:36.170 [info] 🔄 [STREAMING] Starting stream (6.656s to first chunk)
-2026-03-04 23:22:36.170 [info] 🔄 [STREAMING] Streaming text: The high travel expense of $5262.93 last month likely indicates a discretionary spend that can be re...
-2026-03-04 23:22:36.330 [info] ✅ [STREAMING] Streaming completed
-2026-03-04 23:22:36.330 [info] 🔍 [FINNY] Response: {
-  message: "The high travel expense of $5262.93 last month likely indicates a discretionary spend that can be reduced or optimized. Given your current cash pressure, it's essential to prioritize essential expenses over discretionary ones. By cutting back on non-essential travel, you can allocate funds towards more pressing financial obligations, such as debt repayment or building an emergency fund. This will help you manage your finances more effectively and reduce financial stress.",
-  type: 'assistant'
+2026-03-04 23:38:25.769 [error] ❌ [FETCH_TIMEOUT] Request aborted (timeout) [1772667472371-q5c7pqhu7] {
+  method: 'POST',
+  url: 'https://api.supermemory.ai/v3/documents',
+  timeoutMs: 4500,
+  totalDurationMs: 33395,
+  errorName: 'AbortError',
+  errorMessage: 'This operation was aborted',
+  timestamp: '2026-03-04T23:38:25.766Z'
+}
+2026-03-04 23:38:25.769 [warning] ⚠️ [SUPERMEMORY] user message storage failed (attempt 1/2), retrying in 684ms: Request timeout after 4500ms: https://api.supermemory.ai/v3/documents
+2026-03-04 23:38:25.770 [info] 🤖 [FINNY] Request received: POST
+2026-03-04 23:38:25.770 [info] 🆔 [FINNY] Request ID: 6305b4d2-8582-4929-aca9-7adf7c1f01f0
+2026-03-04 23:38:25.770 [info] 📝 [FINNY] Action: message
+2026-03-04 23:38:25.770 [info] 📊 [FINNY] Context provided: Yes
+2026-03-04 23:38:30.377 [info] ✅ [LLM] Response received (status: 200)
+2026-03-04 23:38:30.377 [info] 📝 [LLM] Response length: 387 chars
+2026-03-04 23:38:30.378 [error] ❌ [FINNY] Ask handler error: ReferenceError: requestId is not defined
+    at handleAsk (file:///var/task/api/finny.js:4302:23)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async Object.handler (file:///var/task/api/finny.js:2245:20)
+    at async r (/opt/rust/nodejs.js:2:15572)
+    at async Server.<anonymous> (/opt/rust/nodejs.js:2:11594)
+    at async Server.<anonymous> (/opt/rust/nodejs.js:17:10190)
+2026-03-04 23:38:30.378 [info] ⏱️  [TIMING] Total: 4.608s
+2026-03-04 23:38:30.378 [info] └─ Handler: 1.502s | LLM: 0.140s | Memory: 2.853s | Profile: 2.853s
+2026-03-04 23:38:30.378 [info] 🔄 [STREAMING] Starting streaming response
+2026-03-04 23:38:30.379 [info] 🔄 [STREAMING] Starting stream (4.608s to first chunk)
+2026-03-04 23:38:30.379 [info] 🔄 [STREAMING] Streaming text: I'm having some technical difficulties right now. Please try again in a moment....
+2026-03-04 23:38:30.405 [info] ✅ [STREAMING] Streaming completed
+2026-03-04 23:38:30.405 [info] 🔍 [FINNY] Response: {
+  request_id: '6305b4d2-8582-4929-aca9-7adf7c1f01f0',
+  action: 'ask',
+  has_visible_content: true,
+  response_preview: "I'm having some technical difficulties right now. Please try again in a moment.",
+  response: {
+    message: "I'm having some technical difficulties right now. Please try again in a moment.",
+    type: 'assistant'
+  }
 }

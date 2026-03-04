@@ -60,6 +60,8 @@ const REPAIR_DEFENSIVE_PATTERNS = [
   /\bthat'?s great\b/i,
   /\blet me explain how i work\b/i,
   /\bi'?m an ai\b/i,
+  /\blet'?s take a closer look\b/i,
+  /\bconsidering your current financial situation\b/i,
 ];
 
 function lower(text = "") {
@@ -530,24 +532,34 @@ export function validateResponseContract({
     }
     issues.push(...detectWeakSpendingTipIssues(text));
   } else if (contract === "repair_previous_answer") {
+    const sourceQuestion = String(continuityDirective?.source_user_message || "");
+    const repairingSpendingTip =
+      continuityDirective?.source_contract === "spending_tip_grounded" ||
+      isSpendingTipRequest(sourceQuestion) ||
+      isSpendingTipRequest(message);
+
     if (REPAIR_DEFENSIVE_PATTERNS.some((pattern) => pattern.test(text))) {
       issues.push("defensive_repair_tone");
     }
     if (FOLLOWUP_REDIRECT_PATTERNS.some((pattern) => pattern.test(text))) {
       issues.push("off_topic_redirect");
     }
-    if (continuityDirective?.source_user_message) {
-      const originalLower = lower(continuityDirective.source_user_message);
-      if (
-        isSpendingTipRequest(originalLower) &&
-        spendingTipEvidence &&
-        !responseMentionsEvidence(text, spendingTipEvidence)
-      ) {
+    if (repairingSpendingTip) {
+      if (!spendingTipEvidence) {
+        issues.push("repair_missing_spending_evidence");
+      } else if (!responseMentionsEvidence(text, spendingTipEvidence)) {
         issues.push("repair_missing_spending_anchor");
       }
-      if (isSpendingTipRequest(originalLower)) {
-        issues.push(...detectWeakSpendingTipIssues(text));
+      if (countQuestionMarks(text) > 0) {
+        issues.push("repair_unexpected_question");
       }
+      issues.push(...detectWeakSpendingTipIssues(text));
+    }
+    if (
+      continuityDirective?.source_subject &&
+      !lower(text).includes(lower(continuityDirective.source_subject))
+    ) {
+      issues.push("repair_missing_subject");
     }
   } else if (contract === "followup_contextual") {
     if (FOLLOWUP_REDIRECT_PATTERNS.some((pattern) => pattern.test(text))) {
