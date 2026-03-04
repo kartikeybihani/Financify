@@ -403,7 +403,7 @@ export default function RecurringSection({
     try {
       setAnalyzing(true);
       const res = await authenticatedFetch(
-        `${API_BASE_URL}/api/exchange_public_token`,
+        `${API_BASE_URL}/api/plaid_management`,
         {
           method: "POST",
           headers: { "Content-Type": "application/json" },

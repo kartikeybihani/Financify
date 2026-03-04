@@ -1,6 +1,10 @@
 // /api/plaid_management.js
 import { client } from "../lib/api/plaidClient.js";
-import { supabase } from "../lib/api/supabase.js";
+import {
+  supabase,
+  supabaseUrl,
+  supabaseServiceKey,
+} from "../lib/api/supabase.js";
 import { snaptrade, isSandbox } from "../lib/api/snaptrade.js";
 import {
   verifyAuth,
@@ -11,13 +15,161 @@ import {
   checkRateLimit,
   formatRetryAfterSeconds,
 } from "../lib/api/rateLimiter.js";
+import { runRecurringAnalysis } from "../lib/recurringAnalysis.js";
+
+function accountsMatch(account1, account2) {
+  if (!account1 || !account2) return false;
+
+  const name1 = account1.name?.toLowerCase().trim();
+  const name2 = account2.name?.toLowerCase().trim();
+  const mask1 = account1.mask?.trim();
+  const mask2 = account2.mask?.trim();
+
+  if (mask1 && mask2 && mask1 === mask2) {
+    return true;
+  }
+
+  if (name1 && name2 && name1 === name2) {
+    if (mask1 && mask2 && mask1 !== mask2) {
+      return false;
+    }
+    return true;
+  }
+
+  return false;
+}
+
+async function checkForDuplicateItem(user_id, metadata) {
+  if (!metadata || !metadata.institution?.institution_id) {
+    console.log("⚠️ No institution_id in metadata, skipping duplicate check");
+    return { isDuplicate: false };
+  }
+
+  const institution_id = metadata.institution.institution_id;
+  const newAccounts = metadata.accounts || [];
+
+  const { data: existingItems, error: itemsError } = await supabase
+    .from("user_items")
+    .select("item_id, institution_id, institution_name")
+    .eq("user_id", user_id)
+    .eq("institution_id", institution_id);
+
+  if (itemsError) {
+    console.error("⚠️ Error checking for duplicate items:", itemsError);
+    return { isDuplicate: false };
+  }
+
+  if (!existingItems || existingItems.length === 0) {
+    return { isDuplicate: false };
+  }
+
+  const existingItemIds = existingItems.map((item) => item.item_id);
+  const { data: existingAccounts, error: accountsError } = await supabase
+    .from("accounts")
+    .select("account_id, item_id, name, mask, type, subtype")
+    .in("item_id", existingItemIds);
+
+  if (accountsError) {
+    console.error("⚠️ Error fetching existing accounts:", accountsError);
+    return { isDuplicate: false };
+  }
+
+  const matchingAccounts = [];
+  for (const newAccount of newAccounts) {
+    for (const existingAccount of existingAccounts || []) {
+      if (accountsMatch(newAccount, existingAccount)) {
+        matchingAccounts.push({
+          new: newAccount,
+          existing: existingAccount,
+        });
+      }
+    }
+  }
+
+  if (matchingAccounts.length > 0) {
+    const institutionName =
+      metadata.institution.name ||
+      existingItems[0]?.institution_name ||
+      "this institution";
+
+    const duplicateAccountNames = matchingAccounts
+      .map((m) => m.new.name || `Account ending in ${m.new.mask || "****"}`)
+      .filter(Boolean)
+      .join(", ");
+
+    if (!duplicateAccountNames || duplicateAccountNames.trim() === "") {
+      return {
+        isDuplicate: true,
+        institutionName,
+        duplicateAccountNames: "one or more accounts",
+        existingItemIds,
+      };
+    }
+
+    return {
+      isDuplicate: true,
+      institutionName,
+      duplicateAccountNames,
+      existingItemIds,
+    };
+  }
+
+  return { isDuplicate: false };
+}
+
+async function handleAnalyzeRecurring(req, res) {
+  const { user_id, item_id, trigger_source } = req.body;
+  if (!user_id) {
+    return res.status(400).json({ error: "Missing user_id" });
+  }
+
+  const { authorized, error: authError } = await verifyUserAuthorization(
+    req,
+    user_id
+  );
+  if (!authorized) {
+    return res
+      .status(authError?.includes("Unauthorized") ? 401 : 403)
+      .json({ error: authError || "Access denied" });
+  }
+
+  try {
+    const result = await runRecurringAnalysis(
+      supabase,
+      user_id,
+      item_id || null,
+      trigger_source || "manual"
+    );
+
+    if (result.reason === "no_transactions") {
+      return res.status(200).json({
+        success: true,
+        reason: "no_transactions",
+        message: "No transactions to analyze",
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      analysis_id: result.analysisId,
+      upserted: result.upserted,
+      summary: result.analysisJson?.summary,
+    });
+  } catch (err) {
+    console.error("analyze-recurring error:", err);
+    return res.status(500).json({
+      error: err.message || "Analysis failed",
+    });
+  }
+}
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  const { mode, item_id, user_id, userId, userSecret } = req.body;
+  const { mode, item_id, user_id, userId, userSecret, public_token, metadata } =
+    req.body;
   const redirect_uri =
     process.env.PLAID_REDIRECT_URI ||
     "https://financify-redirect.com/oauth-complete";
@@ -52,6 +204,158 @@ export default async function handler(req, res) {
   }
 
   try {
+    if (mode === "analyze_recurring") {
+      return handleAnalyzeRecurring(req, res);
+    }
+
+    if (mode === "exchange_public_token" || public_token) {
+      if (!public_token || !user_id) {
+        return res
+          .status(400)
+          .json({ error: "Missing public_token or user_id" });
+      }
+
+      const { authorized, error: authError } = await verifyUserAuthorization(
+        req,
+        user_id
+      );
+
+      if (!authorized) {
+        return res
+          .status(authError?.includes("Unauthorized") ? 401 : 403)
+          .json({
+            error: authError || "Access denied",
+          });
+      }
+
+      const exchangeRateLimit = await checkRateLimit(req, {
+        scope: "exchange_public_token",
+        userId: user_id,
+        limit: 5,
+        windowMs: 60 * 1000,
+      });
+
+      if (!exchangeRateLimit.allowed) {
+        const retryAfter = formatRetryAfterSeconds(
+          exchangeRateLimit.retryAfterMs
+        );
+        if (retryAfter > 0) {
+          res.setHeader("Retry-After", retryAfter);
+        }
+        return res.status(429).json({
+          error: "Too many token exchange attempts. Please wait and try again.",
+          retry_after: retryAfter,
+        });
+      }
+
+      if (metadata) {
+        console.log("🔍 Checking for duplicate items before token exchange...");
+        const duplicateCheck = await checkForDuplicateItem(user_id, metadata);
+
+        if (duplicateCheck.isDuplicate) {
+          console.log("❌ Duplicate item detected:", {
+            institution: duplicateCheck.institutionName,
+            accounts: duplicateCheck.duplicateAccountNames,
+          });
+
+          return res.status(409).json({
+            error: "DUPLICATE_ITEM",
+            message: `You've already linked ${
+              duplicateCheck.institutionName
+            }. The account${
+              duplicateCheck.duplicateAccountNames.includes(",") ? "s" : ""
+            } ${duplicateCheck.duplicateAccountNames} ${
+              duplicateCheck.duplicateAccountNames.includes(",") ? "are" : "is"
+            } already connected to your account.`,
+            institution_name: duplicateCheck.institutionName,
+            duplicate_accounts: duplicateCheck.duplicateAccountNames,
+          });
+        }
+
+        console.log(
+          "✅ No duplicate items found, proceeding with token exchange"
+        );
+      }
+
+      const { data } = await client.itemPublicTokenExchange({ public_token });
+
+      if (!data || !data.access_token || !data.item_id) {
+        console.error(
+          "❌ Invalid Plaid response: missing access_token or item_id",
+          data
+        );
+        return res.status(500).json({
+          error: "Invalid token exchange response from Plaid",
+        });
+      }
+
+      const { access_token, item_id: exchangedItemId } = data;
+
+      let institution_id = null;
+      let institution_name = null;
+
+      try {
+        const itemResponse = await client.itemGet({ access_token });
+        const institutionId = itemResponse.data.item.institution_id;
+
+        const institutionResponse = await client.institutionsGetById({
+          institution_id: institutionId,
+          country_codes: ["US"],
+        });
+
+        institution_id = institutionId;
+        institution_name = institutionResponse.data.institution.name;
+
+        console.log("✅ Institution metadata fetched:", {
+          institution_id,
+          institution_name,
+        });
+      } catch (instError) {
+        console.error(
+          "⚠️ Failed to fetch institution metadata (continuing anyway):",
+          instError
+        );
+      }
+
+      const { error: itemError } = await supabase.from("user_items").upsert(
+        {
+          user_id,
+          item_id: exchangedItemId,
+          institution_id,
+          institution_name,
+          webhook: `${process.env.APP_BASE_URL}/api/webhook`,
+        },
+        { onConflict: "item_id" }
+      );
+
+      if (itemError) throw itemError;
+
+      const storeTokenResponse = await fetch(
+        `${supabaseUrl}/functions/v1/store-plaid-token`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${supabaseServiceKey}`,
+          },
+          body: JSON.stringify({
+            item_id: exchangedItemId,
+            user_id,
+            access_token,
+          }),
+        }
+      );
+
+      if (!storeTokenResponse.ok) {
+        const errorText = await storeTokenResponse.text();
+        console.error("Failed to store token in Vault:", errorText);
+        throw new Error("Failed to store access token securely");
+      }
+
+      console.log("✅ Token stored in Vault for item_id:", exchangedItemId);
+      return res.status(200).json({ item_id: exchangedItemId });
+    }
+
     // ------------------------------
     // REMOVE ACCOUNT MODE
     // ------------------------------

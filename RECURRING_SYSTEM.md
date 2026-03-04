@@ -20,7 +20,7 @@
 
 1. **Plaid refresh** → lib/plaid/recurringRefresh.js → upserts to recurring_streams (per item_id)
 2. **Finny analysis** → lib/recurringAnalysis.js → LLM + enrich → upserts Finny items to recurring_streams (item_id=null)
-3. **API** → POST /api/exchange_public_token with `mode: "analyze_recurring"` → handleAnalyzeRecurring
+3. **API** → POST /api/plaid_management with `mode: "analyze_recurring"` → handleAnalyzeRecurring
 4. **Triggers** — New account: after syncTransactions (plaid.ts). Manual: "Quick analysis" button (RecurringSection)
 
 ## UI (RecurringSection)

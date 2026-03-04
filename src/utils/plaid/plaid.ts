@@ -207,16 +207,17 @@ export const handlePlaidConnect = async (
 
         options?.onProgress?.("exchange", institution);
 
-        logger.info("📡 Making API call to exchange_public_token", {
+        logger.info("📡 Making API call to plaid_management exchange", {
           hasMetadata: !!linkMetadata,
           institutionId: linkMetadata?.institution?.institution_id,
           accountCount: linkMetadata?.accounts?.length || 0,
         });
 
-        const res = await authenticatedFetch(`${BASE_URL}/api/exchange_public_token`, {
+        const res = await authenticatedFetch(`${BASE_URL}/api/plaid_management`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
+            mode: "exchange_public_token",
             public_token: publicToken,
             user_id: user.id,
             metadata: linkMetadata,
