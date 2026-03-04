@@ -1,1 +1,1 @@
-{"functions":{"api/goals.js":{"maxDuration":60},"api/transactions_sync.js":{"maxDuration":120},"api/scheduled-sync.js":{"maxDuration":250},"api/refresh_financial_data.js":{"maxDuration":300}},"crons":[{"path":"/api/scheduled-sync?mode=snaptrade","schedule":"30 14 * * *"},{"path":"/api/scheduled-sync?mode=weekly_balances","schedule":"0 10 * * 1"}]}
+{}
