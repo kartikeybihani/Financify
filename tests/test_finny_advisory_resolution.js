@@ -123,6 +123,12 @@ function main() {
     mode: "answer_now",
   });
 
+  assertRuntime("Give me a spending tip", {
+    advisory_job: "improve",
+    coverage: "grounded",
+    mode: "answer_now",
+  });
+
   assertRuntime("Can I afford it?", {
     advisory_job: "assess",
     decision_type: "affordability",

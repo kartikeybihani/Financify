@@ -64,6 +64,28 @@ import { DataFetchService } from "../core/finny/services/DataFetchService.js";
 import { StockAnalysisService } from "../core/finny/services/StockAnalysisService.js";
 import { WebSearchService } from "../core/finny/services/WebSearchService.js";
 import { buildAdvisoryRuntime } from "../core/finny/services/AdvisoryResolutionService.js";
+import {
+  determineResponseContract as determineResponseContractImpl,
+  extractMentionedAmount as extractMentionedAmountImpl,
+  buildResponseContractInstructions as buildResponseContractInstructionsImpl,
+  buildGroundingPolicyHeader,
+  detectAffordabilityContractIssues as detectAffordabilityContractIssuesImpl,
+  applyLightAffordabilityRepair as applyLightAffordabilityRepairImpl,
+  extractSpendingTipEvidence,
+  validateResponseContract,
+  buildContractRepairPrompt,
+  renderDeterministicFallback,
+  countQuestionMarks as countQuestionMarksImpl,
+} from "../core/finny/services/ResponseContractService.js";
+import {
+  loadLastTurnMeta,
+  deriveContinuityDirective,
+  buildLastTurnMeta,
+  buildContinuityPromptHeader,
+  buildContinuityClassification,
+  buildClassificationHint,
+  createContinuityShadowLog,
+} from "../core/finny/services/ContinuityService.js";
 
 // Utilities
 function generateRequestId() {
@@ -122,17 +144,46 @@ function isAdvisoryRuntimeV1Enabled() {
   return String(process.env.FINNY_ADVISORY_RUNTIME_V1 || "").toLowerCase() === "true";
 }
 
-function determineResponseContract(message = "", classificationResult = {}) {
-  const lower = String(message).toLowerCase();
+function isContinuityRouterV1Enabled() {
+  return (
+    String(process.env.FINNY_CONTINUITY_ROUTER_V1 || "").toLowerCase() ===
+    "true"
+  );
+}
+
+function isResponseContractsV2Enabled() {
+  return (
+    String(process.env.FINNY_RESPONSE_CONTRACTS_V2 || "").toLowerCase() ===
+    "true"
+  );
+}
+
+function isSpendingTipGroundedV1Enabled() {
+  return (
+    String(process.env.FINNY_SPENDING_TIP_GROUNDED_V1 || "").toLowerCase() ===
+    "true"
+  );
+}
+
+function determineResponseContract(
+  message = "",
+  classificationResult = {},
+  options = {},
+) {
+  return determineResponseContractImpl(message, classificationResult, options);
+}
+
+function determineLegacyResponseContract(message = "", classificationResult = {}) {
+  const lowerMessage = String(message || "").toLowerCase();
   const intent = classificationResult?.intent || "ask_personalized";
   const intentType = classificationResult?.intent_type || null;
   const decisionRisk = classificationResult?.decision_risk || "unknown";
 
   const affordabilityPattern =
     /\b(can i afford|can i buy|should i buy|do u think i can buy|do you think i can buy|worth buying|worth it to buy)\b/.test(
-      lower,
+      lowerMessage,
     ) ||
-    (/\b(buy|purchase)\b/.test(lower) && /\$[\d,]+/.test(lower));
+    (/\b(buy|purchase)\b/.test(lowerMessage) && /\$[\d,]+/.test(lowerMessage));
 
   if (intent === "ask_personalized" && affordabilityPattern) {
     return "affordability_decision";
@@ -153,90 +204,18 @@ function determineResponseContract(message = "", classificationResult = {}) {
 }
 
 function extractMentionedAmount(message = "") {
-  const text = String(message);
-  const dollarMatch = text.match(/\$\s*([0-9][0-9,]*(?:\.[0-9]{1,2})?)/);
-  if (dollarMatch?.[1]) {
-    const value = Number(dollarMatch[1].replace(/,/g, ""));
-    return Number.isFinite(value) ? value : null;
-  }
-
-  const usdMatch = text.match(
-    /\b([0-9][0-9,]*(?:\.[0-9]{1,2})?)\s*(usd|dollars?)\b/i,
-  );
-  if (usdMatch?.[1]) {
-    const value = Number(usdMatch[1].replace(/,/g, ""));
-    return Number.isFinite(value) ? value : null;
-  }
-  return null;
+  return extractMentionedAmountImpl(message);
 }
 
 function buildResponseContractInstructions(
   contract,
-  { message = "", classificationResult = {}, packs = {}, profile = {} } = {},
+  options = {},
 ) {
-  const amount = extractMentionedAmount(message);
-  const amountProvided = Number.isFinite(amount);
-  const lines = [];
-
-  lines.push(`RESPONSE_CONTRACT: ${contract}`);
-
-  if (contract === "affordability_decision") {
-    lines.push(
-      `- Output format: Decision -> Why (max 2 bullets) -> One next step.`,
-    );
-    lines.push(`- Lead with the decision in the first sentence.`);
-    lines.push(
-      `- Financial context (if needed) must be 2-3 short bullets, not a long paragraph.`,
-    );
-    lines.push(
-      `- Prefer purchase-impact and debt context; avoid listing net worth/investments unless directly necessary.`,
-    );
-    lines.push(
-      `- Use only necessary money context; do NOT dump full balances or account summaries.`,
-    );
-    lines.push(
-      `- Finny must compute affordability impact itself; do NOT ask user to evaluate impact.`,
-    );
-    lines.push(
-      `- Assume linked accounts are the primary money context. Do NOT ask user to "check if they have enough savings" from linked balances.`,
-    );
-    lines.push(
-      `- If uncertainty remains, ask ONLY about off-platform cash or near-term obligations not reflected in linked accounts.`,
-    );
-    lines.push(
-      `- Ask at most ONE clarifying question, only if materially blocked.`,
-    );
-    lines.push(
-      amountProvided
-        ? `- Purchase amount is already provided (${amount}); NEVER ask for price again.`
-        : `- Purchase amount is missing; ask exactly one question for price and stop.`,
-    );
-  } else if (contract === "factual_lookup") {
-    lines.push(
-      `- Output format: Direct answer first -> brief supporting math.`,
-    );
-    lines.push(`- No coaching questions unless answer is truly blocked.`);
-  } else if (contract === "high_stakes_planning") {
-    lines.push(
-      `- Output format: brief framing -> 1-2 principles -> 1-3 targeted clarifying questions.`,
-    );
-    lines.push(`- Do not provide tactical step-by-step plan yet.`);
-  } else if (contract === "education_explainer") {
-    lines.push(
-      `- Output format: direct explanation -> short example -> one practical takeaway.`,
-    );
-  } else {
-    lines.push(
-      `- Keep response concise, personalized, and directly actionable.`,
-    );
-  }
-
-  return lines.join("\n");
+  return buildResponseContractInstructionsImpl(contract, options);
 }
 
 function countQuestionMarks(text = "") {
-  const matches = String(text).match(/\?/g);
-  return matches ? matches.length : 0;
+  return countQuestionMarksImpl(text);
 }
 
 function enforceAdvisoryQuestionPolicy(responseText = "", advisoryRuntime = null) {
@@ -287,33 +266,7 @@ function enforceAdvisoryQuestionPolicy(responseText = "", advisoryRuntime = null
 }
 
 function detectAffordabilityContractIssues(message = "", responseText = "") {
-  const amountProvided = Number.isFinite(extractMentionedAmount(message));
-  const lower = String(responseText).toLowerCase();
-  const asksForPrice =
-    /\b(how much is|what('?s| is) the price|price tag|what's the price range)\b/.test(
-      lower,
-    );
-  const asksUserToAssessImpact =
-    /\b(will it impact|how will it impact|do you think it will affect)\b/.test(
-      lower,
-    );
-  const asksUserToCheckSavings =
-    /\b(check if you have enough savings|make sure you have enough savings|ensure you have enough savings|check your savings)\b/.test(
-      lower,
-    );
-  const hedgesKnownDebt = /\b(if you have any debt|if you have debt)\b/.test(
-    lower,
-  );
-  const tooManyQuestions = countQuestionMarks(responseText) > 1;
-
-  return {
-    amountProvided,
-    asksForPrice: amountProvided && asksForPrice,
-    asksUserToAssessImpact,
-    asksUserToCheckSavings,
-    hedgesKnownDebt,
-    tooManyQuestions,
-  };
+  return detectAffordabilityContractIssuesImpl(message, responseText);
 }
 
 function getAffordabilityVerdictLine(message = "", packs = {}, profile = {}) {
@@ -341,93 +294,12 @@ function applyLightAffordabilityRepair(
   packs = {},
   profile = {},
 ) {
-  let text = String(responseText || "").trim();
-  if (!text) return text;
-
-  const issues = detectAffordabilityContractIssues(message, text);
-  const hasContractIssue =
-    issues.asksForPrice ||
-    issues.asksUserToAssessImpact ||
-    issues.asksUserToCheckSavings ||
-    issues.hedgesKnownDebt ||
-    issues.tooManyQuestions;
-
-  if (!hasContractIssue) return text;
-
-  // 1) Remove blocked questions while preserving most of the model's original response.
-  text = text
-    .replace(
-      /(^|\n).*(price tag|what('?s| is) the price|what's the price range|how much is).*(\n|$)/gi,
-      "\n",
-    )
-    .replace(
-      /(^|\n).*(how will it impact|will it impact your|do you think it will affect).*(\n|$)/gi,
-      "\n",
-    )
-    .replace(
-      /(^|\n).*(check if you have enough savings|make sure you have enough savings|ensure you have enough savings|check your savings).*(\n|$)/gi,
-      "\n",
-    )
-    .replace(/(^|\n).*(if you have any debt|if you have debt).*(\n|$)/gi, "\n")
-    .replace(
-      /(^|\n).*(net worth.*liquid assets.*investment assets.*)(\n|$)/gi,
-      "\n",
-    );
-
-  // 2) If too many questions, keep at most one question sentence.
-  if (issues.tooManyQuestions) {
-    const parts = text.split(/(?<=[.?!])\s+/);
-    let questionKept = false;
-    text = parts
-      .filter((p) => {
-        if (!p.includes("?")) return true;
-        if (questionKept) return false;
-        questionKept = true;
-        return true;
-      })
-      .join(" ")
-      .trim();
-  }
-
-  // 3) Ensure decision-first first line, but keep response body mostly intact.
-  const verdict = getAffordabilityVerdictLine(message, packs, profile);
-  if (verdict) {
-    const startsWithDecision =
-      /^(i('| a)m|i would|you can|you should|this purchase|i’d|i'd)/i.test(
-        text,
-      );
-    if (!startsWithDecision) {
-      text = `${verdict}\n\n${text}`;
-    }
-  }
-
-  // 4) If we removed savings-check style language, inject one concise advisor-computed buffer line.
-  if (issues.asksUserToCheckSavings) {
-    const amount = extractMentionedAmount(message);
-    const liquidAssets = Number(packs?.base?.liquidAssets);
-    if (Number.isFinite(amount) && Number.isFinite(liquidAssets)) {
-      const remaining = liquidAssets - amount;
-      text = `${text}\n\n- Based on your linked balances, this would leave about $${remaining.toFixed(
-        2,
-      )} in liquid cash.`;
-    }
-  }
-
-  // 5) Normalize verbose summary phrasing into concise bullet line.
-  const amount = extractMentionedAmount(message);
-  const liquidAssets = Number(packs?.base?.liquidAssets);
-  if (
-    Number.isFinite(amount) &&
-    Number.isFinite(liquidAssets) &&
-    !/cash after purchase|would leave about \$/.test(text.toLowerCase())
-  ) {
-    const remaining = liquidAssets - amount;
-    text = `${text}\n\n- Cash after this purchase would be about $${remaining.toFixed(
-      2,
-    )}.`;
-  }
-
-  return cleanResponseFormatting(text);
+  return applyLightAffordabilityRepairImpl(
+    message,
+    responseText,
+    packs,
+    profile,
+  );
 }
 
 function normalizeClassificationFromContext(
@@ -1924,6 +1796,7 @@ export default async function handler(req, res) {
   let sessionState = getSessionState(finalUserId);
   let effectiveClassification = bodyClassification;
   let finalAction = action;
+  let continuityOverride = null;
   let safeContext = {
     ...(context || {}),
     user_id: finalUserId,
@@ -1958,34 +1831,84 @@ export default async function handler(req, res) {
     finalAction = "goal_conversation";
   } else if (action === "message") {
     try {
-      const classifyStartTime = Date.now();
-      effectiveClassification = await handleClassify(message, safeContext);
-      timings.classification_ms = Date.now() - classifyStartTime;
+      const lastTurnMeta = await loadLastTurnMeta({
+        userId: finalUserId,
+        chatId,
+        sessionState,
+      });
+      const shadowDirective = deriveContinuityDirective({
+        message,
+        lastTurnMeta,
+        activeGoalFlow,
+        currentAction: action,
+      });
 
-      if (
-        effectiveClassification &&
-        effectiveClassification.hasOwnProperty("heuristic") &&
-        (effectiveClassification.heuristic === true ||
-          effectiveClassification.heuristic === "true" ||
-          effectiveClassification.heuristic === 1)
-      ) {
-        const key = generateClassificationCacheKey(message);
-        classificationCache.delete(key);
-        effectiveClassification = await handleClassify(message, safeContext);
+      if (shadowDirective && !isContinuityRouterV1Enabled()) {
+        logInfo("🧭 [CONTINUITY_SHADOW] Override available but disabled:", {
+          ...createContinuityShadowLog(message, lastTurnMeta),
+          mode: shadowDirective.mode,
+        });
       }
 
-      const classifiedIntent = effectiveClassification?.intent;
-      if (classifiedIntent === "stock_query") {
-        finalAction = "stock_query";
-      } else if (classifiedIntent === "off_topic") {
-        finalAction = "off_topic";
-      } else if (
-        classifiedIntent === "goal_conversation" ||
-        classifiedIntent === "goal"
+      if (
+        shadowDirective &&
+        isContinuityRouterV1Enabled() &&
+        isResponseContractsV2Enabled()
       ) {
-        finalAction = "goal_conversation";
-      } else {
+        continuityOverride = shadowDirective;
+        effectiveClassification = buildContinuityClassification(
+          continuityOverride,
+        );
         finalAction = "ask";
+        logInfo("🧭 [CONTINUITY] Applied pre-classification override:", {
+          mode: continuityOverride.mode,
+          source_contract: continuityOverride.source_contract,
+          source_subject: continuityOverride.source_subject,
+        });
+      } else if (shadowDirective && isContinuityRouterV1Enabled()) {
+        logWarn(
+          "⚠️ [CONTINUITY] Router flag enabled without response contracts; leaving override in shadow mode",
+        );
+      } else {
+        const classifyStartTime = Date.now();
+        const classificationContext = {
+          ...safeContext,
+          classification_hint: buildClassificationHint(lastTurnMeta),
+        };
+        effectiveClassification = await handleClassify(
+          message,
+          classificationContext,
+        );
+        timings.classification_ms = Date.now() - classifyStartTime;
+
+        if (
+          effectiveClassification &&
+          effectiveClassification.hasOwnProperty("heuristic") &&
+          (effectiveClassification.heuristic === true ||
+            effectiveClassification.heuristic === "true" ||
+            effectiveClassification.heuristic === 1)
+        ) {
+          const key = generateClassificationCacheKey(message);
+          classificationCache.delete(key);
+          effectiveClassification = await handleClassify(
+            message,
+            classificationContext,
+          );
+        }
+
+        const classifiedIntent = effectiveClassification?.intent;
+        if (classifiedIntent === "stock_query") {
+          finalAction = "stock_query";
+        } else if (classifiedIntent === "off_topic") {
+          finalAction = "off_topic";
+        } else if (
+          classifiedIntent === "goal_conversation" ||
+          classifiedIntent === "goal"
+        ) {
+          finalAction = "goal_conversation";
+        } else {
+          finalAction = "ask";
+        }
       }
     } catch (error) {
       logError("❌ [FINNY] Message classification failed, defaulting to ask:", error);
@@ -2179,6 +2102,7 @@ export default async function handler(req, res) {
     session: sessionState,
     memory: userMemory,
     feedbackPatterns: feedbackPatterns,
+    continuity_override: continuityOverride,
   };
 
   if (action === "message" && finalUserId && chatId && message) {
@@ -2871,6 +2795,11 @@ async function handleAsk(
     // 1) Get user_id from context
     const userId = context?.user_id;
     const resolvedChatId = context?.chat_id || null;
+    const continuityOverride = context?.continuity_override || null;
+    const routingMessage =
+      continuityOverride?.source_user_message || message;
+    const responseContractsV2Enabled = isResponseContractsV2Enabled();
+    const spendingTipGroundedV1Enabled = isSpendingTipGroundedV1Enabled();
 
     const recordConversationTurns = (assistantText) => {
       if (!userId || !resolvedChatId) return;
@@ -3006,11 +2935,12 @@ async function handleAsk(
 
     // Use classification.needs_web as primary, with keyword detection as fallback
     const needsWeb =
-      classificationResult?.needs_web || detectWebSearchNeeded(message, slots);
+      classificationResult?.needs_web ||
+      detectWebSearchNeeded(routingMessage, slots);
 
     logInfo("🌍 [FINNY] Web search decision:", {
       classification_needs_web: classificationResult?.needs_web,
-      keyword_fallback: detectWebSearchNeeded(message, slots),
+      keyword_fallback: detectWebSearchNeeded(routingMessage, slots),
       final_decision: needsWeb,
     });
 
@@ -3020,7 +2950,7 @@ async function handleAsk(
 
       try {
         // Enhance search query with user-specific data when relevant
-        const enhancedData = await enhanceSearchQuery(message, context);
+        const enhancedData = await enhanceSearchQuery(routingMessage, context);
 
         // Handle both single queries and multiple queries
         if (typeof enhancedData === "string") {
@@ -3181,11 +3111,24 @@ async function handleAsk(
     let decisionRisk = classificationResult?.decision_risk || "unknown";
     const infoSufficiency = classificationResult?.info_sufficiency || "unknown";
 
-    const runtimeContract = determineResponseContract(
-      message,
+    const shadowResponseContract = determineResponseContract(
+      routingMessage,
+      classificationResult,
+      { continuityDirective: continuityOverride },
+    );
+    const legacyResponseContract = determineLegacyResponseContract(
+      routingMessage,
       classificationResult,
     );
-    const amountMentioned = extractMentionedAmount(message);
+    const shouldUseSpendingTipGroundedContract =
+      shadowResponseContract === "spending_tip_grounded" &&
+      spendingTipGroundedV1Enabled;
+    const shouldUseModernResponseContract =
+      responseContractsV2Enabled || shouldUseSpendingTipGroundedContract;
+    const runtimeContract = shouldUseModernResponseContract
+      ? shadowResponseContract
+      : legacyResponseContract;
+    const amountMentioned = extractMentionedAmount(routingMessage);
     const hasLiquidContext = Number.isFinite(Number(packs?.base?.liquidAssets));
     if (
       runtimeContract === "affordability_decision" &&
@@ -3201,7 +3144,7 @@ async function handleAsk(
     }
 
     const insufficiencyState = buildInsufficiencyState(
-      message,
+      routingMessage,
       classificationResult,
       packs,
       context?.profile,
@@ -3216,7 +3159,7 @@ async function handleAsk(
       return buildHighRiskClarificationResponse(
         insufficiencyState,
         classificationResult,
-        message,
+        routingMessage,
       );
     }
 
@@ -3840,9 +3783,25 @@ async function handleAsk(
       feedbackContext,
     };
 
+    let spendingTipEvidence = null;
+    let shadowSpendingTipEvidence = null;
+    if (shadowResponseContract === "spending_tip_grounded") {
+      shadowSpendingTipEvidence = extractSpendingTipEvidence(
+        packs,
+        context?.profile || {},
+      );
+      if (!shouldUseSpendingTipGroundedContract) {
+        logInfo("🧭 [SPENDING_TIP_SHADOW] Grounded contract available but disabled:", {
+          evidence_label: shadowSpendingTipEvidence?.label || null,
+          evidence_amount: shadowSpendingTipEvidence?.amount || null,
+          response_contract: shadowResponseContract,
+        });
+      }
+    }
+
     const advisoryRuntime = advisoryRuntimeEnabled
       ? buildAdvisoryRuntime({
-          message,
+          message: routingMessage,
           classificationResult,
           packs,
           profile: context?.profile || {},
@@ -3878,14 +3837,33 @@ async function handleAsk(
           0.5,
         );
     const responseContract = runtimeContract;
-    const responseContractHeader = advisoryRuntimeEnabled
-      ? null
-      : buildResponseContractInstructions(responseContract, {
-          message,
-          classificationResult,
-          packs,
-          profile: context?.profile || {},
-        });
+    if (responseContract === "spending_tip_grounded") {
+      spendingTipEvidence = shadowSpendingTipEvidence
+        || extractSpendingTipEvidence(packs, context?.profile || {});
+    }
+
+    const continuityHeader =
+      responseContractsV2Enabled && continuityOverride
+        ? buildContinuityPromptHeader(continuityOverride)
+        : null;
+    const groundingHeader =
+      shouldUseModernResponseContract ||
+      responseContractsV2Enabled ||
+      spendingTipGroundedV1Enabled
+        ? buildGroundingPolicyHeader(classificationResult, packs)
+        : null;
+    const responseContractHeader =
+      shouldUseModernResponseContract || responseContractsV2Enabled
+        ? buildResponseContractInstructions(responseContract, {
+            message: routingMessage,
+            continuityDirective: continuityOverride,
+            spendingTipEvidence,
+          })
+        : advisoryRuntimeEnabled
+          ? null
+          : buildResponseContractInstructions(responseContract, {
+              message: routingMessage,
+            });
 
     const coachingRuntimeFlags = advisoryRuntimeEnabled
       ? [
@@ -3933,6 +3911,8 @@ async function handleAsk(
     const runtimeHeader = [
       contextHeader,
       classificationHeader,
+      groundingHeader,
+      continuityHeader,
       responseContractHeader,
       coachingRuntimeFlags,
     ]
@@ -4029,6 +4009,54 @@ async function handleAsk(
         const errorText = await resp.text();
         throw new Error(`OpenRouter error ${resp.status}: ${errorText}`);
       }
+      return resp;
+    }
+
+    async function callContractRepairLLM(
+      model,
+      repairPrompt,
+      options = {},
+    ) {
+      const repairMessages = [
+        {
+          role: "system",
+          content: [
+            "You are Finny.",
+            "Rewrite the reply so it satisfies the response contract and uses the provided financial context.",
+            "Return only the final assistant reply.",
+          ].join("\n"),
+        },
+        {
+          role: "user",
+          content: repairPrompt,
+        },
+      ];
+
+      const resp = await fetch(
+        "https://openrouter.ai/api/v1/chat/completions",
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${getOpenRouterKey()}`,
+            "Content-Type": "application/json",
+          },
+          signal: options.signal,
+          body: JSON.stringify({
+            model,
+            temperature: 0.2,
+            max_tokens: 1800,
+            stream: false,
+            reasoning: { effort: "minimal", exclude: true },
+            messages: repairMessages,
+          }),
+        },
+      );
+
+      if (!resp.ok) {
+        const errorText = await resp.text();
+        throw new Error(`OpenRouter error ${resp.status}: ${errorText}`);
+      }
+
       return resp;
     }
 
@@ -4141,9 +4169,12 @@ async function handleAsk(
     }
 
     let contractIssueCount = 0;
+    let contractRepairUsed = false;
+    let contractFallbackUsed = false;
+    let contractValidationResult = { issues: [], severity: "none" };
     if (responseContract === "affordability_decision") {
       const contractIssuesBeforeRepair = detectAffordabilityContractIssues(
-        message,
+        routingMessage,
         cleanText,
       );
       contractIssueCount = [
@@ -4155,7 +4186,7 @@ async function handleAsk(
       ].filter(Boolean).length;
 
       const repaired = applyLightAffordabilityRepair(
-        message,
+        routingMessage,
         cleanText,
         packs,
         context?.profile || {},
@@ -4174,6 +4205,112 @@ async function handleAsk(
       }
     }
 
+    contractValidationResult = validateResponseContract({
+      contract: responseContract,
+      responseText: cleanText,
+      message: routingMessage,
+      packs,
+      classificationResult,
+      continuityDirective: continuityOverride,
+      spendingTipEvidence,
+    });
+
+    if (contractValidationResult.issues.length > 0) {
+      if (!shouldUseModernResponseContract) {
+        logWarn("⚠️ [CONTRACT_SHADOW] Validation issues detected but enforcement disabled:", {
+          contract: responseContract,
+          issues: contractValidationResult.issues,
+        });
+      } else if (contractValidationResult.severity === "fail") {
+        logWarn("⚠️ [CONTRACT] Validation failed, attempting constrained regeneration:", {
+          contract: responseContract,
+          issues: contractValidationResult.issues,
+        });
+
+        try {
+          const repairPrompt = buildContractRepairPrompt({
+            contract: responseContract,
+            message,
+            responseText: cleanText,
+            issues: contractValidationResult.issues,
+            continuityDirective: continuityOverride,
+            spendingTipEvidence,
+          });
+          const repairResult = await llmService.callWithFallback(
+            llmModels,
+            (model, options) =>
+              callContractRepairLLM(model, repairPrompt, options),
+            12000,
+            "LLM Contract Repair",
+          );
+          const repairPayload = await repairResult.result.json();
+          const repairedText =
+            repairPayload?.choices?.[0]?.message?.content?.trim() || "";
+
+          if (repairedText) {
+            contractRepairUsed = true;
+            cleanText = repairedText;
+
+            if (responseContract === "affordability_decision") {
+              const repairedAffordabilityText = applyLightAffordabilityRepair(
+                routingMessage,
+                cleanText,
+                packs,
+                context?.profile || {},
+              );
+              if (repairedAffordabilityText) {
+                cleanText = repairedAffordabilityText;
+              }
+            }
+
+            if (advisoryRuntimeEnabled && advisoryRuntime) {
+              cleanText = enforceAdvisoryQuestionPolicy(
+                cleanText,
+                advisoryRuntime,
+              );
+            }
+
+            contractValidationResult = validateResponseContract({
+              contract: responseContract,
+              responseText: cleanText,
+              message: routingMessage,
+              packs,
+              classificationResult,
+              continuityDirective: continuityOverride,
+              spendingTipEvidence,
+            });
+          }
+        } catch (repairError) {
+          logWarn(
+            "⚠️ [CONTRACT] Constrained regeneration failed:",
+            repairError?.message,
+          );
+        }
+
+        if (contractValidationResult.issues.length > 0) {
+          const fallbackText = renderDeterministicFallback({
+            contract: responseContract,
+            continuityDirective: continuityOverride,
+            spendingTipEvidence,
+          });
+          if (fallbackText) {
+            contractFallbackUsed = true;
+            cleanText = fallbackText;
+            contractValidationResult = validateResponseContract({
+              contract: responseContract,
+              responseText: cleanText,
+              message: routingMessage,
+              packs,
+              classificationResult,
+              continuityDirective: continuityOverride,
+              spendingTipEvidence,
+            });
+            logWarn("⚠️ [CONTRACT] Deterministic fallback used after failed repair");
+          }
+        }
+      }
+    }
+
     // Memory saving will happen after topic detection (see below)
 
     // Basic response validation (log warnings, don't block)
@@ -4181,6 +4318,11 @@ async function handleAsk(
     if (contractIssueCount > 0) {
       validationIssues.push(
         `Contract issues detected (affordability): ${contractIssueCount}`,
+      );
+    }
+    if (contractValidationResult.issues.length > 0) {
+      validationIssues.push(
+        `Response contract issues (${responseContract}): ${contractValidationResult.issues.join(", ")}`,
       );
     }
 
@@ -4258,6 +4400,36 @@ async function handleAsk(
 
     // Clean any markdown formatting from the response
     const cleanedMessage = cleanResponseFormatting(cleanText);
+    const lastTurnMeta = buildLastTurnMeta({
+      route: "ask",
+      classificationResult,
+      advisoryRuntime,
+      responseContract,
+      assistantText: cleanedMessage,
+      userMessage: routingMessage,
+      chatId: resolvedChatId,
+      groundedAnswer:
+        !!classificationResult?.needs_user_data &&
+        (responseContract === "spending_tip_grounded" ||
+          responseContract === "factual_lookup" ||
+          responseContract === "affordability_decision" ||
+          contractRepairUsed ||
+          contractFallbackUsed),
+      subject:
+        spendingTipEvidence?.label ||
+        continuityOverride?.source_subject ||
+        advisoryRuntime?.decision?.subject ||
+        null,
+      topic:
+        responseContract === "repair_previous_answer"
+          ? continuityOverride?.source_contract === "spending_tip_grounded"
+            ? "spending"
+            : continuityOverride?.source_contract === "affordability_decision"
+              ? "affordability"
+              : null
+          : null,
+    });
+    mergeSessionState(userId, { last_turn_meta: lastTurnMeta });
 
     // Frontend handles all message splitting with sophisticated algorithm
     // Backend always sends full message string - frontend splits intelligently
@@ -4312,6 +4484,16 @@ async function handleAsk(
         cache_hits: {},
         tokens: null,
         result: gaps.length > 0 ? "degraded" : "success",
+        response_contract: responseContract,
+        continuity_mode: continuityOverride?.mode || null,
+        contract_validation_issues:
+          contractValidationResult.issues.length > 0
+            ? contractValidationResult.issues
+            : null,
+        contract_repair_used: contractRepairUsed,
+        contract_fallback_used: contractFallbackUsed,
+        spending_tip_evidence: spendingTipEvidence || null,
+        finny_turn_meta: lastTurnMeta,
       },
     };
 
@@ -5947,6 +6129,23 @@ async function handleOffTopic(
   const category = isVenting ? "venting" : context?.category || "general";
   const userProfile = context?.profile || {};
   const userId = context?.user_id;
+  const persistOffTopicTurnMeta = (assistantText) => {
+    if (!userId) return null;
+    const meta = buildLastTurnMeta({
+      route: "off_topic",
+      classificationResult: context?.classification_result || {
+        intent: "off_topic",
+      },
+      responseContract: null,
+      assistantText,
+      userMessage: messageText,
+      chatId: context?.chat_id || null,
+      groundedAnswer: false,
+      topic: category,
+    });
+    mergeSessionState(userId, { last_turn_meta: meta });
+    return meta;
+  };
 
   // Fetch net worth data for lightweight context
   let netWorthData = null;
@@ -6185,6 +6384,9 @@ async function handleOffTopic(
         "❌ [FINNY] All LLM attempts failed for off-topic:",
         llmError?.message,
       );
+      persistOffTopicTurnMeta(
+        "I'm a finance coach. What financial questions can I help you with?",
+      );
       return {
         text: "I'm a finance coach. What financial questions can I help you with?",
         type: "assistant",
@@ -6198,6 +6400,7 @@ async function handleOffTopic(
     const content =
       data.choices?.[0]?.message?.content ||
       "I'm all about finance. What money questions can I help you with?";
+    const offTopicTurnMeta = persistOffTopicTurnMeta(content);
 
     // Log in background (non-blocking)
     setImmediate(() =>
@@ -6220,6 +6423,12 @@ async function handleOffTopic(
           emotional_state: isVenting ? "venting" : "neutral",
         },
         prompt_used: promptUsed,
+        metrics: {
+          intent: "off_topic",
+          model: usedModel,
+          result: "success",
+          finny_turn_meta: offTopicTurnMeta,
+        },
       }).catch((err) =>
         console.error(
           "❌ [CONVERSATION_LOG] Background log failed:",
@@ -6236,6 +6445,9 @@ async function handleOffTopic(
     };
   } catch (error) {
     console.error("❌ [FINNY] Off-topic handler error:", error);
+    persistOffTopicTurnMeta(
+      "I'm strictly a finance coach. What financial questions can I help you with?",
+    );
     return {
       text: "I'm strictly a finance coach. What financial questions can I help you with?",
       type: "assistant",

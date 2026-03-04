@@ -485,7 +485,7 @@ export function deriveAdvisoryJob(
   }
 
   if (
-    /\b(how can i save more|where am i wasting money|what should i cut|how do i spend less|save more money)\b/.test(
+    /\b(how can i save more|where am i wasting money|what should i cut|what should i cut back|how do i spend less|save more money|spending tip|spending advice|help me reduce spending|how can i cut down)\b/.test(
       text,
     )
   ) {
