@@ -130,7 +130,7 @@ A) Main LLM fallback chain utility (Backend)
 - Files/Areas:
   - api/finny.js (util near withTimeout; classify and ask handlers use it)
 - Model order suggestion:
-  - [ process.env.OPENROUTER_MODEL || SMALLER_MODEL, STANDARD_MODEL, TERTIARY_MODEL ]
+  - [ process.env.OPENROUTER_MODEL || STANDARD_MODEL, TERTIARY_MODEL ]
 
 B) Streaming watchdog + heartbeats (Backend)
 - Steps:
@@ -197,7 +197,7 @@ Testing Playbook
 
 
 Suggested Model Constants (if not already present)
-- SMALLER_MODEL: meta-llama/llama-4-scout:free
+- SMALLER_MODEL: meta-llama/llama-3.2-3b-instruct:free
 - STANDARD_MODEL: meta-llama/llama-4-scout
 - TERTIARY_MODEL: mistralai/mistral-small-latest or qwen/qwen2.5-7b-instruct (adjust to your providers)
 

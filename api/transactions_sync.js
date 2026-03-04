@@ -33,15 +33,11 @@ import {
   hasAcceptedAiConsent,
   ONBOARDING_AI_CONSENT_KEY,
 } from "../lib/aiConsent.js";
-
-// Budget creation helper functions
-const STANDARD_MODEL = "meta-llama/llama-4-scout";
-const REASONING_MODEL_PAID_SCOUT =
-  process.env.REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
-
-function getOpenRouterKey() {
-  return process.env.OPENROUTER_API_KEY;
-}
+import {
+  STANDARD_MODEL,
+  TERTIARY_MODEL,
+  getOpenRouterKey,
+} from "../core/finny/utils/constants/modelConfig.js";
 
 function generateUUID() {
   return crypto.randomUUID();
@@ -268,7 +264,7 @@ async function callLLM(prompt, options = {}) {
   }
 
   const { temperature = 0.3 } = options;
-  const models = [REASONING_MODEL_PAID_SCOUT, STANDARD_MODEL];
+  const models = [STANDARD_MODEL, TERTIARY_MODEL];
 
   for (const model of models) {
     try {
@@ -361,7 +357,7 @@ async function callLLMForMapping(prompt) {
     throw new Error("OPENROUTER_API_KEY not configured");
   }
 
-  const models = [REASONING_MODEL_PAID_SCOUT, STANDARD_MODEL];
+  const models = [STANDARD_MODEL, TERTIARY_MODEL];
 
   for (const model of models) {
     try {

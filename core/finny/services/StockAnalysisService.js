@@ -7,7 +7,6 @@ import {
   fetchJson,
 } from "../../../lib/stocks.js";
 import {
-  PRIMARY_OPENROUTER_MODEL,
   STANDARD_MODEL,
   getOpenRouterKey,
 } from "../utils/constants/modelConfig.js";
@@ -51,7 +50,7 @@ export class StockAnalysisService {
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: PRIMARY_OPENROUTER_MODEL || STANDARD_MODEL,
+            model: STANDARD_MODEL,
             temperature: 0.1,
             messages: [
               {
@@ -241,7 +240,7 @@ User Query: ${userMessage}`;
             "Content-Type": "application/json",
           },
           body: JSON.stringify({
-            model: PRIMARY_OPENROUTER_MODEL || STANDARD_MODEL,
+            model: STANDARD_MODEL,
             temperature: 0.3,
             max_tokens: 8000,
             messages: [

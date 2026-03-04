@@ -7,6 +7,11 @@ import {
   loadUserProfile,
   searchSupermemoryMemories,
 } from "../lib/memoryUtils.js";
+import {
+  LIGHTWEIGHT_MODEL,
+  STANDARD_MODEL,
+  getOpenRouterKey,
+} from "../core/finny/utils/constants/modelConfig.js";
 
 // Utilities
 function generateRequestId() {
@@ -111,10 +116,6 @@ function logConversation(logData) {
     }
   });
 }
-
-// Memory extraction model - small, fast, free
-// Use env var if available, otherwise fallback to free model
-const MODEL = "meta-llama/llama-3.3-8b-instruct:free";
 
 // =====================
 // GOAL CONSTANTS
@@ -643,11 +644,11 @@ RULES:
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          Authorization: `Bearer ${getOpenRouterKey()}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: MODEL,
+          model: LIGHTWEIGHT_MODEL,
           temperature: 0.1,
           messages: [
             {
@@ -771,11 +772,11 @@ RULES:
       {
         method: "POST",
         headers: {
-          Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+          Authorization: `Bearer ${getOpenRouterKey()}`,
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          model: MODEL,
+          model: LIGHTWEIGHT_MODEL,
           temperature: 0.3,
           messages: [
             {
@@ -1714,17 +1715,8 @@ You're officially on your financial journey now. This is such a great step forwa
 // GOAL ANALYSIS WITH LLM
 // =====================
 
-// LLM Model constants (same as finny.js)
-const REASONING_MODEL_PAID_SCOUT =
-  process.env.REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
-const STANDARD_MODEL = "meta-llama/llama-4-scout";
-const TERTIARY_MODEL = "meta-llama/llama-4-scout";
 // Keep total analysis runtime safely under Vercel's 60s maxDuration.
 const ANALYSIS_TOTAL_BUDGET_MS = 50000;
-
-function getOpenRouterKey() {
-  return process.env.OPENROUTER_API_KEY;
-}
 
 async function callWithFallback(
   models,
@@ -2208,11 +2200,7 @@ async function analyzeGoalWithLLM(goalData, userId) {
     // console.log("=".repeat(80));
 
     // Call LLM
-    const llmModels = [
-      REASONING_MODEL_PAID_SCOUT,
-      STANDARD_MODEL,
-      TERTIARY_MODEL,
-    ];
+    const llmModels = [LIGHTWEIGHT_MODEL, STANDARD_MODEL];
 
     async function callLLM(model, options = {}) {
       const response = await fetch(
@@ -2467,5 +2455,5 @@ export {
   withTimeout,
   logConversation,
   supabase,
-  MODEL,
+  LIGHTWEIGHT_MODEL,
 };

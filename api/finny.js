@@ -44,9 +44,6 @@ import {
   cleanResponseFormatting,
 } from "../core/finny/utils/formatting.js";
 import {
-  PRIMARY_OPENROUTER_MODEL,
-  REASONING_MODEL_PAID_SCOUT,
-  SMALLER_MODEL,
   STANDARD_MODEL,
   TERTIARY_MODEL,
   MEMORY_LOAD_TIMEOUT_MS,
@@ -3694,7 +3691,7 @@ async function handleAsk(
                     cache_hit: false,
                   },
                 ],
-                model: PRIMARY_OPENROUTER_MODEL || STANDARD_MODEL,
+                model: STANDARD_MODEL,
                 cache_hits: {},
                 tokens: null,
                 result: "success",
@@ -3759,7 +3756,7 @@ async function handleAsk(
                     cache_hit: false,
                   },
                 ],
-                model: SMALLER_MODEL,
+                model: STANDARD_MODEL,
                 cache_hits: {},
                 tokens: null,
               },
@@ -4035,22 +4032,7 @@ async function handleAsk(
       return resp;
     }
 
-    // For ask_personalized: Use reasoning model (meta-llama/llama-4-scout) as primary, STANDARD_MODEL as fallback
-    const fastFirstContracts = new Set([
-      "factual_lookup",
-      "affordability_decision",
-    ]);
-    const llmModels = fastFirstContracts.has(responseContract)
-      ? [
-          STANDARD_MODEL,
-          REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout",
-          TERTIARY_MODEL,
-        ]
-      : [
-          REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout",
-          STANDARD_MODEL,
-          TERTIARY_MODEL,
-        ];
+    const llmModels = [STANDARD_MODEL, TERTIARY_MODEL];
 
     let resp;
     let usedModel = llmModels[0];
@@ -6185,14 +6167,10 @@ async function handleOffTopic(
       return resp;
     }
 
-    // Use reasoning model (meta-llama/llama-4-scout) as primary, STANDARD_MODEL as fallback
-    const llmModels = [
-      REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout",
-      STANDARD_MODEL,
-    ];
+    const llmModels = [STANDARD_MODEL, TERTIARY_MODEL];
 
     let resp;
-    let usedModel = REASONING_MODEL_PAID_SCOUT || "meta-llama/llama-4-scout";
+    let usedModel = STANDARD_MODEL;
     try {
       const llmResult = await llmService.callWithFallback(
         llmModels,

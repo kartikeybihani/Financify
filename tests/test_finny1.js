@@ -15,9 +15,9 @@
 // Load environment variables BEFORE importing finny.js (which initializes Supabase)
 import "dotenv/config";
 
-// Override classification models for testing - use llama-3.2-3b-instruct
-process.env.CLASSIFICATION_MODEL_PAID = "meta-llama/llama-4-scout";
-process.env.CLASSIFICATION_MODEL_FREE = "meta-llama/llama-4-scout:free";
+// Override classification model for testing.
+process.env.CLASSIFICATION_MODEL_PAID = "openai/gpt-4.1-nano";
+process.env.OPENROUTER_MODEL = "meta-llama/llama-4-scout";
 
 import { handleClassify, handleAsk, handleOffTopic } from "../api/finny.js";
 import { loadUserMemory, loadUserProfile } from "../lib/memoryUtils.js";

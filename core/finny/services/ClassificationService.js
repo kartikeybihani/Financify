@@ -8,8 +8,8 @@ import {
   CLASSIFICATION_CACHE_MAX_SIZE 
 } from '../utils/constants/cacheConfig.js';
 import { 
-  CLASSIFICATION_MODEL_PAID, 
-  CLASSIFICATION_MODEL_FREE,
+  CLASSIFICATION_MODEL,
+  CLASSIFICATION_FALLBACK_MODEL,
   getOpenRouterKey 
 } from '../utils/constants/modelConfig.js';
 import { LLMService } from '../infrastructure/llm/LLMService.js';
@@ -252,8 +252,8 @@ export class ClassificationService {
 
     // Call classification LLM with fallback
     const models = [
-      CLASSIFICATION_MODEL_PAID,
-      CLASSIFICATION_MODEL_FREE,
+      CLASSIFICATION_MODEL,
+      CLASSIFICATION_FALLBACK_MODEL,
     ].filter(Boolean);
 
     if (models.length === 0) {
