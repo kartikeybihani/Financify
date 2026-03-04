@@ -76,6 +76,18 @@ function main() {
   });
   assert.equal(valid.severity, "none");
 
+  const weak = validateResponseContract({
+    contract: "spending_tip_grounded",
+    responseText:
+      "Here's a revised spending tip: consider a 30-day waiting period for travel. I can help you set a realistic budget for discretionary spending too.",
+    message,
+    packs,
+    classificationResult: classification,
+    spendingTipEvidence: evidence,
+  });
+  assert.equal(weak.severity, "fail");
+  assert.ok(weak.issues.includes("weak_spending_tip_language"));
+
   const repairInvalid = validateResponseContract({
     contract: "repair_previous_answer",
     responseText:

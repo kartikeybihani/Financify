@@ -47,6 +47,7 @@ import DemoBanner from "@/src/components/demo/DemoBanner";
 import { useDemoMode } from "@/src/contexts/DemoContext";
 import { useSubscription } from "@/src/contexts/SubscriptionContext";
 import { useFreeMessageLimit } from "@/src/hooks/useFreeMessageLimit";
+import { FREE_MESSAGES_PER_DAY } from "@/src/constants/subscription";
 import logger from "@/src/utils/core/logger";
 import {
   CHAT_MEMORY_CONSENT_KEY,
@@ -81,7 +82,7 @@ function ChatScreenContent() {
   const { isDemoMode } = useDemoMode();
   const { isPremium, showPaywall } = useSubscription();
   const [userId, setUserId] = useState<string | null>(null);
-  const { limitReached, incrementCount } = useFreeMessageLimit(userId);
+  const { getCount, refreshCount, recordSent } = useFreeMessageLimit(userId);
   const router = useRouter();
   // Safely get PostHog instance - won't crash if PostHog is unavailable
   let posthog;
@@ -191,6 +192,27 @@ function ChatScreenContent() {
       useNativeDriver: false,
     }).start();
   }, [isMemoryDisclosureOpen, memoryDisclosureAnimation]);
+
+  const resolveUserIdForLimit = useCallback(async (): Promise<string | null> => {
+    if (userId) {
+      return userId;
+    }
+
+    try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+
+      if (user?.id) {
+        setUserId((current) => current ?? user.id);
+        return user.id;
+      }
+    } catch (error) {
+      logger.warn("[CHAT] Could not resolve user ID for free message limit", error);
+    }
+
+    return null;
+  }, [userId]);
 
   // Handle orientation changes
   useEffect(() => {
@@ -313,6 +335,10 @@ function ChatScreenContent() {
         triggerContextPrebuild();
       }
 
+      if (!isPremium) {
+        void refreshCount();
+      }
+
       // Check for initial message from other screens (e.g., Goals)
       // Pre-fill the input box instead of auto-sending
       (async () => {
@@ -337,7 +363,7 @@ function ChatScreenContent() {
       })();
 
       return () => clearTimeout(timer);
-    }, [handleUserMessage, isDemoMode]),
+    }, [handleUserMessage, isDemoMode, isPremium, refreshCount]),
   );
 
   const [suggestions] = useState<Suggestion[]>(() => {
@@ -525,10 +551,19 @@ function ChatScreenContent() {
       return;
     }
 
-    // Free tier: 5 messages per day
-    if (!isPremium && limitReached()) {
-      showPaywall();
-      return;
+    let effectiveUserIdForLimit: string | null = userId;
+
+    if (!isPremium) {
+      effectiveUserIdForLimit = await resolveUserIdForLimit();
+      const latestCount = await refreshCount(
+        effectiveUserIdForLimit,
+        getCount(),
+      );
+
+      if (latestCount >= FREE_MESSAGES_PER_DAY) {
+        showPaywall();
+        return;
+      }
     }
 
     posthog?.capture("finny message sent", {
@@ -543,10 +578,6 @@ function ChatScreenContent() {
     });
     logger.debug(`📤 Message sent at: ${mstTime} MST`);
 
-    if (!isPremium) {
-      incrementCount();
-    }
-
     pushChat("user", messageText);
     atBottomRef.current = true;
     Keyboard.dismiss();
@@ -559,6 +590,10 @@ function ChatScreenContent() {
     try {
       const startTime = messageStartTime;
       await handleUserMessage(messageText, startTime);
+      if (!isPremium) {
+        const optimisticCount = recordSent(effectiveUserIdForLimit);
+        await refreshCount(effectiveUserIdForLimit, optimisticCount);
+      }
     } catch (error) {
       pushChat("finny", "Hmm, something went wrong. Try again?");
     } finally {

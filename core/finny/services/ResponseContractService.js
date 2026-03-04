@@ -11,6 +11,32 @@ const GENERIC_DATA_ANALYSIS_PATTERNS = [
   /\bkeep an eye on your expenses\b/i,
 ];
 
+const SPENDING_TIP_WEAK_PATTERNS = [
+  /\bhere'?s (?:a )?revised spending tip\b/i,
+  /\brevised spending tip\b/i,
+  /\bi can help you (?:set|build|create)\b/i,
+  /\bset a realistic budget\b/i,
+  /\ballocat(?:e|ing) a specific amount\b/i,
+  /\breview(?:ing)? your (?:travel|spending|expenses?)\b/i,
+  /\bidentify(?:ing)? areas where you can cut back\b/i,
+  /\bexplore alternative(?:s)?(?:,? more affordable options)?\b/i,
+];
+
+const SPENDING_TIP_DIRECT_ACTION_PATTERNS = [
+  /\bcut\b/i,
+  /\bpause\b/i,
+  /\bfreeze\b/i,
+  /\bskip\b/i,
+  /\bcancel\b/i,
+  /\breduce\b/i,
+  /\bstop\b/i,
+  /\bcap\b/i,
+  /\bdelay\b/i,
+  /\blimit\b/i,
+  /\bhold off\b/i,
+  /\bwait(?:ing)? period\b/i,
+];
+
 const SPENDING_TIP_PATTERNS = [
   /\bspending tip\b/i,
   /\bspending advice\b/i,
@@ -163,6 +189,9 @@ export function buildResponseContractInstructions(
     lines.push("- Use the provided spending evidence anchor.");
     lines.push("- Do not tell the user to track, review, or analyze spending data manually.");
     lines.push("- Ask zero questions unless truly blocked.");
+    lines.push("- Keep it to 2-4 sentences and stay concrete.");
+    lines.push("- Do not say 'here is a revised tip' or offer future budgeting help; give the action now.");
+    lines.push("- Ignore old generic advice unless it is directly supported by the current data.");
     if (spendingTipEvidence?.label) {
       lines.push(
         `- Required anchor: ${spendingTipEvidence.label}${
@@ -179,6 +208,9 @@ export function buildResponseContractInstructions(
       lines.push(
         `- Original question to answer: ${continuityDirective.source_user_message}`,
       );
+    }
+    if (spendingTipEvidence?.label) {
+      lines.push("- If the original question was a spending-tip request, answer it directly with a concrete action and no generic budgeting offer.");
     }
   } else if (contract === "followup_contextual") {
     lines.push("- Continue the same subject directly.");
@@ -452,6 +484,25 @@ function detectGenericDataAnalysisIssues(responseText = "", packs = {}, classifi
   return issues;
 }
 
+function detectWeakSpendingTipIssues(responseText = "") {
+  const issues = [];
+  const text = String(responseText || "").trim();
+  if (!text) return issues;
+
+  for (const pattern of SPENDING_TIP_WEAK_PATTERNS) {
+    if (pattern.test(text)) {
+      issues.push("weak_spending_tip_language");
+      break;
+    }
+  }
+
+  if (!SPENDING_TIP_DIRECT_ACTION_PATTERNS.some((pattern) => pattern.test(text))) {
+    issues.push("missing_direct_adjustment");
+  }
+
+  return issues;
+}
+
 export function validateResponseContract({
   contract,
   responseText,
@@ -477,6 +528,7 @@ export function validateResponseContract({
     if (countQuestionMarks(text) > 0) {
       issues.push("unexpected_question");
     }
+    issues.push(...detectWeakSpendingTipIssues(text));
   } else if (contract === "repair_previous_answer") {
     if (REPAIR_DEFENSIVE_PATTERNS.some((pattern) => pattern.test(text))) {
       issues.push("defensive_repair_tone");
@@ -492,6 +544,9 @@ export function validateResponseContract({
         !responseMentionsEvidence(text, spendingTipEvidence)
       ) {
         issues.push("repair_missing_spending_anchor");
+      }
+      if (isSpendingTipRequest(originalLower)) {
+        issues.push(...detectWeakSpendingTipIssues(text));
       }
     }
   } else if (contract === "followup_contextual") {
@@ -562,6 +617,9 @@ export function buildContractRepairPrompt({
           ? ` ($${Number(spendingTipEvidence.amount).toFixed(2)})`
           : ""
       }`,
+    );
+    lines.push(
+      "Start with the cut itself. Do not say 'here's a revised tip'. Do not offer future budgeting help. Give the adjustment now.",
     );
   }
   lines.push(

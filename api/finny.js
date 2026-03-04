@@ -79,7 +79,8 @@ import {
 } from "../core/finny/services/ResponseContractService.js";
 import {
   loadLastTurnMeta,
-  deriveContinuityDirective,
+  persistLastTurnMeta,
+  analyzeContinuityDirective,
   buildLastTurnMeta,
   buildContinuityPromptHeader,
   buildContinuityClassification,
@@ -1836,17 +1837,27 @@ export default async function handler(req, res) {
         chatId,
         sessionState,
       });
-      const shadowDirective = deriveContinuityDirective({
+      const continuityAnalysis = analyzeContinuityDirective({
         message,
         lastTurnMeta,
         activeGoalFlow,
         currentAction: action,
       });
+      const shadowDirective = continuityAnalysis.directive;
+
+      if (isContinuityRouterV1Enabled()) {
+        logInfo("🧭 [CONTINUITY] Evaluation:", {
+          ...createContinuityShadowLog(message, lastTurnMeta),
+          reason: continuityAnalysis.reason,
+          applied: !!shadowDirective && isResponseContractsV2Enabled(),
+        });
+      }
 
       if (shadowDirective && !isContinuityRouterV1Enabled()) {
         logInfo("🧭 [CONTINUITY_SHADOW] Override available but disabled:", {
           ...createContinuityShadowLog(message, lastTurnMeta),
           mode: shadowDirective.mode,
+          reason: continuityAnalysis.reason,
         });
       }
 
@@ -3919,6 +3930,42 @@ async function handleAsk(
       .filter(Boolean)
       .join("\n\n");
 
+    const shouldFilterAdviceMemories =
+      responseContract === "spending_tip_grounded" ||
+      (responseContract === "repair_previous_answer" &&
+        continuityOverride?.source_contract === "spending_tip_grounded");
+    const promptMemory = shouldFilterAdviceMemories
+      ? {
+          ...(contextWithFeedback.memory || { memories: [], totalCount: 0 }),
+          memories: Array.isArray(contextWithFeedback.memory?.memories)
+            ? contextWithFeedback.memory.memories.filter((memory) => {
+                const content = String(memory?.content || "").toLowerCase();
+                return !/\b(was advised|is advised|advised to|30-day waiting period)\b/.test(
+                  content,
+                );
+              })
+            : [],
+        }
+      : contextWithFeedback.memory;
+    const promptContext = {
+      ...contextWithFeedback,
+      memory: promptMemory,
+    };
+    if (
+      shouldFilterAdviceMemories &&
+      Array.isArray(contextWithFeedback.memory?.memories)
+    ) {
+      const removedCount =
+        contextWithFeedback.memory.memories.length -
+        (promptMemory?.memories?.length || 0);
+      if (removedCount > 0) {
+        logInfo("🧠 [MEMORY] Filtered advice memories for grounded spending prompt:", {
+          removed_count: removedCount,
+          response_contract: responseContract,
+        });
+      }
+    }
+
     // Short-term conversation continuity: include recent turns (no extra LLM calls)
     // Now uses database for persistence across serverless instances
     const recentTurns = await getRecentConversationTurns(
@@ -3950,7 +3997,7 @@ async function handleAsk(
     // Build complete prompt using 6-layer architecture (with recent turns)
     const systemBuild = buildContextAwarePromptDetailed(
       message,
-      contextWithFeedback,
+      promptContext,
       financialDataForState,
       userState,
       finnyStyle,
@@ -4430,6 +4477,17 @@ async function handleAsk(
           : null,
     });
     mergeSessionState(userId, { last_turn_meta: lastTurnMeta });
+    const persistedTurnMeta = await persistLastTurnMeta({
+      userId,
+      chatId: resolvedChatId,
+      lastTurnMeta,
+    });
+    if (!persistedTurnMeta?.persisted) {
+      logWarn("⚠️ [CONTINUITY] Failed to persist ask turn meta:", {
+        chat_id: resolvedChatId,
+        reason: persistedTurnMeta?.reason || "unknown",
+      });
+    }
 
     // Frontend handles all message splitting with sophisticated algorithm
     // Backend always sends full message string - frontend splits intelligently
@@ -6129,7 +6187,7 @@ async function handleOffTopic(
   const category = isVenting ? "venting" : context?.category || "general";
   const userProfile = context?.profile || {};
   const userId = context?.user_id;
-  const persistOffTopicTurnMeta = (assistantText) => {
+  const persistOffTopicTurnMeta = async (assistantText) => {
     if (!userId) return null;
     const meta = buildLastTurnMeta({
       route: "off_topic",
@@ -6144,6 +6202,17 @@ async function handleOffTopic(
       topic: category,
     });
     mergeSessionState(userId, { last_turn_meta: meta });
+    const persisted = await persistLastTurnMeta({
+      userId,
+      chatId: context?.chat_id || null,
+      lastTurnMeta: meta,
+    });
+    if (!persisted?.persisted) {
+      logWarn("⚠️ [CONTINUITY] Failed to persist off-topic turn meta:", {
+        chat_id: context?.chat_id || null,
+        reason: persisted?.reason || "unknown",
+      });
+    }
     return meta;
   };
 
@@ -6384,7 +6453,7 @@ async function handleOffTopic(
         "❌ [FINNY] All LLM attempts failed for off-topic:",
         llmError?.message,
       );
-      persistOffTopicTurnMeta(
+      await persistOffTopicTurnMeta(
         "I'm a finance coach. What financial questions can I help you with?",
       );
       return {
@@ -6400,7 +6469,7 @@ async function handleOffTopic(
     const content =
       data.choices?.[0]?.message?.content ||
       "I'm all about finance. What money questions can I help you with?";
-    const offTopicTurnMeta = persistOffTopicTurnMeta(content);
+    const offTopicTurnMeta = await persistOffTopicTurnMeta(content);
 
     // Log in background (non-blocking)
     setImmediate(() =>
@@ -6445,7 +6514,7 @@ async function handleOffTopic(
     };
   } catch (error) {
     console.error("❌ [FINNY] Off-topic handler error:", error);
-    persistOffTopicTurnMeta(
+    await persistOffTopicTurnMeta(
       "I'm strictly a finance coach. What financial questions can I help you with?",
     );
     return {

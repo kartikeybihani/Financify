@@ -11,6 +11,7 @@ const {
   deriveContinuityDirective,
   buildContinuityClassification,
   buildClassificationHint,
+  analyzeContinuityDirective,
 } = await import("../core/finny/services/ContinuityService.js");
 
 function baseLastTurnMeta(overrides = {}) {
@@ -41,6 +42,13 @@ function main() {
   });
   assert.equal(repairDirective?.mode, "repair_previous_answer");
   assert.equal(repairDirective?.source_subject, "Travel");
+
+  const repairDirectiveCurly = deriveContinuityDirective({
+    message: "But that’s your job",
+    lastTurnMeta: baseLastTurnMeta(),
+    currentAction: "message",
+  });
+  assert.equal(repairDirectiveCurly?.mode, "repair_previous_answer");
 
   const followupDirective = deriveContinuityDirective({
     message: "why?",
@@ -75,6 +83,13 @@ function main() {
     previous_contract: "spending_tip_grounded",
     previous_subject: "Travel",
   });
+
+  const analysis = analyzeContinuityDirective({
+    message: "But that’s your job",
+    lastTurnMeta: baseLastTurnMeta(),
+    currentAction: "message",
+  });
+  assert.equal(analysis.reason, "complaint_match");
 
   console.log("✅ continuity routing checks passed");
 }
