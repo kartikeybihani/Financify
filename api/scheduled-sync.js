@@ -1,4 +1,5 @@
 // /api/scheduled-sync.js
+import crypto from "crypto";
 import { supabase } from "../lib/api/supabase.js";
 import {
   mapPlaidToAppCategory,
@@ -13,6 +14,8 @@ import { syncSnaptradeInvestments } from "../lib/snaptradeSync.js";
 const SCHEDULED_SYNC_CRON_SECRET =
   process.env.SCHEDULED_SYNC_CRON_SECRET ||
   process.env.BIGGEST_MOVER_CRON_SECRET;
+
+const DERIVED_ACCOUNT_TYPES = new Set(["depository", "credit", "loan"]);
 
 /** Infer trigger_source from mode for sync_logs */
 function getTriggerSource(mode) {
@@ -80,7 +83,9 @@ export default async function handler(req, res) {
     // Note: user_items table doesn't have is_active column, so we consider all items
     const { data: userItems, error: fetchError } = await supabase
       .from("user_items")
-      .select("item_id, user_id, last_synced_at, last_automated_sync");
+      .select(
+        "item_id, user_id, last_synced_at, last_automated_sync, sync_enabled",
+      );
 
     if (fetchError) {
       console.error("❌ Error fetching user items:", fetchError);
@@ -101,7 +106,11 @@ export default async function handler(req, res) {
       return res.status(500).json({ error: "Failed to fetch user items" });
     }
 
-    if (!userItems || userItems.length === 0) {
+    const enabledItems = (userItems || []).filter(
+      (item) => item.sync_enabled !== false,
+    );
+
+    if (!enabledItems || enabledItems.length === 0) {
       console.log("ℹ️ No user items found for syncing");
       const completedAt = new Date().toISOString();
       await insertSyncLog({
@@ -122,15 +131,15 @@ export default async function handler(req, res) {
       });
     }
 
-    const plaidItems = userItems.filter(
+    const plaidItems = enabledItems.filter(
       (item) => !item.item_id.startsWith("snaptrade-"),
     );
-    const snaptradeItems = userItems.filter((item) =>
+    const snaptradeItems = enabledItems.filter((item) =>
       item.item_id.startsWith("snaptrade-"),
     );
 
     console.log(
-      `📊 Found ${userItems.length} items (Plaid: ${plaidItems.length}, SnapTrade: ${snaptradeItems.length}) | mode=${mode}`,
+      `📊 Found ${enabledItems.length} enabled items (Plaid: ${plaidItems.length}, SnapTrade: ${snaptradeItems.length}) | mode=${mode}`,
     );
 
     let results;
@@ -150,10 +159,10 @@ export default async function handler(req, res) {
       mode === "weekly_balances"
         ? plaidItems.length
         : mode === "plaid_transactions"
-          ? plaidItems.length
+            ? plaidItems.length
           : mode === "snaptrade"
             ? snaptradeItems.length
-            : userItems.length;
+            : enabledItems.length;
     const status =
       results.errors > 0 && results.synced > 0
         ? "partial"
@@ -383,12 +392,13 @@ async function runWeeklyBalanceSync(plaidItems) {
 
       const accounts = balanceResponse.data.accounts || [];
       if (accounts.length > 0) {
+        const now = new Date().toISOString();
         const balanceUpdates = accounts.map((account) => ({
           account_id: account.account_id,
           item_id: item.item_id,
           current_balance: account.balances.current,
           available_balance: account.balances.available,
-          last_balance_sync_at: new Date().toISOString(),
+          last_balance_sync_at: now,
           balance_source: "plaid",
         }));
 
@@ -399,6 +409,14 @@ async function runWeeklyBalanceSync(plaidItems) {
         if (balanceErr) {
           throw new Error(`Balance update failed: ${balanceErr.message}`);
         }
+
+        await upsertBalanceAnchors({
+          userId: item.user_id,
+          itemId: item.item_id,
+          accounts,
+          anchoredAt: now,
+          source: "plaid_weekly",
+        });
       }
 
       results.synced++;
@@ -480,7 +498,8 @@ async function syncItemTransactions(item_id, user_id) {
       throw new Error(`Item not found: ${fetchErr?.message}`);
     }
 
-    let cursor = item.transactions_cursor || null;
+    const cursorStart = item.transactions_cursor || null;
+    let cursor = cursorStart;
     const hadNoCursorBeforeSync = !item.transactions_cursor;
     let added = [],
       modified = [],
@@ -517,6 +536,9 @@ async function syncItemTransactions(item_id, user_id) {
         const errorCode = plaidResponse.error_code || "UNKNOWN_ERROR";
         const errorType = plaidResponse.error_type || "API_ERROR";
         const requestId = plaidResponse.request_id || "N/A";
+        const isWrongEnvironmentToken =
+          errorCode === "INVALID_ACCESS_TOKEN" &&
+          /wrong plaid environment/i.test(String(errorMessage));
 
         console.error(`❌ Plaid API error for item ${item_id}:`, {
           errorCode,
@@ -555,6 +577,27 @@ async function syncItemTransactions(item_id, user_id) {
           } else {
             console.log(
               `✅ Set requires_update_mode for item ${item_id} (${errorCode})`,
+            );
+          }
+        }
+
+        if (isWrongEnvironmentToken) {
+          const { error: disableErr } = await supabase
+            .from("user_items")
+            .update({
+              sync_enabled: false,
+              sync_disabled_reason: "wrong_plaid_environment",
+              sync_disabled_at: new Date().toISOString(),
+            })
+            .eq("item_id", item_id);
+          if (disableErr) {
+            console.error(
+              `⚠️ Failed to disable scheduled sync for wrong-environment item ${item_id}:`,
+              disableErr,
+            );
+          } else {
+            console.warn(
+              `🚫 Disabled scheduled sync for wrong-environment item ${item_id}`,
             );
           }
         }
@@ -733,7 +776,7 @@ async function syncItemTransactions(item_id, user_id) {
 
     // Process and store transactions
     if (added.length || modified.length) {
-      const rows = [...added, ...modified].map((txn) => {
+      let rows = [...added, ...modified].map((txn) => {
         // Extract Plaid categories with proper fallback hierarchy
         const primary = txn.personal_finance_category?.primary || null;
         const detailed = txn.personal_finance_category?.detailed || null;
@@ -878,11 +921,13 @@ async function syncItemTransactions(item_id, user_id) {
           new_category: newCategory, // Only set for INTERNAL_TRANSFER or stream categories (legacy support)
           transaction_type: txn.payment_channel || null,
           pending: txn.pending ?? false,
+          authorized_date: txn.authorized_date || null,
           recurring_stream_id: recurringStreamId,
           if_recurring: ifRecurring, // Set recurring flag based on stream membership and internal transfer detection
           category_id: categoryId, // Set category_id for ID-based linking (preferred method)
           is_reviewed: false, // Default; overwritten below when pending→posted merge applies
           linked_goal_id: null, // Default; overwritten below when pending→posted merge applies
+          updated_at: new Date().toISOString(),
         };
 
         // Pending → Posted merge: copy user metadata from removed (pending) to new posted transaction
@@ -1165,6 +1210,26 @@ async function syncItemTransactions(item_id, user_id) {
       }
     }
 
+    // Update derived balances based on transition deltas.
+    // Cursor advances only after derived updates are safely applied/idempotently confirmed.
+    const derivedResult = await updateDerivedBalances({
+      itemId: item_id,
+      userId: user_id,
+      cursorStart,
+      cursorEnd: cursor,
+      added,
+      modified,
+      removed,
+      existingTxs, // Now always defined (initialized as empty array if no added/modified)
+      removedExisting,
+    });
+
+    if (!derivedResult.canAdvanceCursor) {
+      throw new Error(
+        derivedResult.error || "Derived balances failed; cursor not advanced",
+      );
+    }
+
     // Update cursor, timestamps, and sync status
     const syncTimestamp = new Date().toISOString();
     const { error: updateError } = await supabase
@@ -1183,22 +1248,13 @@ async function syncItemTransactions(item_id, user_id) {
       );
     }
 
-    // Update derived balances based on transaction deltas (no paid balance call)
-    const derivedBalancesUpdated = await updateDerivedBalances(
-      user_id,
-      added,
-      modified,
-      removed,
-      existingTxs, // Now always defined (initialized as empty array if no added/modified)
-      removedExisting,
-    );
-
     return {
       success: true,
       added: added.length,
       modified: modified.length,
       removed: removed.length,
-      derivedBalancesUpdated: derivedBalancesUpdated,
+      derivedBalancesUpdated: derivedResult.updated,
+      derivedIdempotentSkip: derivedResult.idempotentSkip,
     };
   } catch (error) {
     // Update sync status to error on failure
@@ -1223,103 +1279,395 @@ async function syncItemTransactions(item_id, user_id) {
   }
 }
 
-async function updateDerivedBalances(
-  user_id,
+function toFiniteNumber(value, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function zeroDerivedParts() {
+  return {
+    posted_delta_current: 0,
+    posted_delta_available: 0,
+    pending_delta_available: 0,
+  };
+}
+
+function negateDerivedParts(parts) {
+  return {
+    posted_delta_current: -parts.posted_delta_current,
+    posted_delta_available: -parts.posted_delta_available,
+    pending_delta_available: -parts.pending_delta_available,
+  };
+}
+
+function addDerivedParts(target, parts) {
+  target.posted_delta_current += parts.posted_delta_current;
+  target.posted_delta_available += parts.posted_delta_available;
+  target.pending_delta_available += parts.pending_delta_available;
+}
+
+function deriveDeltaPartsForType(accountType, isPending, amount) {
+  const normalizedType = String(accountType || "").toLowerCase();
+  const pending = isPending === true;
+  const amt = toFiniteNumber(amount, 0);
+
+  if (!DERIVED_ACCOUNT_TYPES.has(normalizedType)) {
+    return null;
+  }
+
+  if (normalizedType === "depository") {
+    if (pending) {
+      return {
+        posted_delta_current: 0,
+        posted_delta_available: 0,
+        pending_delta_available: -amt,
+      };
+    }
+    return {
+      posted_delta_current: -amt,
+      posted_delta_available: -amt,
+      pending_delta_available: 0,
+    };
+  }
+
+  if (normalizedType === "credit") {
+    if (pending) {
+      return {
+        posted_delta_current: 0,
+        posted_delta_available: 0,
+        pending_delta_available: -amt,
+      };
+    }
+    return {
+      posted_delta_current: amt,
+      posted_delta_available: -amt,
+      pending_delta_available: 0,
+    };
+  }
+
+  // loan
+  if (pending) {
+    return {
+      posted_delta_current: 0,
+      posted_delta_available: 0,
+      pending_delta_available: 0,
+    };
+  }
+  return {
+    posted_delta_current: amt,
+    posted_delta_available: 0,
+    pending_delta_available: 0,
+  };
+}
+
+async function upsertBalanceAnchors({
+  userId,
+  itemId,
+  accounts,
+  anchoredAt,
+  source,
+}) {
+  const anchorRows = (accounts || []).map((account) => ({
+    user_id: userId,
+    item_id: itemId,
+    account_id: account.account_id,
+    account_type: account.type || null,
+    account_subtype: account.subtype || null,
+    anchor_current: account.balances?.current ?? null,
+    anchor_available: account.balances?.available ?? null,
+    anchor_limit: account.balances?.limit ?? null,
+    anchored_at: anchoredAt,
+    anchor_source: source,
+  }));
+
+  if (anchorRows.length === 0) return;
+
+  const { error } = await supabase
+    .from("account_balance_anchors")
+    .insert(anchorRows);
+  if (error) {
+    throw new Error(`Failed to write balance anchors: ${error.message}`);
+  }
+}
+
+async function updateDerivedBalances({
+  itemId,
+  userId,
+  cursorStart,
+  cursorEnd,
   added,
   modified,
   removed,
   existingTxs,
   removedExisting,
-) {
+}) {
+  if (!cursorEnd) {
+    return {
+      updated: 0,
+      canAdvanceCursor: false,
+      idempotentSkip: false,
+      error: "Missing cursor end; refusing derived apply",
+    };
+  }
+
+  const { data: cursorGuard, error: cursorGuardFetchErr } = await supabase
+    .from("sync_cursor_guards")
+    .select("id")
+    .eq("item_id", itemId)
+    .eq("cursor_end", cursorEnd)
+    .maybeSingle();
+
+  if (cursorGuardFetchErr) {
+    return {
+      updated: 0,
+      canAdvanceCursor: false,
+      idempotentSkip: false,
+      error: `Failed to read cursor guard: ${cursorGuardFetchErr.message}`,
+    };
+  }
+
+  if (cursorGuard?.id) {
+    return {
+      updated: 0,
+      canAdvanceCursor: true,
+      idempotentSkip: true,
+    };
+  }
+
   const existingMap = new Map();
-  existingTxs.forEach((tx) => {
+  (existingTxs || []).forEach((tx) => {
+    existingMap.set(tx.plaid_transaction_id, tx);
+  });
+  (removedExisting || []).forEach((tx) => {
     existingMap.set(tx.plaid_transaction_id, tx);
   });
 
-  removedExisting.forEach((tx) => {
-    existingMap.set(tx.plaid_transaction_id, tx);
+  const touchedAccountIds = new Set();
+  (added || []).forEach((txn) => {
+    if (txn.account_id) touchedAccountIds.add(txn.account_id);
+  });
+  (modified || []).forEach((txn) => {
+    if (txn.account_id) touchedAccountIds.add(txn.account_id);
+    const prev = existingMap.get(txn.transaction_id);
+    if (prev?.account_id) touchedAccountIds.add(prev.account_id);
+  });
+  (removed || []).forEach((txn) => {
+    const prev = existingMap.get(txn.transaction_id);
+    if (prev?.account_id) touchedAccountIds.add(prev.account_id);
   });
 
-  const deltas = new Map();
-  const addDelta = (accountId, delta) => {
-    if (!accountId || !Number.isFinite(delta)) return;
-    deltas.set(accountId, (deltas.get(accountId) || 0) + delta);
+  if (touchedAccountIds.size === 0) {
+    const { error: guardErr } = await supabase.from("sync_cursor_guards").insert({
+      item_id: itemId,
+      cursor_end: cursorEnd,
+    });
+    if (guardErr && guardErr.code !== "23505") {
+      return {
+        updated: 0,
+        canAdvanceCursor: false,
+        idempotentSkip: false,
+        error: `Failed to write cursor guard: ${guardErr.message}`,
+      };
+    }
+    return {
+      updated: 0,
+      canAdvanceCursor: true,
+      idempotentSkip: false,
+    };
+  }
+
+  const accountIds = Array.from(touchedAccountIds);
+  const { data: accountRows, error: accountErr } = await supabase
+    .from("accounts")
+    .select("account_id, type, subtype, current_balance, available_balance")
+    .in("account_id", accountIds);
+
+  if (accountErr) {
+    return {
+      updated: 0,
+      canAdvanceCursor: false,
+      idempotentSkip: false,
+      error: `Failed to fetch account rows for derived balances: ${accountErr.message}`,
+    };
+  }
+
+  const accountMap = new Map((accountRows || []).map((row) => [row.account_id, row]));
+  const deltasByAccount = new Map();
+  const ensureAccumulator = (accountId) => {
+    if (!deltasByAccount.has(accountId)) {
+      deltasByAccount.set(accountId, zeroDerivedParts());
+    }
+    return deltasByAccount.get(accountId);
   };
 
-  added.forEach((txn) => {
-    if (txn.pending === true) return;
-    addDelta(txn.account_id, -Number(txn.amount || 0));
+  const applyContribution = (accountId, accountType, isPending, amount, sign = 1) => {
+    if (!accountId) return;
+    const parts = deriveDeltaPartsForType(accountType, isPending, amount);
+    if (!parts) return;
+    const accumulator = ensureAccumulator(accountId);
+    if (sign === -1) {
+      addDerivedParts(accumulator, negateDerivedParts(parts));
+    } else {
+      addDerivedParts(accumulator, parts);
+    }
+  };
+
+  // Added: apply next state contribution.
+  (added || []).forEach((txn) => {
+    const account = accountMap.get(txn.account_id);
+    applyContribution(
+      txn.account_id,
+      account?.type,
+      txn.pending === true,
+      txn.amount,
+      1,
+    );
   });
 
-  modified.forEach((txn) => {
+  // Modified: subtract previous state contribution, apply next state contribution.
+  (modified || []).forEach((txn) => {
     const prev = existingMap.get(txn.transaction_id);
-    if (!prev) return;
-
-    const prevPending = prev.pending === true;
-    const nextPending = txn.pending === true;
-    const prevAccount = prev.account_id;
-    const prevAmount = Number(prev.amount || 0);
-    const nextAccount = txn.account_id;
-    const nextAmount = Number(txn.amount || 0);
-
-    if (prevPending && nextPending) return;
-
-    if (prevPending && !nextPending) {
-      addDelta(nextAccount || prevAccount, -nextAmount);
-      return;
-    }
-
-    if (!prevPending && nextPending) {
-      addDelta(prevAccount || nextAccount, prevAmount);
-      return;
-    }
-
-    if (prevAccount && nextAccount && prevAccount !== nextAccount) {
-      addDelta(prevAccount, prevAmount);
-      addDelta(nextAccount, -nextAmount);
-      return;
-    }
-
-    addDelta(prevAccount || nextAccount, prevAmount - nextAmount);
-  });
-
-  removed.forEach((txn) => {
-    const prev = existingMap.get(txn.transaction_id);
-    if (!prev) return;
-    if (prev.pending === true) return;
-    addDelta(prev.account_id, Number(prev.amount || 0));
-  });
-
-  if (deltas.size === 0) return 0;
-
-  let updated = 0;
-  for (const [accountId, delta] of deltas.entries()) {
-    const { data: accountRow, error: accountErr } = await supabase
-      .from("accounts")
-      .select("current_balance, available_balance")
-      .eq("account_id", accountId)
-      .single();
-
-    if (accountErr || !accountRow) {
-      console.error(
-        "⚠️ Account not found for derived balance update:",
-        accountId,
+    if (prev) {
+      const prevAccount = accountMap.get(prev.account_id);
+      applyContribution(
+        prev.account_id,
+        prevAccount?.type,
+        prev.pending === true,
+        prev.amount,
+        -1,
       );
+    }
+
+    const nextAccount = accountMap.get(txn.account_id);
+    applyContribution(
+      txn.account_id,
+      nextAccount?.type,
+      txn.pending === true,
+      txn.amount,
+      1,
+    );
+  });
+
+  // Removed: subtract previous state contribution.
+  (removed || []).forEach((txn) => {
+    const prev = existingMap.get(txn.transaction_id);
+    if (!prev) return;
+    const prevAccount = accountMap.get(prev.account_id);
+    applyContribution(
+      prev.account_id,
+      prevAccount?.type,
+      prev.pending === true,
+      prev.amount,
+      -1,
+    );
+  });
+
+  const { data: existingRuns, error: existingRunsErr } = await supabase
+    .from("derived_balance_runs")
+    .select("account_id, status")
+    .eq("item_id", itemId)
+    .eq("cursor_end", cursorEnd)
+    .in("account_id", accountIds);
+
+  if (existingRunsErr) {
+    return {
+      updated: 0,
+      canAdvanceCursor: false,
+      idempotentSkip: false,
+      error: `Failed to read derived run history: ${existingRunsErr.message}`,
+    };
+  }
+
+  const alreadyApplied = new Set(
+    (existingRuns || [])
+      .filter((row) => row.status === "applied")
+      .map((row) => row.account_id),
+  );
+
+  let canAdvanceCursor = true;
+  let updated = 0;
+  const runId = crypto.randomUUID();
+
+  for (const accountId of accountIds) {
+    if (alreadyApplied.has(accountId)) {
       continue;
     }
 
-    const current = Number(accountRow.current_balance || 0) + delta;
+    const accountRow = accountMap.get(accountId);
+    const accountType = String(accountRow?.type || "").toLowerCase();
+    const parts = deltasByAccount.get(accountId) || zeroDerivedParts();
+    const availableDelta =
+      parts.posted_delta_available + parts.pending_delta_available;
+
+    const prevCurrent = toFiniteNumber(accountRow?.current_balance, 0);
+    const prevAvailable =
+      accountRow?.available_balance === null ||
+      accountRow?.available_balance === undefined
+        ? null
+        : toFiniteNumber(accountRow.available_balance, 0);
+
+    if (!accountRow) {
+      const { error: runInsertErr } = await supabase
+        .from("derived_balance_runs")
+        .insert({
+          run_id: runId,
+          item_id: itemId,
+          user_id: userId,
+          account_id: accountId,
+          cursor_start: cursorStart,
+          cursor_end: cursorEnd,
+          posted_delta_current: parts.posted_delta_current,
+          posted_delta_available: parts.posted_delta_available,
+          pending_delta_available: parts.pending_delta_available,
+          prev_current: null,
+          prev_available: null,
+          new_current: null,
+          new_available: null,
+          status: "skipped",
+          reason: "account_not_found",
+        });
+      if (runInsertErr && runInsertErr.code !== "23505") {
+        canAdvanceCursor = false;
+      }
+      continue;
+    }
+
+    if (!DERIVED_ACCOUNT_TYPES.has(accountType)) {
+      const { error: runInsertErr } = await supabase
+        .from("derived_balance_runs")
+        .insert({
+          run_id: runId,
+          item_id: itemId,
+          user_id: userId,
+          account_id: accountId,
+          cursor_start: cursorStart,
+          cursor_end: cursorEnd,
+          posted_delta_current: parts.posted_delta_current,
+          posted_delta_available: parts.posted_delta_available,
+          pending_delta_available: parts.pending_delta_available,
+          prev_current: prevCurrent,
+          prev_available: prevAvailable,
+          new_current: prevCurrent,
+          new_available: prevAvailable,
+          status: "skipped",
+          reason: "unknown_account_type",
+        });
+      if (runInsertErr && runInsertErr.code !== "23505") {
+        canAdvanceCursor = false;
+      }
+      continue;
+    }
+
+    const nextCurrent = prevCurrent + parts.posted_delta_current;
+    const nextAvailable =
+      prevAvailable === null ? null : prevAvailable + availableDelta;
+
     const updatePayload = {
-      current_balance: current,
+      current_balance: nextCurrent,
       balance_source: "derived",
     };
-
-    if (
-      accountRow.available_balance !== null &&
-      accountRow.available_balance !== undefined
-    ) {
-      updatePayload.available_balance =
-        Number(accountRow.available_balance) + delta;
+    if (nextAvailable !== null) {
+      updatePayload.available_balance = nextAvailable;
     }
 
     const { error: updateErr } = await supabase
@@ -1328,14 +1676,78 @@ async function updateDerivedBalances(
       .eq("account_id", accountId);
 
     if (updateErr) {
-      console.error("⚠️ Failed derived balance update:", updateErr);
+      canAdvanceCursor = false;
+      await supabase.from("derived_balance_runs").insert({
+        run_id: runId,
+        item_id: itemId,
+        user_id: userId,
+        account_id: accountId,
+        cursor_start: cursorStart,
+        cursor_end: cursorEnd,
+        posted_delta_current: parts.posted_delta_current,
+        posted_delta_available: parts.posted_delta_available,
+        pending_delta_available: parts.pending_delta_available,
+        prev_current: prevCurrent,
+        prev_available: prevAvailable,
+        new_current: null,
+        new_available: null,
+        status: "error",
+        reason: updateErr.message,
+      });
+      continue;
+    }
+
+    const { error: runInsertErr } = await supabase
+      .from("derived_balance_runs")
+      .insert({
+        run_id: runId,
+        item_id: itemId,
+        user_id: userId,
+        account_id: accountId,
+        cursor_start: cursorStart,
+        cursor_end: cursorEnd,
+        posted_delta_current: parts.posted_delta_current,
+        posted_delta_available: parts.posted_delta_available,
+        pending_delta_available: parts.pending_delta_available,
+        prev_current: prevCurrent,
+        prev_available: prevAvailable,
+        new_current: nextCurrent,
+        new_available: nextAvailable,
+        status: "applied",
+        reason: null,
+      });
+    if (runInsertErr && runInsertErr.code !== "23505") {
+      canAdvanceCursor = false;
       continue;
     }
 
     updated++;
   }
 
-  return updated;
+  if (canAdvanceCursor) {
+    const { error: guardErr } = await supabase.from("sync_cursor_guards").insert({
+      item_id: itemId,
+      cursor_end: cursorEnd,
+    });
+    if (guardErr && guardErr.code !== "23505") {
+      canAdvanceCursor = false;
+      return {
+        updated,
+        canAdvanceCursor,
+        idempotentSkip: false,
+        error: `Failed to write cursor guard: ${guardErr.message}`,
+      };
+    }
+  }
+
+  return {
+    updated,
+    canAdvanceCursor,
+    idempotentSkip: false,
+    error: canAdvanceCursor
+      ? null
+      : "One or more derived updates failed; cursor held back for retry",
+  };
 }
 
 // Category mapping is now handled by plaidCategoryMapper.js

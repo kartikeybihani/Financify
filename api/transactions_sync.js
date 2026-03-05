@@ -1900,6 +1900,7 @@ export default async function handler(req, res) {
           category_id: categoryId, // Set category_id for ID-based linking (preferred method)
           is_reviewed: false, // Default; overwritten below when pending→posted merge applies
           linked_goal_id: null, // Default; overwritten below when pending→posted merge applies
+          updated_at: new Date().toISOString(),
         };
 
         // Pending → Posted merge: copy user metadata from removed (pending) to new posted transaction

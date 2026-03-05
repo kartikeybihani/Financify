@@ -423,6 +423,37 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     }
   }, []);
 
+  const hasServerSyncNewerThanCache = useCallback(async (): Promise<boolean> => {
+    try {
+      const cacheTimestampRaw = AppStorage.getItemSync(UNIFIED_CACHE_TIMESTAMP_KEY);
+      const cacheTimestamp = cacheTimestampRaw ? parseInt(cacheTimestampRaw, 10) : 0;
+      if (!cacheTimestamp) return true;
+
+      const authResult = await getAuthenticatedUser();
+      if (!authResult?.user?.id) return false;
+
+      const { data, error } = await supabase
+        .from("user_items")
+        .select("last_automated_sync, last_synced_at")
+        .eq("user_id", authResult.user.id);
+
+      if (error || !data || data.length === 0) {
+        return false;
+      }
+
+      const newest = data.reduce((maxTs, row) => {
+        const rowTs = row.last_automated_sync || row.last_synced_at;
+        if (!rowTs) return maxTs;
+        const ms = new Date(rowTs).getTime();
+        return Number.isFinite(ms) && ms > maxTs ? ms : maxTs;
+      }, 0);
+
+      return newest > cacheTimestamp;
+    } catch {
+      return false;
+    }
+  }, []);
+
   // When entering demo mode, set state to demo data
   useEffect(() => {
     if (isDemoMode) {
@@ -449,14 +480,20 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
 
   // Initialize on mount
   useEffect(() => {
+    let isCancelled = false;
+    const initialize = async () => {
       if (isDemoMode) {
         return; // No fetch in demo mode
       }
       // Only skip fetch when we have meaningful cache (avoids zero net worth after reinstall)
       const meaningful = hasMeaningfulCache(initialCache);
+      const forceServerRefresh = meaningful
+        ? await hasServerSyncNewerThanCache()
+        : false;
+      if (isCancelled) return;
       if (meaningful) {
         // We have real data in cache - check if we need background sync
-        if (shouldBackgroundSync()) {
+        if (forceServerRefresh || shouldBackgroundSync()) {
           fetchAllData(true).then(() => {
             saveLastSyncTime();
           }).catch((error) => {
@@ -469,8 +506,13 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
         // No cache or empty cache (e.g. after reinstall) - fetch from DB immediately
         fetchAllData(false).then(() => {
           saveLastSyncTime();
+        }).catch((error) => {
+          logger.error("❌ [UNIFIED] Initial data fetch failed:", error);
         });
       }
+    };
+
+    initialize();
 
     // Listen for financial data updates
     const financialSubscription = DeviceEventEmitter.addListener(
@@ -540,12 +582,13 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     );
 
     return () => {
+      isCancelled = true;
       financialSubscription.remove();
       goalsSubscription.remove();
       authSubscription.remove();
       investmentSubscription.remove();
     };
-  }, [fetchAllData, shouldBackgroundSync, saveLastSyncTime, isDemoMode, accounts, goals, cashEntries, saveToCache]);
+  }, [fetchAllData, shouldBackgroundSync, saveLastSyncTime, hasServerSyncNewerThanCache, isDemoMode, accounts, goals, cashEntries, saveToCache]);
 
   // Memoized categorized data
   const categorizedLiabilities = useMemo(

@@ -197,6 +197,26 @@ export default async function handler(req, res) {
 
           if (upsertError) {
             console.error("Failed to batch update balances:", upsertError);
+          } else {
+            const anchorRows = accounts.map((account) => ({
+              user_id: actualUserId,
+              item_id: item_id,
+              account_id: account.account_id,
+              account_type: account.type || null,
+              account_subtype: account.subtype || null,
+              anchor_current: account.balances.current,
+              anchor_available: account.balances.available,
+              anchor_limit: account.balances.limit ?? null,
+              anchored_at: now,
+              anchor_source: "plaid_manual",
+            }));
+
+            const { error: anchorErr } = await supabase
+              .from("account_balance_anchors")
+              .insert(anchorRows);
+            if (anchorErr) {
+              console.error("Failed to write balance anchors:", anchorErr);
+            }
           }
 
           console.log(
