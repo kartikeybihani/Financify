@@ -10,7 +10,7 @@
  */
 
 import { logDebug, logInfo } from "../utils/logging.js";
-import { buildContinuityClassification, buildClassificationHint } from "../services/ContinuityService.js";
+import { buildContinuityClassification } from "../services/ContinuityService.js";
 
 /**
  * Normalize classification result based on available context data
@@ -139,15 +139,7 @@ export async function executeClassificationStage(input) {
   }
 
   // 3. Build classification hint from conversation history if available
-  let classificationHint = null;
-  if (userId && chatId) {
-    classificationHint = buildClassificationHint(
-      userId,
-      chatId,
-      message,
-      finalClassification,
-    );
-  }
+  const classificationHint = null;
 
   logInfo("✅ [STAGE:CLASSIFICATION] Classification stage complete", {
     intent: finalClassification?.intent,

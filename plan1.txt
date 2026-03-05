@@ -99,7 +99,7 @@ Phase 1 (legacy contract retirement) is done. Next is Phase 1b (remove unreachab
 7. PR-7: Phase 6 hardening + cleanup shims + final docs.
 
 ### Assumptions and Defaults
-1. Production flags remain fixed true: `FINNY_SPENDING_TIP_GROUNDED_V1`, `FINNY_RESPONSE_CONTRACTS_V2`, `FINNY_CONTINUITY_ROUTER_V1`, `FINNY_ADVISORY_RUNTIME_V1`.
+1. Production flags remain fixed true: `FINNY_CONTINUITY_ROUTER_V1`, `FINNY_ADVISORY_RUNTIME_V1`.
 2. Backward compatibility is mandatory for `/api/finny` action contract.
 3. No schema migrations are required unless discovered during Phase 5; if discovered, migration is additive and backward-compatible.
 4. Default strategy is incremental refactor with parity gates per PR, not big-bang rewrite.

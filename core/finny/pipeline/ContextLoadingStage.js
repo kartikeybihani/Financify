@@ -147,10 +147,12 @@ export async function executeContextLoadingStage(input) {
   // 5. Build context packs
   const contextResult = await buildContextPacks(userId, needs, slots);
   const packs = contextResult?.packs || {};
+  const dataGaps = Array.isArray(contextResult?.gaps) ? contextResult.gaps : [];
 
   logInfo("✅ [STAGE:CONTEXT] Context loading complete", {
     packsLoaded: Object.keys(packs),
     needsRequested: needs.length,
+    dataGaps: dataGaps.length,
   });
 
   return {
@@ -158,5 +160,6 @@ export async function executeContextLoadingStage(input) {
     slots,
     needs,
     packSelection,
+    dataGaps,
   };
 }

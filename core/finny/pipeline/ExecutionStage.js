@@ -15,7 +15,6 @@ import { cleanResponseFormatting } from "../utils/formatting.js";
 import {
   validateResponseContract,
   buildContractRepairPrompt,
-  detectAffordabilityContractIssues,
   applyLightAffordabilityRepair,
   buildGuidedSpendingTipRepairPrompt,
   renderDeterministicFallback,
@@ -173,9 +172,12 @@ export async function executeExecutionStage(input) {
     responseContract,
     advisoryRuntime,
     message,
+    routingMessage = null,
     packs,
     classification,
     profile,
+    continuityOverride = null,
+    spendingTipEvidence = null,
     llmService,
     timings = {},
     toolsUsed = [],
@@ -194,6 +196,8 @@ export async function executeExecutionStage(input) {
     const llmResult = await llmService.callWithFallback(
       llmModels,
       async (model, options) => {
+        const modelTemperature =
+          responseContract === "factual_lookup" ? 0.2 : 0.35;
         // Build LLM call
         return await fetch("https://openrouter.ai/api/v1/chat/completions", {
           method: "POST",
@@ -204,8 +208,8 @@ export async function executeExecutionStage(input) {
           signal: options.signal,
           body: JSON.stringify({
             model,
-            temperature: 0.7,
-            max_tokens: 12000,
+            temperature: modelTemperature,
+            max_tokens: 6000,
             stream: false,
             reasoning: { effort: "minimal", exclude: true },
             messages,
@@ -257,9 +261,8 @@ export async function executeExecutionStage(input) {
 
   // 3. Apply affordability repair if needed
   if (responseContract === "affordability_decision") {
-    const contractIssues = detectAffordabilityContractIssues(message, cleanText);
     const repaired = applyLightAffordabilityRepair(
-      message,
+      routingMessage || message,
       cleanText,
       packs,
       profile,
@@ -279,22 +282,205 @@ export async function executeExecutionStage(input) {
     }
   }
 
+  let contractRepairUsed = false;
+  let contractFallbackUsed = false;
+
+  async function callContractRepairLLM(
+    model,
+    repairPrompt,
+    options = {},
+  ) {
+    const repairMessages = [
+      {
+        role: "system",
+        content: [
+          "You are Finny.",
+          "Rewrite the reply so it satisfies the response contract and uses the provided financial context.",
+          "Return only the final assistant reply.",
+        ].join("\n"),
+      },
+      {
+        role: "user",
+        content: repairPrompt,
+      },
+    ];
+
+    const resp = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${getOpenRouterKey()}`,
+        "Content-Type": "application/json",
+      },
+      signal: options.signal,
+      body: JSON.stringify({
+        model,
+        temperature: 0.2,
+        max_tokens: 1800,
+        stream: false,
+        reasoning: { effort: "minimal", exclude: true },
+        messages: repairMessages,
+      }),
+    });
+
+    if (!resp.ok) {
+      const errorText = await resp.text();
+      throw new Error(`OpenRouter error ${resp.status}: ${errorText}`);
+    }
+    return resp;
+  }
+
   // 5. Validate response contract
-  const contractValidationResult = validateResponseContract({
+  let contractValidationResult = validateResponseContract({
     contract: responseContract,
     responseText: cleanText,
-    message,
+    message: routingMessage || message,
     packs,
-    classification,
-    profile,
-    advisoryRuntime,
+    classificationResult: classification,
+    continuityDirective: continuityOverride,
+    spendingTipEvidence,
   });
+
+  if (contractValidationResult.severity === "fail") {
+    logWarn("⚠️ [STAGE:EXECUTION] Contract validation failed; attempting constrained repair", {
+      contract: responseContract,
+      issues: contractValidationResult.issues,
+    });
+
+    try {
+      const repairPrompt = buildContractRepairPrompt({
+        contract: responseContract,
+        message: routingMessage || message,
+        responseText: cleanText,
+        issues: contractValidationResult.issues,
+        continuityDirective: continuityOverride,
+        spendingTipEvidence,
+      });
+      const repairResult = await llmService.callWithFallback(
+        llmModels,
+        (model, options) =>
+          callContractRepairLLM(model, repairPrompt, options),
+        12000,
+        "LLM Contract Repair",
+      );
+      const repairPayload = await repairResult.result.json();
+      const repairedText =
+        repairPayload?.choices?.[0]?.message?.content?.trim() || "";
+      if (repairedText) {
+        cleanText = repairedText;
+        contractRepairUsed = true;
+      }
+    } catch (error) {
+      logWarn("⚠️ [STAGE:EXECUTION] Constrained repair failed:", error?.message);
+    }
+
+    if (responseContract === "affordability_decision") {
+      const repaired = applyLightAffordabilityRepair(
+        routingMessage || message,
+        cleanText,
+        packs,
+        profile,
+      );
+      if (repaired && repaired !== cleanText) {
+        cleanText = repaired;
+      }
+    }
+
+    if (advisoryRuntime) {
+      cleanText = enforceAdvisoryQuestionPolicy(cleanText, advisoryRuntime);
+    }
+
+    contractValidationResult = validateResponseContract({
+      contract: responseContract,
+      responseText: cleanText,
+      message: routingMessage || message,
+      packs,
+      classificationResult: classification,
+      continuityDirective: continuityOverride,
+      spendingTipEvidence,
+    });
+
+    const spendingTipLikeContract =
+      responseContract === "spending_tip_grounded" ||
+      (responseContract === "repair_previous_answer" &&
+        continuityOverride?.source_contract === "spending_tip_grounded");
+
+    if (
+      contractValidationResult.severity === "fail" &&
+      spendingTipLikeContract &&
+      spendingTipEvidence?.label
+    ) {
+      try {
+        const guidedRepairPrompt = buildGuidedSpendingTipRepairPrompt({
+          message: routingMessage || message,
+          continuityDirective: continuityOverride,
+          spendingTipEvidence,
+        });
+        const guidedRepairResult = await llmService.callWithFallback(
+          llmModels,
+          (model, options) =>
+            callContractRepairLLM(model, guidedRepairPrompt, options),
+          12000,
+          "LLM Guided Spending Tip Repair",
+        );
+        const guidedRepairPayload = await guidedRepairResult.result.json();
+        const guidedRepairedText =
+          guidedRepairPayload?.choices?.[0]?.message?.content?.trim() || "";
+        if (guidedRepairedText) {
+          cleanText = guidedRepairedText;
+          contractRepairUsed = true;
+        }
+      } catch (error) {
+        logWarn(
+          "⚠️ [STAGE:EXECUTION] Guided spending-tip repair failed:",
+          error?.message,
+        );
+      }
+
+      if (advisoryRuntime) {
+        cleanText = enforceAdvisoryQuestionPolicy(cleanText, advisoryRuntime);
+      }
+
+      contractValidationResult = validateResponseContract({
+        contract: responseContract,
+        responseText: cleanText,
+        message: routingMessage || message,
+        packs,
+        classificationResult: classification,
+        continuityDirective: continuityOverride,
+        spendingTipEvidence,
+      });
+    }
+
+    if (contractValidationResult.severity === "fail") {
+      const fallbackText = renderDeterministicFallback({
+        contract: responseContract,
+        continuityDirective: continuityOverride,
+        spendingTipEvidence,
+      });
+      if (fallbackText) {
+        cleanText = fallbackText;
+        contractFallbackUsed = true;
+        contractValidationResult = validateResponseContract({
+          contract: responseContract,
+          responseText: cleanText,
+          message: routingMessage || message,
+          packs,
+          classificationResult: classification,
+          continuityDirective: continuityOverride,
+          spendingTipEvidence,
+        });
+      }
+    }
+  }
 
   logInfo("✅ [STAGE:EXECUTION] Execution stage complete", {
     model: usedModel,
     responseLength: cleanText.length,
     contractSeverity: contractValidationResult.severity,
     issues: contractValidationResult.issues.length,
+    issue_codes: contractValidationResult.issues,
+    repair_used: contractRepairUsed,
+    fallback_used: contractFallbackUsed,
   });
 
   return {
@@ -303,5 +489,7 @@ export async function executeExecutionStage(input) {
     usage,
     finishReason,
     contractValidationResult,
+    contractRepairUsed,
+    contractFallbackUsed,
   };
 }

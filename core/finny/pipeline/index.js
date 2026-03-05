@@ -81,7 +81,7 @@ export async function executeAskPipeline(input) {
       buildContextPacks: helpers.buildContextPacks,
     });
 
-    const { packs, slots, needs } = contextStageResult;
+    const { packs, slots, needs, dataGaps } = contextStageResult;
 
     // Re-run classification stage with packs for normalization
     const finalClassificationResult = await executeClassificationStage({
@@ -139,13 +139,22 @@ export async function executeAskPipeline(input) {
       classification: finalClassification,
       packs,
       enrichedData: enrichmentStageResult,
-      context,
+      context: {
+        ...context,
+        data_gaps: dataGaps || [],
+      },
       continuityOverride: context?.continuity_override,
       userRefused: helpers.detectRefusalToAnswer?.(message) || false,
       ambiguousIntent: helpers.detectAmbiguousIntent?.(message) || false,
     });
 
-    const { messages, responseContract, advisoryRuntime } = promptStageResult;
+    const {
+      messages,
+      responseContract,
+      advisoryRuntime,
+      spendingTipEvidence,
+      routingMessage,
+    } = promptStageResult;
 
     // Stage 5: Execution
     const executionStageResult = await executeExecutionStage({
@@ -153,15 +162,25 @@ export async function executeAskPipeline(input) {
       responseContract,
       advisoryRuntime,
       message,
+      routingMessage,
       packs,
       classification: finalClassification,
       profile: context?.profile || {},
+      continuityOverride: context?.continuity_override || null,
+      spendingTipEvidence,
       llmService: services.llmService,
       timings,
       toolsUsed,
     });
 
-    const { responseText, usedModel, usage } = executionStageResult;
+    const {
+      responseText,
+      usedModel,
+      usage,
+      contractValidationResult,
+      contractRepairUsed,
+      contractFallbackUsed,
+    } = executionStageResult;
 
     // Stage 6: Finalization
     const finalizationStageResult = await executeFinalizationStage({
@@ -172,6 +191,11 @@ export async function executeAskPipeline(input) {
       context,
       responseContract,
       advisoryRuntime,
+      continuityOverride: context?.continuity_override || null,
+      spendingTipEvidence,
+      contractValidationResult,
+      contractRepairUsed,
+      contractFallbackUsed,
       usedModel,
       usage,
       timings,

@@ -16,6 +16,7 @@ import {
   buildResponseContractInstructions,
   buildGroundingPolicyHeader,
   extractMentionedAmount,
+  extractSpendingTipEvidence,
 } from "../services/ResponseContractService.js";
 import {
   buildContinuityPromptHeader,
@@ -23,7 +24,7 @@ import {
 import { buildAdvisoryRuntime } from "../services/AdvisoryResolutionService.js";
 import { detectUserState } from "../../../lib/prompt_engine.js";
 import { buildContextAwarePromptDetailed } from "../../../lib/prompt_engine.js";
-import { buildFeedbackContext } from "../../../lib/memoryUtils.js";
+import { buildFeedbackContext, getRecentConversationTurns } from "../../../lib/memoryUtils.js";
 import { buildMainAskMessages } from "../../../lib/llm/promptLogging.js";
 
 /**
@@ -169,6 +170,7 @@ export async function executePromptAssemblyStage(input) {
 
   const routingMessage = continuityOverride?.source_user_message || message;
   const userId = context?.user_id;
+  const chatId = context?.chat_id || null;
   const profile = context?.profile || {};
 
   // 1. Determine response contract
@@ -217,33 +219,56 @@ export async function executePromptAssemblyStage(input) {
     });
   }
 
+  const spendingTipEvidence =
+    responseContract === "spending_tip_grounded" ||
+    (responseContract === "repair_previous_answer" &&
+      continuityOverride?.source_contract === "spending_tip_grounded")
+      ? extractSpendingTipEvidence(packs, profile)
+      : null;
+
   // 4. Build contract instructions
   const amountMentioned = extractMentionedAmount(routingMessage);
   const contractInstructions = buildResponseContractInstructions(
     responseContract,
     {
-      classification,
-      amountMentioned,
-      packs,
-      profile,
-      advisoryRuntime,
+      message: routingMessage,
+      continuityDirective: continuityOverride,
+      spendingTipEvidence,
     }
   );
 
   // 5. Build grounding policy header
   const groundingHeader = buildGroundingPolicyHeader(
-    responseContract,
     classification,
+    packs,
   );
 
   // 6. Build continuity header if needed
   let continuityHeader = "";
   if (continuityOverride) {
-    continuityHeader = buildContinuityPromptHeader(
-      continuityOverride,
-      classification,
-    );
+    continuityHeader = buildContinuityPromptHeader(continuityOverride);
   }
+
+  const classificationHeader = classification
+    ? `CLASSIFICATION:\n- needs_clarification: ${
+        classification.needs_clarification
+      }\n- info_sufficiency: ${
+        classification.info_sufficiency
+      }\n- decision_risk: ${
+        classification.decision_risk
+      }\n- missing_fields: ${JSON.stringify(classification.missing_fields || [])}`
+    : null;
+
+  const contextHeader = [
+    `CONTEXT_PACKS_INCLUDED: [${Object.keys(packs || {}).join(", ")}]`,
+    `DATA_GAPS: ${JSON.stringify(context?.data_gaps || [])}`,
+    classificationHeader,
+    groundingHeader,
+    continuityHeader || null,
+    contractInstructions,
+  ]
+    .filter(Boolean)
+    .join("\n\n");
 
   // 7. Build feedback context
   let feedbackContext = null;
@@ -257,6 +282,11 @@ export async function executePromptAssemblyStage(input) {
     feedbackContext,
   };
 
+  const recentTurns = await getRecentConversationTurns(userId, chatId, {
+    maxMessages: 8,
+    maxChars: 6000,
+  });
+
   const finnyStyle = profile?.finny_style || null;
 
   const promptResult = buildContextAwarePromptDetailed(
@@ -267,15 +297,15 @@ export async function executePromptAssemblyStage(input) {
     finnyStyle,
     classification,
     enrichedData?.webSummary || "",
-    null,
-    [],
+    contextHeader,
+    recentTurns,
     advisoryRuntime,
   );
 
   const promptText = String(promptResult?.system || "");
   const messages = buildMainAskMessages({
     system: promptText,
-    recentTurns: [],
+    recentTurns,
     userMessage: message,
   });
 
@@ -284,6 +314,7 @@ export async function executePromptAssemblyStage(input) {
     contract: responseContract,
     hasAdvisory: !!advisoryRuntime,
     hasContinuity: !!continuityOverride,
+    recentTurns: recentTurns.length,
   });
 
   return {
@@ -297,5 +328,8 @@ export async function executePromptAssemblyStage(input) {
     contractInstructions,
     continuityHeader,
     feedbackContext,
+    spendingTipEvidence,
+    routingMessage,
+    recentTurns,
   };
 }

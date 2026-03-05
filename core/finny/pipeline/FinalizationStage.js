@@ -10,7 +10,7 @@
  * - Build final response object
  */
 
-import { logDebug, logInfo, logError } from "../utils/logging.js";
+import { logDebug, logInfo, logWarn, logError } from "../utils/logging.js";
 import { cleanResponseFormatting, redactPII } from "../utils/formatting.js";
 import { persistLastTurnMeta, buildLastTurnMeta } from "../services/ContinuityService.js";
 import { appendConversationTurns } from "../../../lib/memoryUtils.js";
@@ -112,6 +112,11 @@ export async function executeFinalizationStage(input) {
     context,
     responseContract,
     advisoryRuntime,
+    continuityOverride = null,
+    spendingTipEvidence = null,
+    contractValidationResult = null,
+    contractRepairUsed = false,
+    contractFallbackUsed = false,
     usedModel,
     usage,
     timings = {},
@@ -125,7 +130,7 @@ export async function executeFinalizationStage(input) {
 
   const userId = context?.user_id;
   const chatId = context?.chat_id;
-  const profile = context?.profile || {};
+  let turnMetaForLog = null;
 
   // 1. Clean and format response text
   const cleanedText = cleanResponseFormatting(responseText);
@@ -141,16 +146,49 @@ export async function executeFinalizationStage(input) {
   if (userId && chatId) {
     try {
       const turnMeta = buildLastTurnMeta({
-        userMessage: message,
-        assistantResponse: cleanedText,
-        classification,
-        responseContract,
+        route: "ask",
+        classificationResult: classification,
         advisoryRuntime,
-        packs,
+        responseContract,
+        assistantText: cleanedText,
+        userMessage: continuityOverride?.source_user_message || message,
+        chatId,
+        groundedAnswer:
+          !!classification?.needs_user_data &&
+          (responseContract === "spending_tip_grounded" ||
+            responseContract === "factual_lookup" ||
+            responseContract === "affordability_decision" ||
+            contractRepairUsed ||
+            contractFallbackUsed),
+        subject:
+          spendingTipEvidence?.label ||
+          continuityOverride?.source_subject ||
+          advisoryRuntime?.decision?.subject ||
+          null,
+        topic:
+          responseContract === "repair_previous_answer"
+            ? continuityOverride?.source_contract === "spending_tip_grounded"
+              ? "spending"
+              : continuityOverride?.source_contract === "affordability_decision"
+                ? "affordability"
+                : null
+            : null,
       });
+      turnMetaForLog = turnMeta;
 
-      await persistLastTurnMeta(userId, chatId, turnMeta);
-      logDebug("✅ [FINALIZATION] Turn metadata persisted");
+      const persisted = await persistLastTurnMeta({
+        userId,
+        chatId,
+        lastTurnMeta: turnMeta,
+      });
+      if (!persisted?.persisted) {
+        logWarn("⚠️ [FINALIZATION] Failed to persist turn metadata", {
+          reason: persisted?.reason || "unknown",
+          chatId,
+        });
+      } else {
+        logDebug("✅ [FINALIZATION] Turn metadata persisted");
+      }
     } catch (error) {
       logError("⚠️ [FINALIZATION] Failed to persist turn metadata:", error?.message);
     }
@@ -196,6 +234,16 @@ export async function executeFinalizationStage(input) {
       model: usedModel,
       cache_hits: {},
       tokens: usage,
+      response_contract: responseContract,
+      continuity_mode: continuityOverride?.mode || null,
+      contract_validation_issues:
+        contractValidationResult?.issues?.length > 0
+          ? contractValidationResult.issues
+          : null,
+      contract_repair_used: !!contractRepairUsed,
+      contract_fallback_used: !!contractFallbackUsed,
+      spending_tip_evidence: spendingTipEvidence || null,
+      finny_turn_meta: turnMetaForLog,
     },
     prompt_used: null, // Can be added if needed
   };
