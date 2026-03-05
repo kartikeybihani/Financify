@@ -1,0 +1,105 @@
+## Finny Refactor Completion Plan (Phase 1b → Final)
+
+### Summary
+This plan completes the full cleanup/refactor of Finny across [`api/finny.js`](/Users/kartikeybihani/Finek/financify/api/finny.js) and `/core/finny`, with zero behavior regressions on public API shape.  
+Phase 1 (legacy contract retirement) is done. Next is Phase 1b (remove unreachable stock branch), then phased decomposition and architecture hardening.
+
+### Current State Snapshot
+1. Legacy response-contract path is already removed from [`api/finny.js`](/Users/kartikeybihani/Finek/financify/api/finny.js).
+2. Remaining obvious dead path: `looksLikeStockDeepQuery()` always true, so simple stock path and `getCachedDataWithFallback()` path are unreachable.
+3. Remaining lint dead code in core: unused `lower` in [`core/finny/services/ContinuityService.js`](/Users/kartikeybihani/Finek/financify/core/finny/services/ContinuityService.js:53).
+
+### Phase 1b (Immediate) — Remove Unreachable Stock Path
+1. Delete non-deep stock branch in `handleAsk` in [`api/finny.js`](/Users/kartikeybihani/Finek/financify/api/finny.js) and simplify stock flow to one path: plan + execute + analyze.
+2. Remove now-unused helpers in same file if references become zero: `looksLikeStockDeepQuery`, `getCachedData`, `setCachedData`, `getCachedDataWithFallback`.
+3. Keep response envelope and action behavior unchanged for `stock_query`, `stock_conversation`, and confirmation actions.
+4. Validate with `node --check`, no-unused-vars lint pass, and stock-focused tests.
+5. Acceptance gate: no behavioral diffs in stock responses except removal of unreachable code paths.
+
+### Phase 2 — Dead Code Elimination Across /core and API
+1. Build symbol usage map for all `core/finny` exports and remove unreferenced exports/helpers.
+2. Remove low-value dead helpers and shadow-only remnants from API/core; start with `ContinuityService.lower`.
+3. Keep interfaces stable for services still used by `api/finny.js` and tests.
+4. Normalize noisy duplicate logs where they obscure signal; preserve existing log event semantics.
+5. Acceptance gate: `eslint no-unused-vars` clean for `api/finny.js` and `core/finny/**/*.js`.
+
+### Phase 3 — Split Monolith Entry Into Thin Handler + Routed Actions
+1. Keep [`api/finny.js`](/Users/kartikeybihani/Finek/financify/api/finny.js) as thin entry only (auth/rate-limit/request parsing/dispatch).
+2. Extract action handlers into `core/finny/handlers`: `ask`, `classify`, `off_topic`, `prebuild_context`, `stock_conversation`, `goal_conversation`.
+3. Extract action router into `core/finny/router`.
+4. Preserve current action names and request/response schema exactly.
+5. Acceptance gate: all existing action paths behave identically under integration smoke.
+
+### Phase 4 — Refactor `handleAsk` Into Deterministic Pipeline
+1. Split `handleAsk` into explicit stages in `core/finny/pipeline`:
+   - classification normalization
+   - pack selection/context loading
+   - web/stock data enrichment
+   - prompt assembly
+   - LLM call + repair/validation
+   - response finalization + conversation logging
+2. Convert hidden shared state to explicit stage input/output objects.
+3. Keep advisory/continuity/contract semantics unchanged while making each stage unit-testable.
+4. Acceptance gate: parity snapshots for representative prompts (factual, affordability, spending tip, high-risk clarify, stock, off-topic).
+
+### Phase 5 — Cache/Data Architecture Consolidation
+1. Consolidate cache logic into one internal cache module for in-memory + persistent concerns.
+2. Remove API-file-owned background lifecycle concerns where possible (cleanup loops moved to dedicated cache lifecycle module).
+3. Keep `context_cache` behavior and TTL semantics functionally equivalent during migration.
+4. Keep `forceRefreshUserData` contract unchanged.
+5. Acceptance gate: cache hit/miss behavior unchanged in logs for same scenarios.
+
+### Phase 6 — Hardening, Test Matrix, Rollout, and Cleanup
+1. Add/refresh focused tests for each extracted stage and action handler.
+2. Freeze API contract with response shape assertions for `/api/finny`.
+3. Run staged rollout:
+   - local static gates
+   - staging canary with logging parity checks
+   - production ramp with rollback-ready toggles
+4. Remove transitional compatibility shims once parity holds.
+5. Acceptance gate: no error-rate or latency regression beyond agreed thresholds.
+
+### Public APIs / Interfaces / Types
+1. External API surface: no change to `/api/finny` request actions or response envelope.
+2. Internal changes to add:
+   - `core/finny/router/*`
+   - `core/finny/handlers/*`
+   - `core/finny/pipeline/*`
+   - `core/finny/cache/*` (or equivalent consolidated cache module)
+3. Transitional requirement: keep existing named exports from `api/finny.js` used by tests until test imports are migrated.
+
+### Test Cases and Scenarios
+1. Static gates:
+   - `node --check api/finny.js`
+   - `node --check core/finny/**/*.js`
+   - `eslint no-unused-vars` for `api/finny.js` and `core/finny/**/*.js`
+2. Functional gates:
+   - `tests/test_finny_response_contracts.js`
+   - `tests/test_finny_continuity.js`
+   - `tests/test_finny_advisory_resolution.js`
+   - `tests/test_stock_analysis.js`
+   - `tests/test_finny_architecture.js`
+   - `tests/test_finny_contract_hardball.js`
+   - `tests/test_hardball.js`
+3. Behavioral parity scenarios:
+   - stock confirm/update/retry flow
+   - affordability with known amount
+   - spending tip grounded flow + repair fallback
+   - continuity repair/followup overrides
+   - off-topic with memory/profile context
+   - streaming SSE completion/fallback behavior
+
+### Delivery Slices (Recommended PR Sequence)
+1. PR-1: Phase 1b stock dead-path removal.
+2. PR-2: Phase 2 dead-code cleanup in core + api.
+3. PR-3: Phase 3 router + extracted handlers skeleton with no behavior change.
+4. PR-4: Phase 4 ask pipeline extraction (stages 1-3).
+5. PR-5: Phase 4 ask pipeline extraction (stages 4-6).
+6. PR-6: Phase 5 cache/data consolidation.
+7. PR-7: Phase 6 hardening + cleanup shims + final docs.
+
+### Assumptions and Defaults
+1. Production flags remain fixed true: `FINNY_SPENDING_TIP_GROUNDED_V1`, `FINNY_RESPONSE_CONTRACTS_V2`, `FINNY_CONTINUITY_ROUTER_V1`, `FINNY_ADVISORY_RUNTIME_V1`.
+2. Backward compatibility is mandatory for `/api/finny` action contract.
+3. No schema migrations are required unless discovered during Phase 5; if discovered, migration is additive and backward-compatible.
+4. Default strategy is incremental refactor with parity gates per PR, not big-bang rewrite.

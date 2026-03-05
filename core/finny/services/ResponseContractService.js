@@ -183,7 +183,17 @@ export function buildResponseContractInstructions(
     lines.push("- Direct answer first, then brief supporting math.");
     lines.push("- No coaching questions unless truly blocked.");
   } else if (contract === "high_stakes_planning") {
-    lines.push("- Brief framing, 1-2 principles, at most one targeted blocker question.");
+    lines.push("- Lead with the practical recommendation or boundary in the first line.");
+    lines.push("- Keep framing brief (1-2 principles max), then give a concrete next step.");
+    lines.push(
+      "- End with a concrete close: one action + one condition + one number or timeframe.",
+    );
+    lines.push(
+      "- Do not end with generic closers like 'consider your budget' or 'align with your priorities'.",
+    );
+    lines.push(
+      "- If offering more help, use a non-question nudge tied to this topic (not a generic follow-up question).",
+    );
   } else if (contract === "education_explainer") {
     lines.push("- Direct explanation, short example, one practical takeaway.");
   } else if (contract === "spending_tip_grounded") {

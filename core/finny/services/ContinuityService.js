@@ -50,10 +50,6 @@ export function normalizeContinuityText(text = "") {
     .toLowerCase();
 }
 
-function lower(text = "") {
-  return normalizeContinuityText(text);
-}
-
 export function isComplaintLikeMessage(message = "") {
   const text = normalizeContinuityText(message);
   if (!text) return false;
