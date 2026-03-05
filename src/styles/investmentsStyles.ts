@@ -75,7 +75,7 @@ export const styles = StyleSheet.create({
     marginLeft: 4,
   },
   accountInfo: {
-    paddingTop: 12,
+    paddingTop: 10,
     borderTopWidth: 1,
     borderTopColor: "rgba(255, 255, 255, 0.1)",
     flexDirection: "row",
@@ -86,38 +86,39 @@ export const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     flex: 1,
-    marginRight: 12,
-    marginBottom: -8,
+    marginRight: 8,
+    marginBottom: -6,
   },
   accountChip: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 20,
-    paddingHorizontal: 10,
-    paddingVertical: 6,
+    borderRadius: 16,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.15)",
-    minHeight: 36,
-    marginRight: 8,
-    marginBottom: 8,
+    minHeight: 30,
+    maxWidth: "46%",
+    marginRight: 6,
+    marginBottom: 6,
   },
   accountChipSelected: {
     backgroundColor: "rgba(74, 144, 226, 0.2)",
     borderColor: "rgba(74, 144, 226, 0.4)",
   },
   accountChipLogo: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    marginRight: 6,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    marginRight: 5,
   },
   accountChipContent: {
     flex: 1,
     minWidth: 0,
   },
   accountChipName: {
-    fontSize: FONTS.sm - 1,
+    fontSize: FONTS.xs + 1,
     color: "rgba(255, 255, 255, 0.9)",
     fontWeight: "600",
     marginBottom: 1,
@@ -126,7 +127,7 @@ export const styles = StyleSheet.create({
     color: "#4A90E2",
   },
   accountChipTime: {
-    fontSize: FONTS.xs,
+    fontSize: FONTS.xs - 1,
     color: "rgba(255, 255, 255, 0.6)",
   },
   accountChipTimeSelected: {
@@ -446,12 +447,6 @@ export const styles = StyleSheet.create({
     backgroundColor: "rgba(102, 102, 102, 0.1)",
     opacity: 0.6,
   },
-  buttonGroup: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  
   // Error Container
   disabledBanner: {
     flexDirection: "row",

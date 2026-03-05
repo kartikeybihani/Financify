@@ -2334,6 +2334,7 @@ export default function InvestmentsScreen({
                                 styles.accountChipTime,
                                 isSelected && styles.accountChipTimeSelected,
                               ]}
+                              numberOfLines={1}
                             >
                               Last synced: {account.lastUpdated}
                             </Text>
@@ -2345,16 +2346,6 @@ export default function InvestmentsScreen({
                 ) : null}
               </>
             )}
-            {/* Button Group with Spacing */}
-            <View style={styles.buttonGroup}>
-              {/* Sync Button */}
-              <IconButton
-                onPress={handleSync}
-                icon={isSyncing ? "hourglass" : "refresh"}
-                size={19}
-                disabled={isSyncing}
-              />
-            </View>
           </View>
         </View>
       </View>
@@ -2738,7 +2729,7 @@ export default function InvestmentsScreen({
         <View style={styles.container}>
           <CleanInvestmentsHeader
             isRefreshing={isRefreshing || isSyncing}
-            onRefresh={handlePullToRefresh}
+            onRefresh={handleSync}
           />
           <ScrollView
             style={{ flex: 1 }}

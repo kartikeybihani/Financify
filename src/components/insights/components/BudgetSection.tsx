@@ -41,7 +41,6 @@ interface Props {
   onOpenAddCategoryModalRef?: (openFn: (() => void) | null) => void;
   onRefreshBudgetRef?: (refreshFn: (() => Promise<void>) | null) => void;
   refreshCategories?: () => void;
-  onViewPersonality?: () => void;
 }
 
 export default function BudgetSection({
@@ -52,7 +51,6 @@ export default function BudgetSection({
   onOpenAddCategoryModalRef,
   onRefreshBudgetRef,
   refreshCategories,
-  onViewPersonality,
 }: Props) {
   const { isDemoMode } = useDemoMode();
   const [addCategoryModalVisible, setAddCategoryModalVisible] = useState(false);
@@ -164,7 +162,6 @@ export default function BudgetSection({
           totalBudget={demoBudgetTotalBudget}
           totalSpent={demoBudgetTotalSpent}
           budgetSummary={null}
-          onViewPersonality={onViewPersonality}
         />
       ) : budgetLoading ? (
         <LoadingIndicator
@@ -197,7 +194,6 @@ export default function BudgetSection({
           refreshBudget={refreshBudget}
           refreshCategories={refreshCategories}
           onEditMonthlyBudget={() => setShowMonthlyBudgetModal(true)}
-          onViewPersonality={onViewPersonality}
         />
       )}
 

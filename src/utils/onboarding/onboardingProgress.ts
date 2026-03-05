@@ -175,31 +175,8 @@ export async function checkFinnyAsked(userId: string): Promise<boolean> {
 }
 
 /**
- * Check if user has created a goal
- */
-export async function checkGoalCreated(userId: string): Promise<boolean> {
-  try {
-    const { data, error } = await supabase
-      .from("goals")
-      .select("id")
-      .eq("user_id", userId)
-      .limit(1);
-
-    if (error) {
-      logger.error("Error checking goals:", error);
-      return false;
-    }
-
-    return (data?.length || 0) > 0;
-  } catch (error) {
-    logger.error("Error in checkGoalCreated:", error);
-    return false;
-  }
-}
-
-/**
  * Update onboarding progress with current status
- * Automatically checks all four steps and updates the record
+ * Automatically checks all active steps and updates the record
  */
 export async function updateOnboardingProgress(
   userId: string
@@ -208,12 +185,11 @@ export async function updateOnboardingProgress(
     const { data: { user } } = await supabase.auth.getUser();
     if (!user || user.id !== userId) return null; // Auth guard: prevent during logout race
 
-    // Check all four steps
-    const [accountsConnected, budgetSetup, finnyAsked, goalCreated] = await Promise.all([
+    // Check all active onboarding steps
+    const [accountsConnected, budgetSetup, finnyAsked] = await Promise.all([
       checkAccountsConnected(userId),
       checkBudgetSetup(userId),
       checkFinnyAsked(userId),
-      checkGoalCreated(userId),
     ]);
 
     // Get or create progress record
@@ -232,7 +208,6 @@ export async function updateOnboardingProgress(
         accounts_connected: accountsConnected,
         budget_setup: budgetSetup,
         finny_asked: finnyAsked,
-        goal_created: goalCreated,
         updated_at: new Date().toISOString(),
       })
       .eq("user_id", userId)
@@ -297,8 +272,7 @@ export async function resetOnboardingDismissal(
     const isComplete =
       progress.accounts_connected &&
       progress.budget_setup &&
-      progress.finny_asked &&
-      progress.goal_created;
+      progress.finny_asked;
 
     if (!isComplete) {
       const { error } = await supabase
@@ -339,16 +313,14 @@ export function calculateOnboardingPercentage(
     progress.accounts_connected,
     progress.budget_setup,
     progress.finny_asked,
-    progress.goal_created,
   ];
 
   const completedSteps = steps.filter(Boolean).length;
 
   if (completedSteps === 0) return 0;
-  if (completedSteps === 1) return 25;
-  if (completedSteps === 2) return 50;
-  if (completedSteps === 3) return 75;
-  if (completedSteps === 4) return 100;
+  if (completedSteps === 1) return 33;
+  if (completedSteps === 2) return 66;
+  if (completedSteps === 3) return 100;
 
   return 0;
 }
@@ -378,8 +350,7 @@ export async function getOnboardingStatus(
             const isComplete =
               updatedProgress.accounts_connected &&
               updatedProgress.budget_setup &&
-              updatedProgress.finny_asked &&
-              updatedProgress.goal_created;
+              updatedProgress.finny_asked;
             const shouldShow = !isComplete && !updatedProgress.dismissed;
 
             const freshStatus: OnboardingStatus = {
@@ -426,8 +397,7 @@ export async function getOnboardingStatus(
     const isComplete =
       progress.accounts_connected &&
       progress.budget_setup &&
-      progress.finny_asked &&
-      progress.goal_created;
+      progress.finny_asked;
 
     // Should show if:
     // - Not complete AND

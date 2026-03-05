@@ -30,6 +30,7 @@ import { getTransactionsForCategory } from "@/src/types/budget";
 import CategoryTransactionsModal from "@/src/components/modals/CategoryTransactionsModal";
 import CategoryEditModal from "@/src/components/modals/CategoryEditModal";
 import logger from "@/src/utils/core/logger";
+import { analyzeSpendingPersonality } from "@/src/utils/analytics/personalityAnalysis";
 
 // Enable LayoutAnimation on Android
 if (
@@ -65,7 +66,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   orphanCategories = [],
   onAddOrphanToBudget,
   totalBudget: providedTotalBudget,
-  totalSpent: providedTotalSpent,
   budgetSummary,
   onUpdateBudget,
   onDeleteBudget,
@@ -75,7 +75,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   refreshBudget,
   refreshCategories,
   onEditMonthlyBudget,
-  onViewPersonality,
 }) => {
   // Optimistic updates: track local budget changes before DB sync
   const [optimisticBudgets, setOptimisticBudgets] = useState<
@@ -89,6 +88,8 @@ const BudgetView: React.FC<BudgetViewProps> = ({
       { originalIndex: number; timestamp: number; originalBudget: number }
     >
   >(new Map());
+  const [showAllCategories, setShowAllCategories] = useState(false);
+  const [showStyleDetails, setShowStyleDetails] = useState(false);
 
   // Track previous budget order to enable smooth transitions
   const previousOrderRef = useRef<Map<string, number>>(new Map());
@@ -98,6 +99,10 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   const totalSpent = categoryBreakdown.reduce(
     (sum, [_, data]) => sum + data.amount,
     0,
+  );
+  const personality = useMemo(
+    () => analyzeSpendingPersonality(categoryBreakdown, totalSpent),
+    [categoryBreakdown, totalSpent],
   );
 
   // Use optimistic budgets if available, otherwise use provided budgets
@@ -255,13 +260,11 @@ const BudgetView: React.FC<BudgetViewProps> = ({
   // Animate status color changes smoothly
   useEffect(() => {
     let targetValue = 0;
-    if (budgetProgress < 70)
-      targetValue = 0; // Green
-    else if (budgetProgress < 90)
-      targetValue = 1; // Yellow
+    if (budgetProgress < 90)
+      targetValue = 0; // Calm / on track
     else if (budgetProgress < 100)
-      targetValue = 2; // Orange
-    else targetValue = 3; // Red
+      targetValue = 1; // Needs attention
+    else targetValue = 2; // Over budget
 
     Animated.timing(animatedStatusColor, {
       toValue: targetValue,
@@ -295,46 +298,34 @@ const BudgetView: React.FC<BudgetViewProps> = ({
 
   // Get status color based on progress
   const getStatusColor = (progress: number) => {
-    if (progress < 70) return "#4ECDC4"; // Green - on track
-    if (progress < 90) return "#FFB84D"; // Yellow - getting close
-    if (progress < 100) return "#FF9500"; // Orange - warning
+    if (progress < 90) return "#5A86E8"; // Calm blue
+    if (progress < 100) return "#D7A84B"; // Warm neutral
     return "#FF6B6B"; // Red - over budget
   };
 
-  const getStatusEmoji = (progress: number) => {
-    if (progress < 70) return "✨";
-    if (progress < 90) return "⚡";
-    if (progress < 100) return "⚠️";
-    return "🚨";
-  };
-
   const getStatusText = (progress: number) => {
-    if (progress < 70) return "On Track";
-    if (progress < 90) return "Watch It";
-    if (progress < 100) return "Almost There";
+    if (progress < 90) return "On Track";
+    if (progress < 100) return "Needs Attention";
     return "Over Budget";
   };
 
   // Get interpolated status color for smooth transitions
   const interpolatedStatusColor = animatedStatusColor.interpolate({
-    inputRange: [0, 1, 2, 3],
-    outputRange: ["#4ECDC4", "#FFB84D", "#FF9500", "#FF6B6B"],
+    inputRange: [0, 1, 2],
+    outputRange: ["#5A86E8", "#D7A84B", "#FF6B6B"],
   });
 
   // Get interpolated background color for status badge
   const interpolatedStatusBgColor = animatedStatusColor.interpolate({
-    inputRange: [0, 1, 2, 3],
+    inputRange: [0, 1, 2],
     outputRange: [
-      "rgba(78, 205, 196, 0.15)",
-      "rgba(255, 184, 77, 0.15)",
-      "rgba(255, 149, 0, 0.15)",
+      "rgba(90, 134, 232, 0.14)",
+      "rgba(215, 168, 75, 0.14)",
       "rgba(255, 107, 107, 0.15)",
     ],
   });
 
   // Get current status values (for emoji and text, these can update instantly)
-  const statusColor = getStatusColor(budgetProgress);
-  const statusEmoji = getStatusEmoji(budgetProgress);
   const statusText = getStatusText(budgetProgress);
 
   // Smart sorting with position preservation for recently edited categories
@@ -547,6 +538,127 @@ const BudgetView: React.FC<BudgetViewProps> = ({
     setEditParentLabel(null);
   };
 
+  const getBudgetProgress = (item: BudgetData) => {
+    if (item.budget <= 0) {
+      return item.spent > 0 ? 100 : 0;
+    }
+    return (item.spent / item.budget) * 100;
+  };
+
+  const attentionBudgets = sortedBudgets.filter(
+    (item) => getBudgetProgress(item) >= 90,
+  );
+  const MIN_DEFAULT_CATEGORIES = 3;
+  const MAX_DEFAULT_CATEGORIES = 5;
+  const focusBudgets = attentionBudgets.slice(0, MAX_DEFAULT_CATEGORIES);
+  const targetDefaultCount = Math.min(
+    MAX_DEFAULT_CATEGORIES,
+    Math.max(MIN_DEFAULT_CATEGORIES, focusBudgets.length),
+  );
+  const focusKeys = new Set(
+    focusBudgets.map((item) => item.categoryId || item.category),
+  );
+  const fillBudgets = sortedBudgets.filter(
+    (item) => !focusKeys.has(item.categoryId || item.category),
+  );
+  const defaultVisibleBudgets = [
+    ...focusBudgets,
+    ...fillBudgets.slice(
+      0,
+      Math.max(0, targetDefaultCount - focusBudgets.length),
+    ),
+  ].slice(0, Math.min(MAX_DEFAULT_CATEGORIES, sortedBudgets.length));
+  const visibleBudgets = showAllCategories
+    ? sortedBudgets
+    : defaultVisibleBudgets;
+  const canToggleAll = sortedBudgets.length > defaultVisibleBudgets.length;
+  const hiddenCount = Math.max(0, sortedBudgets.length - visibleBudgets.length);
+
+  const trackableCategories = sortedBudgets.filter((item) => item.budget > 0);
+  const onTrackCount = trackableCategories.filter(
+    (item) => getBudgetProgress(item) < 90,
+  ).length;
+
+  const renderBudgetItems = (items: BudgetData[]) =>
+    items.map((budget, index) => {
+      const categoryProgress = getBudgetProgress(budget);
+      const categoryStatusColor = getStatusColor(categoryProgress);
+      const isOverBudget = categoryProgress >= 100;
+
+      const entryInfo = budget.categoryId
+        ? categoryToEntry.get(budget.categoryId)
+        : null;
+      const cardEntryId = budget.entryId || entryInfo?.entryId;
+      const cardCategoryId = budget.categoryId || null;
+      const children = budget.children || [];
+
+      // Use stable key based on categoryId (or category name as fallback)
+      // This ensures React can properly track components during re-sorts
+      const uniqueKey = cardCategoryId || budget.category;
+
+      return (
+        <View key={uniqueKey}>
+          <CategoryBudgetCard
+            category={budget.category}
+            spent={budget.spent}
+            budget={budget.budget}
+            progress={categoryProgress}
+            color={budget.color}
+            icon={budget.icon}
+            statusColor={categoryStatusColor}
+            isOverBudget={isOverBudget}
+            formatCategoryName={formatCategoryName}
+            entryId={cardEntryId || undefined}
+            categoryId={cardCategoryId}
+            hasChildren={children.length > 0}
+            isCollapsed={
+              cardCategoryId ? collapsedParents.has(cardCategoryId) : false
+            }
+            onToggleCollapse={() => toggleCollapse(cardCategoryId)}
+            onPress={() => {
+              openTransactions(budget);
+            }}
+            onEdit={undefined}
+            onDelete={undefined}
+            delay={index * 30}
+            onOpenActions={() => openTransactions(budget)}
+            isLoading={false}
+          />
+          {children.length > 0 &&
+            (() => {
+              const isExpanded = !(
+                cardCategoryId && collapsedParents.has(cardCategoryId)
+              );
+              return (
+                <AnimatedSubcategoriesContainer isExpanded={isExpanded}>
+                  {children.map((child) => {
+                    const childProgress = getBudgetProgress(child);
+                    const childStatusColor = getStatusColor(childProgress);
+                    // Use stable key based on categoryId (or category name as fallback)
+                    // Include parent categoryId to ensure uniqueness for children
+                    const childUniqueKey = child.categoryId
+                      ? `${cardCategoryId || budget.category}-${child.categoryId}`
+                      : `${budget.category}-${child.category}`;
+                    return (
+                      <SubcategoryRow
+                        key={childUniqueKey}
+                        item={child}
+                        statusColor={childStatusColor}
+                        formatCategoryName={formatCategoryName}
+                        onOpenActions={() =>
+                          openTransactions(child, budget.category)
+                        }
+                        isLoading={false}
+                      />
+                    );
+                  })}
+                </AnimatedSubcategoriesContainer>
+              );
+            })()}
+        </View>
+      );
+    });
+
   return (
     <View>
       {/* Glassy Summary Header Box */}
@@ -565,7 +677,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               activeOpacity={0.7}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <Feather name="edit" size={18} color="rgba(255, 255, 255, 0.9)" />
+              <Feather name="edit" size={13} color="rgba(255, 255, 255, 0.9)" />
               {/* <Text style={styles.editPillText}>Edit</Text> */}
             </TouchableOpacity>
           )}
@@ -577,7 +689,6 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               },
             ]}
           >
-            <Text style={styles.statusEmoji}>{statusEmoji}</Text>
             <Animated.Text
               style={[styles.statusText, { color: interpolatedStatusColor }]}
             >
@@ -612,7 +723,7 @@ const BudgetView: React.FC<BudgetViewProps> = ({
                 {
                   color: animatedRemaining.interpolate({
                     inputRange: [-1000000, 0, 1000000],
-                    outputRange: ["#FF9500", "#FF9500", "#4ECDC4"], // Orange when over, green when left
+                    outputRange: ["#FF6B6B", "#D7A84B", "#5A86E8"],
                   }),
                 },
               ]}
@@ -621,25 +732,53 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               {displayedRemaining >= 0 ? "left" : "over"}
             </Animated.Text>
           </View>
+          {trackableCategories.length > 0 && (
+            <Text style={styles.progressSubtleNote}>
+              {onTrackCount} of {trackableCategories.length} categories are on
+              track
+            </Text>
+          )}
         </View>
       </View>
 
-      {onViewPersonality && (
-        <View style={styles.personalityButtonRow}>
-          <TouchableOpacity
-            onPress={onViewPersonality}
-            style={styles.personalityButton}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.personalityButtonText}>See personality</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+      <View style={styles.styleCard}>
+        <TouchableOpacity
+          onPress={() => setShowStyleDetails((prev) => !prev)}
+          style={styles.styleCardTop}
+          activeOpacity={0.85}
+        >
+          <View style={styles.styleTitleWrap}>
+            <Text style={styles.styleLabel}>Spending style</Text>
+            <Text style={styles.styleArchetype}>
+              {personality.emoji} {personality.archetype}
+            </Text>
+            <View style={styles.styleTraitChip}>
+              <Text style={styles.styleTraitChipText}>
+                {personality.traits[0] || personality.badge}
+              </Text>
+            </View>
+          </View>
+          <Ionicons
+            name={showStyleDetails ? "chevron-up" : "chevron-down"}
+            size={16}
+            color="rgba(255, 255, 255, 0.7)"
+          />
+        </TouchableOpacity>
+        {showStyleDetails && (
+          <View style={styles.styleDetails}>
+            <Text style={styles.styleDescription}>
+              {personality.description}
+            </Text>
+            <Text style={styles.styleGuidance}>
+              Focus on your top few at-risk categories first. Small adjustments
+              beat perfect plans.
+            </Text>
+          </View>
+        )}
+      </View>
 
-      {/* Compact Categories List - No ScrollView, No Header */}
       {sortedBudgets.length > 0 ? (
         <View style={styles.categoriesBox}>
-          {/* Header Row with Labels */}
           <View style={styles.progressBarHeader}>
             <View style={styles.spacer} />
             <View style={styles.progressBarHeaderSection}>
@@ -652,93 +791,30 @@ const BudgetView: React.FC<BudgetViewProps> = ({
               </View>
             </View>
           </View>
+
+          {!showAllCategories && (
+            <Text style={styles.focusLabel}>
+              {focusBudgets.length > 0 ? "Focus now" : "Top categories"}
+            </Text>
+          )}
+
           <View style={styles.categoriesList}>
-            {sortedBudgets.map((budget, index) => {
-              const categoryProgress =
-                budget.budget > 0 ? (budget.spent / budget.budget) * 100 : 0;
-              const categoryStatusColor = getStatusColor(categoryProgress);
-              const isOverBudget = categoryProgress >= 100;
-
-              const entryInfo = budget.categoryId
-                ? categoryToEntry.get(budget.categoryId)
-                : null;
-              const cardEntryId = budget.entryId || entryInfo?.entryId;
-              const cardCategoryId = budget.categoryId || null;
-              const children = budget.children || [];
-
-              // Use stable key based on categoryId (or category name as fallback)
-              // This ensures React can properly track components during re-sorts
-              const uniqueKey = cardCategoryId || budget.category;
-
-              return (
-                <View key={uniqueKey}>
-                  <CategoryBudgetCard
-                    category={budget.category}
-                    spent={budget.spent}
-                    budget={budget.budget}
-                    progress={categoryProgress}
-                    color={budget.color}
-                    icon={budget.icon}
-                    statusColor={categoryStatusColor}
-                    isOverBudget={isOverBudget}
-                    formatCategoryName={formatCategoryName}
-                    entryId={cardEntryId || undefined}
-                    categoryId={cardCategoryId}
-                    hasChildren={children.length > 0}
-                    isCollapsed={
-                      cardCategoryId
-                        ? collapsedParents.has(cardCategoryId)
-                        : false
-                    }
-                    onToggleCollapse={() => toggleCollapse(cardCategoryId)}
-                    onPress={() => {
-                      openTransactions(budget);
-                    }}
-                    onEdit={undefined}
-                    onDelete={undefined}
-                    delay={index * 30}
-                    onOpenActions={() => openTransactions(budget)}
-                    isLoading={false}
-                  />
-                  {children.length > 0 &&
-                    (() => {
-                      const isExpanded = !(
-                        cardCategoryId && collapsedParents.has(cardCategoryId)
-                      );
-                      return (
-                        <AnimatedSubcategoriesContainer isExpanded={isExpanded}>
-                          {children.map((child, childIndex) => {
-                            const childProgress =
-                              child.budget > 0
-                                ? (child.spent / child.budget) * 100
-                                : 0;
-                            const childStatusColor =
-                              getStatusColor(childProgress);
-                            // Use stable key based on categoryId (or category name as fallback)
-                            // Include parent categoryId to ensure uniqueness for children
-                            const childUniqueKey = child.categoryId
-                              ? `${cardCategoryId || budget.category}-${child.categoryId}`
-                              : `${budget.category}-${child.category}`;
-                            return (
-                              <SubcategoryRow
-                                key={childUniqueKey}
-                                item={child}
-                                statusColor={childStatusColor}
-                                formatCategoryName={formatCategoryName}
-                                onOpenActions={() =>
-                                  openTransactions(child, budget.category)
-                                }
-                                isLoading={false}
-                              />
-                            );
-                          })}
-                        </AnimatedSubcategoriesContainer>
-                      );
-                    })()}
-                </View>
-              );
-            })}
+            {renderBudgetItems(visibleBudgets)}
           </View>
+
+          {canToggleAll && (
+            <View style={styles.showAllRow}>
+              <TouchableOpacity
+                style={styles.showAllButton}
+                onPress={() => setShowAllCategories((prev) => !prev)}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.showAllText}>
+                  {showAllCategories ? "Show fewer" : `Show all categories`}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
       ) : null}
 
@@ -2070,24 +2146,102 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
   },
-  personalityButtonRow: {
-    alignItems: "center",
-    marginTop: 12,
-    marginBottom: 4,
+  progressSubtleNote: {
+    marginTop: 8,
+    color: "rgba(255, 255, 255, 0.65)",
+    fontSize: 12,
+    fontWeight: "500",
   },
-  personalityButton: {
-    paddingVertical: 9,
-    paddingHorizontal: 14,
+  styleCard: {
+    marginTop: 10,
+    marginBottom: 20,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+    backgroundColor: "rgba(255, 255, 255, 0.04)",
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  styleCardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  styleTitleWrap: {
+    flex: 1,
+  },
+  styleLabel: {
+    color: "rgba(255, 255, 255, 0.6)",
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    marginBottom: 8,
+  },
+  styleArchetype: {
+    color: "#E8EFFB",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  styleTraitChip: {
+    alignSelf: "flex-start",
+    marginTop: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(90, 134, 232, 0.14)",
+    borderWidth: 1,
+    borderColor: "rgba(90, 134, 232, 0.22)",
+  },
+  styleTraitChipText: {
+    color: "rgba(223, 235, 255, 0.92)",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  styleDetails: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.08)",
+  },
+  styleDescription: {
+    color: "rgba(255, 255, 255, 0.78)",
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  styleGuidance: {
+    marginTop: 6,
+    color: "rgba(255, 255, 255, 0.62)",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  focusLabel: {
+    marginTop: 6,
+    marginBottom: 2,
+    marginLeft: 8,
+    color: "rgba(255, 255, 255, 0.68)",
+    fontSize: 11,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  showAllRow: {
+    alignItems: "center",
+    marginTop: 6,
+  },
+  showAllButton: {
+    paddingVertical: 8,
+    paddingHorizontal: 12,
     borderRadius: 999,
     backgroundColor: "rgba(255, 255, 255, 0.06)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.1)",
   },
-  personalityButtonText: {
+  showAllText: {
     color: "#B9D7FF",
     fontSize: 12,
     fontWeight: "700",
-    letterSpacing: 0.2,
   },
   // Categories Box (glassy style)
   categoriesBox: {

@@ -8,8 +8,6 @@ export type InsightsSection =
   | "recurring"
   | "cashflow";
 
-export type BudgetSectionMode = "budget" | "spending";
-
 export interface ReAuthItem {
   item_id: string;
   institution_name: string;

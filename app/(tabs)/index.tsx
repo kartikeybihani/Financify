@@ -719,7 +719,7 @@ export default function HomeScreen() {
   };
 
   // Handle onboarding step press
-  const handleOnboardingStepPress = (step: 1 | 2 | 3 | 4) => {
+  const handleOnboardingStepPress = (step: 1 | 2 | 3) => {
     setShowOnboardingModal(false);
 
     if (step === 1) {
@@ -738,9 +738,6 @@ export default function HomeScreen() {
     } else if (step === 3) {
       // Navigate to chat tab
       router.push("/(tabs)/chat");
-    } else if (step === 4) {
-      // Navigate to goals tab
-      router.push("/(tabs)/goals");
     }
   };
 
@@ -829,25 +826,8 @@ export default function HomeScreen() {
       },
     );
 
-    const goalsSubscription = DeviceEventEmitter.addListener(
-      "goalsUpdated",
-      async () => {
-        // Goal created - invalidate onboarding cache
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user?.id) {
-          const { invalidateOnboardingCache } =
-            await import("@/src/shared/utils/cacheInvalidation");
-          await invalidateOnboardingCache(user.id);
-          await loadOnboardingStatus(user.id);
-        }
-      },
-    );
-
     return () => {
       financialSubscription.remove();
-      goalsSubscription.remove();
     };
   }, []);
 

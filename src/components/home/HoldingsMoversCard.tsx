@@ -106,7 +106,7 @@ const computeDayImpact = (h: InvestmentHoldingRow): number => {
 };
 
 const computeTodayTotalPerformanceFromHoldings = (
-  holdings: InvestmentHoldingRow[]
+  holdings: InvestmentHoldingRow[],
 ): { amount: number; percentage: number; hasData: boolean } => {
   const displayable = filterDisplayableHoldings(holdings);
   let total = 0;
@@ -142,23 +142,23 @@ const computeTodayTotalPerformanceFromHoldings = (
  */
 const computeTodayTotalPerformance = (
   balances: InvestmentBalanceRow[],
-  holdings: InvestmentHoldingRow[]
+  holdings: InvestmentHoldingRow[],
 ): { amount: number; percentage: number; hasData: boolean } => {
   const totalPortfolioValue = balances.reduce(
     (sum, b) => sum + (b.total_value || 0),
-    0
+    0,
   );
 
   if (balances.length > 0) {
     const dayChangeSum = balances.reduce(
       (sum, b) => sum + (b.day_change || 0),
-      0
+      0,
     );
     const hasValidDayChange = balances.some(
       (b) =>
         b.day_change !== null &&
         b.day_change !== undefined &&
-        !isNaN(b.day_change)
+        !isNaN(b.day_change),
     );
     if (hasValidDayChange) {
       let weightedPercentSum = 0;
@@ -179,8 +179,8 @@ const computeTodayTotalPerformance = (
         totalWeight > 0
           ? weightedPercentSum / totalWeight
           : totalPortfolioValue > 0
-          ? (dayChangeSum / totalPortfolioValue) * 100
-          : 0;
+            ? (dayChangeSum / totalPortfolioValue) * 100
+            : 0;
       return { amount: dayChangeSum, percentage, hasData: true };
     }
   }
@@ -228,7 +228,7 @@ const pickTopMovers = (holdings: InvestmentHoldingRow[]): Mover[] => {
 
 /** Fallback: top 3 by absolute total_percent_change when day data is missing. */
 const pickTopMoversByTotalReturn = (
-  holdings: InvestmentHoldingRow[]
+  holdings: InvestmentHoldingRow[],
 ): Mover[] => {
   const displayable = filterDisplayableHoldings(holdings);
   const movers: Mover[] = [];
@@ -316,13 +316,13 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
     // Filter out cash and Open Ended Fund (same as Investments screen)
     const displayableHoldings = useMemo(
       () => filterDisplayableHoldings(holdings),
-      [holdings]
+      [holdings],
     );
 
     const dayMovers = useMemo(() => pickTopMovers(holdings), [holdings]);
     const fallbackMovers = useMemo(
       () => pickTopMoversByTotalReturn(holdings),
-      [holdings]
+      [holdings],
     );
     const useDayData = dayMovers.length > 0;
     const displayMovers = useDayData ? dayMovers : fallbackMovers;
@@ -330,7 +330,7 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
 
     const todayPerf = useMemo(
       () => computeTodayTotalPerformance(balances, holdings),
-      [balances, holdings]
+      [balances, holdings],
     );
     const hero = displayMovers[0];
     const runners = displayMovers.slice(1);
@@ -346,6 +346,8 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
         activeOpacity={0.85}
         onPress={onPress}
         style={styles.pressable}
+        accessibilityRole="button"
+        accessibilityHint="Opens your investment movers details"
       >
         <View style={styles.card}>
           <View style={styles.headerRow}>
@@ -392,10 +394,17 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
                   </View>
                 )}
               </View>
-              {/* <Text style={styles.subtitle}>Your holdings</Text> */}
+              <Text style={styles.subtitle}>Tap to view details</Text>
             </View>
             <View style={styles.headerRight}>
-              <Ionicons name="chevron-forward" size={16} color={COLORS.muted} />
+              <View style={styles.headerActionHint}>
+                <Text style={styles.headerActionText}>View</Text>
+                <Ionicons
+                  name="chevron-forward"
+                  size={14}
+                  color={COLORS.muted}
+                />
+              </View>
             </View>
           </View>
 
@@ -486,7 +495,7 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
                 </View>
               </View>
 
-              {runners.length > 0 && (
+              {runners.length < 0 && (
                 <View style={styles.runnersSection}>
                   <Text style={styles.otherMoversLabel}>
                     {isFallback ? "Other gainers" : "Other movers"}
@@ -534,7 +543,7 @@ export const HoldingsMoversCard: React.FC<HoldingsMoversCardProps> = React.memo(
         </View>
       </TouchableOpacity>
     );
-  }
+  },
 );
 
 HoldingsMoversCard.displayName = "HoldingsMoversCard";
@@ -596,8 +605,28 @@ const styles = StyleSheet.create({
     color: COLORS.text,
     fontFamily: "Manrope",
     letterSpacing: 0.2,
-    marginBottom: 5,
+    marginBottom: 2,
     // textTransform: "uppercase",
+  },
+  subtitle: {
+    fontSize: 10,
+    color: COLORS.subtext,
+    fontWeight: "500",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+  },
+  headerActionHint: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 2,
+    paddingHorizontal: 2,
+    paddingVertical: 2,
+  },
+  headerActionText: {
+    fontSize: 10,
+    color: COLORS.muted,
+    fontWeight: "600",
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+    letterSpacing: 0.2,
   },
   heroSection: {
     paddingHorizontal: 16,

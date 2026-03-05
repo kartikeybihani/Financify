@@ -102,7 +102,6 @@ import {
   Insight,
 } from "@/src/types/plaid";
 import {
-  BudgetSectionMode,
   InsightsSection,
   ReAuthItem,
   RecurringData,
@@ -148,8 +147,11 @@ const SECTIONS: SectionConfig[] = [
   // { key: "cashflow", label: "Cash Flow" },
 ] as const;
 
-// Default to merged "budget" section (index 2)
-const DEFAULT_SECTION_INDEX = 2;
+// Default to the budget section
+const DEFAULT_SECTION_INDEX = Math.max(
+  0,
+  SECTIONS.findIndex((section) => section.key === "budget"),
+);
 
 // Shape demo transactions for insights (add account info like getRecentTransactions)
 function getDemoTransactionsForInsights() {
@@ -354,8 +356,6 @@ export default function InsightsScreen() {
   const openAddCategoryModalRef = useRef<(() => void) | null>(null);
   const [hasOpenAddCategoryModal, setHasOpenAddCategoryModal] = useState(false);
   const refreshBudgetRef = useRef<(() => Promise<void>) | null>(null);
-  const [budgetSectionMode, setBudgetSectionMode] =
-    useState<BudgetSectionMode>("budget");
 
   // Wrapper function that calls the ref
   const openAddCategoryModal = useCallback(() => {
@@ -412,7 +412,6 @@ export default function InsightsScreen() {
   }>();
   useFocusEffect(
     useCallback(() => {
-      setBudgetSectionMode("budget");
       if (!sectionParam) return;
       navigateToSection(sectionParam, { clearQueryParam: true });
     }, [sectionParam, navigateToSection]),
@@ -2261,8 +2260,6 @@ export default function InsightsScreen() {
       onDismissReAuth: dismissReAuthBannerWrapper,
       onRefresh,
       refreshing,
-      mode: budgetSectionMode,
-      onModeChange: setBudgetSectionMode,
     }),
     [
       budgetCategoryBreakdown,
@@ -2283,7 +2280,6 @@ export default function InsightsScreen() {
       dismissReAuthBannerWrapper,
       onRefresh,
       refreshing,
-      budgetSectionMode,
     ],
   );
 
@@ -2508,7 +2504,6 @@ export default function InsightsScreen() {
 
       {/* Floating Action Button for Adding Category - Fixed to screen, only visible in budget section */}
       {activeSectionKey === "budget" &&
-        budgetSectionMode === "budget" &&
         hasOpenAddCategoryModal && (
         <InsightsFAB onPress={openAddCategoryModal} />
       )}

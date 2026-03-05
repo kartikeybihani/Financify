@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -33,10 +33,39 @@ export default function DeleteAccountModal({
   onDelete,
   isDeleting = false,
 }: DeleteAccountModalProps) {
+  const [showFinalConfirmation, setShowFinalConfirmation] = useState(false);
+
+  useEffect(() => {
+    if (!visible) {
+      setShowFinalConfirmation(false);
+    }
+  }, [visible]);
+
+  const handleClose = () => {
+    if (isDeleting) return;
+    setShowFinalConfirmation(false);
+    onClose();
+  };
+
   const handleDelete = () => {
     if (isDeleting) return;
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+
+    if (!showFinalConfirmation) {
+      setShowFinalConfirmation(true);
+      return;
+    }
+
     onDelete();
+  };
+
+  const handleCancel = () => {
+    if (isDeleting) return;
+    if (showFinalConfirmation) {
+      setShowFinalConfirmation(false);
+      return;
+    }
+    handleClose();
   };
 
   if (!visible) return null;
@@ -46,16 +75,16 @@ export default function DeleteAccountModal({
       visible={visible}
       transparent={true}
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
       statusBarTranslucent={true}
     >
-      <TouchableWithoutFeedback onPress={onClose}>
+      <TouchableWithoutFeedback onPress={handleClose}>
         <View style={styles.overlay}>
           <TouchableWithoutFeedback onPress={(e) => e.stopPropagation()}>
             <View style={styles.container}>
               {/* Close Button */}
               <IconButton
-                onPress={onClose}
+                onPress={handleClose}
                 icon="close"
                 size={20}
                 style={styles.closeButton}
@@ -69,7 +98,9 @@ export default function DeleteAccountModal({
                 </View>
                 <Text style={styles.headerTitle}>Delete Account</Text>
                 <Text style={styles.headerSubtitle}>
-                  This action cannot be undone
+                  {showFinalConfirmation
+                    ? "Are you sure? This action cannot be undone"
+                    : "This action cannot be undone"}
                 </Text>
               </View>
 
@@ -114,7 +145,11 @@ export default function DeleteAccountModal({
                   >
                     <Ionicons name="trash-outline" size={20} color="#ffffff" />
                     <Text style={styles.deleteButtonText}>
-                      {isDeleting ? "Deleting..." : "Delete Account"}
+                      {isDeleting
+                        ? "Deleting..."
+                        : showFinalConfirmation
+                          ? "Yes, Delete Account"
+                          : "Delete Account"}
                     </Text>
                   </LinearGradient>
                 </TouchableOpacity>
@@ -122,11 +157,13 @@ export default function DeleteAccountModal({
                 {/* Cancel Button */}
                 <TouchableOpacity
                   style={styles.cancelButton}
-                  onPress={onClose}
+                  onPress={handleCancel}
                   activeOpacity={0.8}
                   disabled={isDeleting}
                 >
-                  <Text style={styles.cancelButtonText}>Cancel</Text>
+                  <Text style={styles.cancelButtonText}>
+                    {showFinalConfirmation ? "Go Back" : "Cancel"}
+                  </Text>
                 </TouchableOpacity>
               </View>
             </View>

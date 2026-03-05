@@ -259,10 +259,10 @@ export const styles = StyleSheet.create({
   },
   addNewAccountsButton: {
     alignSelf: "stretch",
-    paddingVertical: 12,
+    paddingVertical: 10,
     paddingHorizontal: 16,
     marginBottom: 12,
-    borderRadius: 10,
+    borderRadius: 20,
     borderWidth: 1,
     borderColor: "rgba(74, 144, 226, 0.35)",
     backgroundColor: "rgba(74, 144, 226, 0.08)",

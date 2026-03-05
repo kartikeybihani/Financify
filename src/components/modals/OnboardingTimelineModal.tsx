@@ -19,7 +19,7 @@ interface OnboardingTimelineModalProps {
   visible: boolean;
   progress: OnboardingProgress | null;
   onClose: () => void;
-  onStepPress: (step: 1 | 2 | 3 | 4) => void;
+  onStepPress: (step: 1 | 2 | 3) => void;
 }
 
 interface TimelineStepProps {
@@ -27,6 +27,7 @@ interface TimelineStepProps {
   title: string;
   description: string;
   completed: boolean;
+  isLastStep: boolean;
   onPress: () => void;
 }
 
@@ -35,6 +36,7 @@ function TimelineStep({
   title,
   description,
   completed,
+  isLastStep,
   onPress,
 }: TimelineStepProps) {
   return (
@@ -55,7 +57,7 @@ function TimelineStep({
               <View style={styles.stepDotEmpty} />
             )}
           </View>
-          {step < 4 && (
+          {!isLastStep && (
             <View
               style={[styles.stepLine, completed && styles.stepLineCompleted]}
             />
@@ -136,22 +138,7 @@ export default function OnboardingTimelineModal({
       description: "Start a conversation with Finny",
       completed: progress.finny_asked,
     },
-    {
-      step: 4,
-      title: "Create Your First Goal",
-      description: "Set a financial goal to work towards",
-      completed: progress.goal_created,
-    },
   ];
-
-  const percentage = Math.round(
-    (((progress.accounts_connected ? 1 : 0) +
-      (progress.budget_setup ? 1 : 0) +
-      (progress.finny_asked ? 1 : 0) +
-      (progress.goal_created ? 1 : 0)) /
-      4) *
-      100
-  );
 
   const screenHeight = Dimensions.get("window").height;
   const maxModalHeight = screenHeight * 0.5;
@@ -200,9 +187,10 @@ export default function OnboardingTimelineModal({
                         title={stepData.title}
                         description={stepData.description}
                         completed={stepData.completed}
+                        isLastStep={index === steps.length - 1}
                         onPress={() => {
                           if (!stepData.completed) {
-                            onStepPress(stepData.step as 1 | 2 | 3 | 4);
+                            onStepPress(stepData.step as 1 | 2 | 3);
                           }
                         }}
                       />
