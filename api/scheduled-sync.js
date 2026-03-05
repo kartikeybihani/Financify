@@ -16,6 +16,9 @@ const SCHEDULED_SYNC_CRON_SECRET =
   process.env.BIGGEST_MOVER_CRON_SECRET;
 
 const DERIVED_ACCOUNT_TYPES = new Set(["depository", "credit", "loan"]);
+const WRONG_ENV_PENDING_REASON = "wrong_plaid_environment_seen_once";
+const WRONG_ENV_FINAL_REASON = "wrong_plaid_environment";
+const WRONG_ENV_DISABLE_WINDOW_MS = 24 * 60 * 60 * 1000;
 
 /** Infer trigger_source from mode for sync_logs */
 function getTriggerSource(mode) {
@@ -410,13 +413,21 @@ async function runWeeklyBalanceSync(plaidItems) {
           throw new Error(`Balance update failed: ${balanceErr.message}`);
         }
 
-        await upsertBalanceAnchors({
-          userId: item.user_id,
-          itemId: item.item_id,
-          accounts,
-          anchoredAt: now,
-          source: "plaid_weekly",
-        });
+        try {
+          await upsertBalanceAnchors({
+            userId: item.user_id,
+            itemId: item.item_id,
+            accounts,
+            anchoredAt: now,
+            source: "plaid_weekly",
+          });
+        } catch (anchorErr) {
+          // Balance update already succeeded; anchor write should not fail the entire item sync.
+          console.error(
+            `⚠️ Weekly anchor write failed for ${item.item_id} (non-fatal):`,
+            anchorErr.message,
+          );
+        }
       }
 
       results.synced++;
@@ -582,23 +593,64 @@ async function syncItemTransactions(item_id, user_id) {
         }
 
         if (isWrongEnvironmentToken) {
-          const { error: disableErr } = await supabase
+          const nowIso = new Date().toISOString();
+          const nowMs = Date.now();
+          const { data: syncState, error: syncStateErr } = await supabase
             .from("user_items")
-            .update({
-              sync_enabled: false,
-              sync_disabled_reason: "wrong_plaid_environment",
-              sync_disabled_at: new Date().toISOString(),
-            })
-            .eq("item_id", item_id);
-          if (disableErr) {
+            .select("sync_enabled, sync_disabled_reason, sync_disabled_at")
+            .eq("item_id", item_id)
+            .maybeSingle();
+
+          if (syncStateErr) {
             console.error(
-              `⚠️ Failed to disable scheduled sync for wrong-environment item ${item_id}:`,
-              disableErr,
+              `⚠️ Failed to read sync state for wrong-environment handling on item ${item_id}:`,
+              syncStateErr,
+            );
+          } else if (syncState?.sync_enabled === false) {
+            console.warn(
+              `ℹ️ Item ${item_id} already disabled (reason=${syncState?.sync_disabled_reason || "unknown"})`,
             );
           } else {
-            console.warn(
-              `🚫 Disabled scheduled sync for wrong-environment item ${item_id}`,
-            );
+            const priorReason = syncState?.sync_disabled_reason || null;
+            const priorAt = syncState?.sync_disabled_at
+              ? new Date(syncState.sync_disabled_at).getTime()
+              : null;
+            const priorWithinWindow =
+              Number.isFinite(priorAt) &&
+              nowMs - priorAt <= WRONG_ENV_DISABLE_WINDOW_MS;
+
+            const shouldDisableNow =
+              priorReason === WRONG_ENV_PENDING_REASON && priorWithinWindow;
+
+            const nextPayload = shouldDisableNow
+              ? {
+                  sync_enabled: false,
+                  sync_disabled_reason: WRONG_ENV_FINAL_REASON,
+                  sync_disabled_at: nowIso,
+                }
+              : {
+                  sync_disabled_reason: WRONG_ENV_PENDING_REASON,
+                  sync_disabled_at: nowIso,
+                };
+
+            const { error: disableErr } = await supabase
+              .from("user_items")
+              .update(nextPayload)
+              .eq("item_id", item_id);
+            if (disableErr) {
+              console.error(
+                `⚠️ Failed to update wrong-environment sync state for item ${item_id}:`,
+                disableErr,
+              );
+            } else if (shouldDisableNow) {
+              console.warn(
+                `🚫 Disabled scheduled sync for wrong-environment item ${item_id} after repeated failures`,
+              );
+            } else {
+              console.warn(
+                `⚠️ Marked item ${item_id} with first wrong-environment strike; will disable only if repeated within 24h`,
+              );
+            }
           }
         }
 
@@ -1248,6 +1300,22 @@ async function syncItemTransactions(item_id, user_id) {
       );
     }
 
+    // Clear one-strike wrong-environment marker after any successful sync.
+    const { error: clearWrongEnvMarkerErr } = await supabase
+      .from("user_items")
+      .update({
+        sync_disabled_reason: null,
+        sync_disabled_at: null,
+      })
+      .eq("item_id", item_id)
+      .eq("sync_disabled_reason", WRONG_ENV_PENDING_REASON);
+    if (clearWrongEnvMarkerErr) {
+      console.error(
+        `⚠️ Failed to clear wrong-environment pending marker for ${item_id}:`,
+        clearWrongEnvMarkerErr,
+      );
+    }
+
     return {
       success: true,
       added: added.length,
@@ -1562,120 +1630,29 @@ async function updateDerivedBalances({
     );
   });
 
-  const { data: existingRuns, error: existingRunsErr } = await supabase
-    .from("derived_balance_runs")
-    .select("account_id, status")
-    .eq("item_id", itemId)
-    .eq("cursor_end", cursorEnd)
-    .in("account_id", accountIds);
-
-  if (existingRunsErr) {
-    return {
-      updated: 0,
-      canAdvanceCursor: false,
-      idempotentSkip: false,
-      error: `Failed to read derived run history: ${existingRunsErr.message}`,
-    };
-  }
-
-  const alreadyApplied = new Set(
-    (existingRuns || [])
-      .filter((row) => row.status === "applied")
-      .map((row) => row.account_id),
-  );
-
   let canAdvanceCursor = true;
   let updated = 0;
+  let idempotentAccountSkips = 0;
   const runId = crypto.randomUUID();
 
   for (const accountId of accountIds) {
-    if (alreadyApplied.has(accountId)) {
-      continue;
-    }
-
-    const accountRow = accountMap.get(accountId);
-    const accountType = String(accountRow?.type || "").toLowerCase();
     const parts = deltasByAccount.get(accountId) || zeroDerivedParts();
-    const availableDelta =
-      parts.posted_delta_available + parts.pending_delta_available;
+    const { data: applyData, error: applyErr } = await supabase.rpc(
+      "apply_derived_balance_delta",
+      {
+        p_run_id: runId,
+        p_item_id: itemId,
+        p_user_id: userId,
+        p_account_id: accountId,
+        p_cursor_start: cursorStart,
+        p_cursor_end: cursorEnd,
+        p_posted_delta_current: parts.posted_delta_current,
+        p_posted_delta_available: parts.posted_delta_available,
+        p_pending_delta_available: parts.pending_delta_available,
+      },
+    );
 
-    const prevCurrent = toFiniteNumber(accountRow?.current_balance, 0);
-    const prevAvailable =
-      accountRow?.available_balance === null ||
-      accountRow?.available_balance === undefined
-        ? null
-        : toFiniteNumber(accountRow.available_balance, 0);
-
-    if (!accountRow) {
-      const { error: runInsertErr } = await supabase
-        .from("derived_balance_runs")
-        .insert({
-          run_id: runId,
-          item_id: itemId,
-          user_id: userId,
-          account_id: accountId,
-          cursor_start: cursorStart,
-          cursor_end: cursorEnd,
-          posted_delta_current: parts.posted_delta_current,
-          posted_delta_available: parts.posted_delta_available,
-          pending_delta_available: parts.pending_delta_available,
-          prev_current: null,
-          prev_available: null,
-          new_current: null,
-          new_available: null,
-          status: "skipped",
-          reason: "account_not_found",
-        });
-      if (runInsertErr && runInsertErr.code !== "23505") {
-        canAdvanceCursor = false;
-      }
-      continue;
-    }
-
-    if (!DERIVED_ACCOUNT_TYPES.has(accountType)) {
-      const { error: runInsertErr } = await supabase
-        .from("derived_balance_runs")
-        .insert({
-          run_id: runId,
-          item_id: itemId,
-          user_id: userId,
-          account_id: accountId,
-          cursor_start: cursorStart,
-          cursor_end: cursorEnd,
-          posted_delta_current: parts.posted_delta_current,
-          posted_delta_available: parts.posted_delta_available,
-          pending_delta_available: parts.pending_delta_available,
-          prev_current: prevCurrent,
-          prev_available: prevAvailable,
-          new_current: prevCurrent,
-          new_available: prevAvailable,
-          status: "skipped",
-          reason: "unknown_account_type",
-        });
-      if (runInsertErr && runInsertErr.code !== "23505") {
-        canAdvanceCursor = false;
-      }
-      continue;
-    }
-
-    const nextCurrent = prevCurrent + parts.posted_delta_current;
-    const nextAvailable =
-      prevAvailable === null ? null : prevAvailable + availableDelta;
-
-    const updatePayload = {
-      current_balance: nextCurrent,
-      balance_source: "derived",
-    };
-    if (nextAvailable !== null) {
-      updatePayload.available_balance = nextAvailable;
-    }
-
-    const { error: updateErr } = await supabase
-      .from("accounts")
-      .update(updatePayload)
-      .eq("account_id", accountId);
-
-    if (updateErr) {
+    if (applyErr) {
       canAdvanceCursor = false;
       await supabase.from("derived_balance_runs").insert({
         run_id: runId,
@@ -1687,41 +1664,51 @@ async function updateDerivedBalances({
         posted_delta_current: parts.posted_delta_current,
         posted_delta_available: parts.posted_delta_available,
         pending_delta_available: parts.pending_delta_available,
-        prev_current: prevCurrent,
-        prev_available: prevAvailable,
+        prev_current: null,
+        prev_available: null,
         new_current: null,
         new_available: null,
         status: "error",
-        reason: updateErr.message,
+        reason: `rpc_error:${applyErr.message}`,
       });
       continue;
     }
 
-    const { error: runInsertErr } = await supabase
-      .from("derived_balance_runs")
-      .insert({
-        run_id: runId,
-        item_id: itemId,
-        user_id: userId,
-        account_id: accountId,
-        cursor_start: cursorStart,
-        cursor_end: cursorEnd,
-        posted_delta_current: parts.posted_delta_current,
-        posted_delta_available: parts.posted_delta_available,
-        pending_delta_available: parts.pending_delta_available,
-        prev_current: prevCurrent,
-        prev_available: prevAvailable,
-        new_current: nextCurrent,
-        new_available: nextAvailable,
-        status: "applied",
-        reason: null,
-      });
-    if (runInsertErr && runInsertErr.code !== "23505") {
-      canAdvanceCursor = false;
+    const applyRow = Array.isArray(applyData) ? applyData[0] : applyData;
+    const outcome = applyRow?.outcome || "unknown";
+
+    if (outcome === "applied") {
+      updated++;
       continue;
     }
 
-    updated++;
+    if (outcome === "already_applied") {
+      idempotentAccountSkips++;
+      continue;
+    }
+
+    if (outcome === "account_not_found" || outcome === "unknown_account_type") {
+      continue;
+    }
+
+    canAdvanceCursor = false;
+    await supabase.from("derived_balance_runs").insert({
+      run_id: runId,
+      item_id: itemId,
+      user_id: userId,
+      account_id: accountId,
+      cursor_start: cursorStart,
+      cursor_end: cursorEnd,
+      posted_delta_current: parts.posted_delta_current,
+      posted_delta_available: parts.posted_delta_available,
+      pending_delta_available: parts.pending_delta_available,
+      prev_current: null,
+      prev_available: null,
+      new_current: null,
+      new_available: null,
+      status: "error",
+      reason: `unexpected_outcome:${outcome}`,
+    });
   }
 
   if (canAdvanceCursor) {
@@ -1743,7 +1730,7 @@ async function updateDerivedBalances({
   return {
     updated,
     canAdvanceCursor,
-    idempotentSkip: false,
+    idempotentSkip: idempotentAccountSkips > 0,
     error: canAdvanceCursor
       ? null
       : "One or more derived updates failed; cursor held back for retry",
