@@ -97,6 +97,32 @@ const COLORS = {
   darkBackground: "#0D1117",
 };
 
+type IntroOffer = {
+  price?: number;
+  priceString?: string;
+  periodNumberOfUnits?: number;
+  periodUnit?: string;
+};
+
+const normalizePeriodUnit = (
+  periodUnit?: string,
+): "day" | "week" | "month" | "year" | "period" => {
+  const normalized = String(periodUnit || "").toLowerCase();
+  if (normalized.includes("day")) return "day";
+  if (normalized.includes("week")) return "week";
+  if (normalized.includes("month")) return "month";
+  if (normalized.includes("year")) return "year";
+  return "period";
+};
+
+const pluralizePeriod = (
+  count: number,
+  unit: "day" | "week" | "month" | "year" | "period",
+) => {
+  const safeCount = count > 0 ? count : 1;
+  return `${safeCount} ${unit}${safeCount === 1 ? "" : "s"}`;
+};
+
 interface Feature {
   id: string;
   title: string;
@@ -217,6 +243,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
   const [restoring, setRestoring] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [offerings, setOfferings] = useState<PurchasesOffering | null>(null);
+  const [offeringsLoading, setOfferingsLoading] = useState(false);
 
   // Get packages for price display
   const packages = offerings?.availablePackages || [];
@@ -226,6 +253,70 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
   const monthlyPackage = packages.find(
     (p) => p.identifier === "$rc_monthly" || p.packageType === "MONTHLY",
   );
+  const isAnnualAvailable = !!annualPackage;
+  const isMonthlyAvailable = !!monthlyPackage;
+  const selectedPackage: PurchasesPackage | null =
+    selectedPlan === "annual"
+      ? annualPackage || monthlyPackage || null
+      : monthlyPackage || annualPackage || null;
+  const selectedBillingUnit =
+    selectedPackage?.packageType === "ANNUAL"
+      ? "year"
+      : selectedPackage?.packageType === "MONTHLY"
+        ? "month"
+        : "period";
+  const selectedPriceString = selectedPackage?.product.priceString || null;
+
+  const introOffer =
+    (selectedPackage?.product.introPrice as IntroOffer | null) || null;
+  const introPriceString = introOffer?.priceString || null;
+  const introPrice =
+    typeof introOffer?.price === "number" ? introOffer.price : null;
+  const introPeriodUnit = normalizePeriodUnit(introOffer?.periodUnit);
+  const introPeriodCount = Number(introOffer?.periodNumberOfUnits || 1);
+  const introDurationLabel = introOffer
+    ? pluralizePeriod(introPeriodCount, introPeriodUnit)
+    : null;
+  const hasIntroOffer = !!introOffer;
+  const isFreeTrial =
+    hasIntroOffer &&
+    (introPrice === 0 ||
+      String(introPriceString || "")
+        .toLowerCase()
+        .includes("free") ||
+      String(introPriceString || "").includes("$0"));
+
+  const ctaDisabled =
+    offeringsLoading ||
+    purchasing ||
+    restoring ||
+    !selectedPackage ||
+    Platform.OS !== "ios";
+  const ctaTitle = offeringsLoading
+    ? "Loading plans..."
+    : purchasing
+      ? "Processing..."
+      : !selectedPackage
+        ? "Plan unavailable"
+        : isFreeTrial
+          ? `Start ${introDurationLabel || "free trial"}`
+          : hasIntroOffer
+            ? "Start Intro Offer"
+            : `Continue with ${selectedPlan === "annual" ? "Yearly" : "Monthly"}`;
+  const recurringPriceLabel = selectedPriceString
+    ? `${selectedPriceString}/${selectedBillingUnit}`
+    : "selected rate";
+  const ctaSubtitle = !selectedPackage
+    ? offeringsLoading
+      ? "Fetching latest pricing..."
+      : "Plans are unavailable right now."
+    : isFreeTrial
+      ? `Then ${recurringPriceLabel} • Cancel anytime`
+      : hasIntroOffer && introPriceString
+        ? `${introPriceString}${
+            introDurationLabel ? ` for ${introDurationLabel}` : ""
+          }, then ${recurringPriceLabel}`
+        : `Billed ${recurringPriceLabel} • Cancel anytime`;
   const [scrollContentHeight, setScrollContentHeight] = useState(0);
   const [activeCarouselIndex, setActiveCarouselIndex] = useState(0);
   const carouselRef = useRef<PagerView>(null);
@@ -276,8 +367,20 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
 
   useEffect(() => {
     if (!visible) return;
+    if (selectedPlan === "annual" && !annualPackage && monthlyPackage) {
+      setSelectedPlan("monthly");
+      return;
+    }
+    if (selectedPlan === "monthly" && !monthlyPackage && annualPackage) {
+      setSelectedPlan("annual");
+    }
+  }, [visible, selectedPlan, annualPackage, monthlyPackage]);
+
+  useEffect(() => {
+    if (!visible) return;
     setError(null);
     setOfferings(null);
+    setOfferingsLoading(true);
     let cancelled = false;
     Purchases.getOfferings()
       .then((o) => {
@@ -291,6 +394,9 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
           logger.warn("Paywall getOfferings failed", e);
           setError("Unable to load plans. Try again later.");
         }
+      })
+      .finally(() => {
+        if (!cancelled) setOfferingsLoading(false);
       });
     return () => {
       cancelled = true;
@@ -309,16 +415,14 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
   }, [visible]);
 
   const handleSubscribe = async () => {
-    if (Platform.OS !== "ios" || purchasing) return;
+    if (Platform.OS !== "ios" || purchasing || offeringsLoading) return;
     setPurchasing(true);
     setError(null);
     try {
-      if (!offerings) {
+      if (!offerings || !selectedPackage) {
         throw new Error("Plans not loaded yet. Please try again.");
       }
       const packages = offerings.availablePackages || [];
-      const packageIdentifier =
-        selectedPlan === "annual" ? "$rc_annual" : "$rc_monthly";
 
       // Log all available packages for debugging
       logger.info(
@@ -331,21 +435,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
         })),
       );
 
-      const pkg =
-        packages.find((p) => p.identifier === packageIdentifier) ||
-        packages.find((p) =>
-          selectedPlan === "annual"
-            ? p.packageType === "ANNUAL"
-            : p.packageType === "MONTHLY",
-        );
-
-      if (!pkg) {
-        logger.error(
-          `Package not found for ${selectedPlan}. Available:`,
-          packages.map((p) => p.identifier),
-        );
-        throw new Error("Selected plan not available. Please try again.");
-      }
+      const pkg = selectedPackage;
 
       logger.info(`Subscribing to ${selectedPlan} plan:`, {
         identifier: pkg.identifier,
@@ -675,6 +765,9 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
 
                   {/* Pricing Section */}
                   <View style={styles.pricingSection}>
+                    <Text style={styles.pricingSectionTitle}>
+                      Choose your plan
+                    </Text>
                     <View style={styles.planToggle}>
                       <BlurView intensity={24} style={styles.planToggleBlur}>
                         <View
@@ -702,13 +795,20 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                             </Animated.View>
                           )}
                           <TouchableOpacity
-                            style={styles.toggleOption}
+                            style={[
+                              styles.toggleOption,
+                              !isMonthlyAvailable &&
+                                styles.toggleOptionDisabled,
+                            ]}
                             onPress={() => handlePlanSelect("monthly")}
+                            disabled={!isMonthlyAvailable}
                             activeOpacity={0.9}
                           >
                             <Text
                               style={[
                                 styles.toggleText,
+                                !isMonthlyAvailable &&
+                                  styles.toggleTextDisabled,
                                 selectedPlan === "monthly" &&
                                   styles.toggleTextActive,
                               ]}
@@ -717,13 +817,18 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                             </Text>
                           </TouchableOpacity>
                           <TouchableOpacity
-                            style={styles.toggleOption}
+                            style={[
+                              styles.toggleOption,
+                              !isAnnualAvailable && styles.toggleOptionDisabled,
+                            ]}
                             onPress={() => handlePlanSelect("annual")}
+                            disabled={!isAnnualAvailable}
                             activeOpacity={0.9}
                           >
                             <Text
                               style={[
                                 styles.toggleText,
+                                !isAnnualAvailable && styles.toggleTextDisabled,
                                 selectedPlan === "annual" &&
                                   styles.toggleTextActive,
                               ]}
@@ -757,14 +862,17 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                             <View style={styles.planBadgesRow}>
                               <View style={styles.proBadge}>
                                 <Text style={styles.proBadgeText}>
-                                  Best Value. Full Access.
+                                  Best Value
                                 </Text>
                               </View>
                             </View>
                             <Text style={styles.pricingCardTitle}>Annual</Text>
                             <View style={styles.pricingAmountRow}>
                               <Text style={styles.pricingAmount}>
-                                {annualPackage?.product.priceString || "$99.99"}
+                                {offeringsLoading
+                                  ? "Loading..."
+                                  : annualPackage?.product.priceString ||
+                                    "Unavailable"}
                               </Text>
                               <Text style={styles.pricingPeriod}>/year</Text>
                             </View>
@@ -829,8 +937,10 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                             <Text style={styles.pricingCardTitle}>Monthly</Text>
                             <View style={styles.pricingAmountRow}>
                               <Text style={styles.pricingAmount}>
-                                {monthlyPackage?.product.priceString ||
-                                  "$12.99"}
+                                {offeringsLoading
+                                  ? "Loading..."
+                                  : monthlyPackage?.product.priceString ||
+                                    "Unavailable"}
                               </Text>
                               <Text style={styles.pricingPeriod}>/month</Text>
                             </View>
@@ -850,15 +960,15 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                     <TouchableOpacity
                       style={[
                         styles.ctaButton,
-                        purchasing && styles.ctaButtonDisabled,
+                        ctaDisabled && styles.ctaButtonDisabled,
                       ]}
                       onPress={handleSubscribe}
                       activeOpacity={0.9}
-                      disabled={purchasing || restoring}
+                      disabled={ctaDisabled}
                     >
                       <LinearGradient
                         colors={
-                          purchasing
+                          ctaDisabled
                             ? [
                                 "rgba(74, 144, 226, 0.5)",
                                 "rgba(93, 160, 242, 0.5)",
@@ -872,7 +982,7 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                         {purchasing ? (
                           <View style={styles.loadingContainer}>
                             <ActivityIndicator color="#FFFFFF" size="small" />
-                            <Text style={styles.ctaText}>Processing...</Text>
+                            <Text style={styles.ctaText}>{ctaTitle}</Text>
                           </View>
                         ) : (
                           <>
@@ -907,8 +1017,8 @@ export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
                       )}
                     </TouchableOpacity>
                     <Text style={styles.cancelLine}>
-                      Cancel anytime, for any reason. This subscription
-                      automatically renews at the price selected above.
+                      This subscription automatically renews at the price
+                      selected above.
                     </Text>
                     <View style={styles.legalLinksRow}>
                       <TouchableOpacity onPress={handlePrivacyPolicy}>
@@ -1272,6 +1382,24 @@ const styles = StyleSheet.create({
     marginTop: "auto",
     paddingBottom: 0,
   },
+  pricingSectionTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#fff",
+    textAlign: "center",
+    letterSpacing: 0.2,
+    marginBottom: 5,
+    fontFamily: "Manrope",
+  },
+  pricingSectionSubtitle: {
+    marginTop: 4,
+    marginBottom: 12,
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.62)",
+    textAlign: "center",
+    lineHeight: 16,
+    paddingHorizontal: 18,
+  },
   planToggle: {
     alignItems: "center",
     marginTop: 4,
@@ -1305,6 +1433,9 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     zIndex: 1,
   },
+  toggleOptionDisabled: {
+    opacity: 0.5,
+  },
   togglePill: {
     position: "absolute",
     top: 3,
@@ -1330,6 +1461,9 @@ const styles = StyleSheet.create({
   toggleTextActive: {
     color: "#fff",
     fontWeight: "700",
+  },
+  toggleTextDisabled: {
+    color: "rgba(255, 255, 255, 0.45)",
   },
   pricingCards: {
     flexDirection: "column",
@@ -1468,7 +1602,7 @@ const styles = StyleSheet.create({
     fontWeight: "500",
   },
   cancelLine: {
-    fontSize: 10,
+    fontSize: 9,
     color: "rgba(255, 255, 255, 0.5)",
     textAlign: "center",
     paddingHorizontal: 24,
