@@ -11,7 +11,10 @@ import Purchases, { CustomerInfo } from "react-native-purchases";
 import type { LOG_LEVEL } from "react-native-purchases";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
-import { ENTITLEMENT_ID } from "@/src/constants/subscription";
+import {
+  ENTITLEMENT_ID,
+  GRANDFATHERED_USER_IDS,
+} from "@/src/constants/subscription";
 
 const log = logger.scope("RevenueCat");
 if (__DEV__) log.setLevel("debug");
@@ -61,13 +64,12 @@ export function SubscriptionProvider({
   const currentUserIdRef = React.useRef<string | null>(null);
 
   const updateFromCustomerInfo = useCallback((info: CustomerInfo | null) => {
-    // Grandfathered users (uncomment GRANDFATHERED_USER_IDS in subscription.ts + add import):
-    // const uid = currentUserIdRef.current;
-    // if (uid && GRANDFATHERED_USER_IDS.has(uid)) {
-    //   log.info("Grandfathered user → isPremium = true");
-    //   setIsPremium(true);
-    //   return;
-    // }
+    const uid = currentUserIdRef.current;
+    if (uid && GRANDFATHERED_USER_IDS.has(uid)) {
+      log.info("Grandfathered user → isPremium = true");
+      setIsPremium(true);
+      return;
+    }
     if (!info) {
       log.info("CustomerInfo: null → isPremium = false");
       setIsPremium(false);
