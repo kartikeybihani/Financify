@@ -12,6 +12,7 @@ import type { LOG_LEVEL } from "react-native-purchases";
 import { supabase } from "@/src/lib/supabase/supabase";
 import logger from "@/src/utils/core/logger";
 import {
+  SUBSCRIPTIONS_ENABLED,
   ENTITLEMENT_ID,
   GRANDFATHERED_USER_IDS,
 } from "@/src/constants/subscription";
@@ -19,7 +20,7 @@ import {
 const log = logger.scope("RevenueCat");
 if (__DEV__) log.setLevel("debug");
 
-const REVENUECAT_DISABLED = false; // Set to false to enable RevenueCat SDK
+const REVENUECAT_DISABLED = !SUBSCRIPTIONS_ENABLED;
 
 const extra = Constants.expoConfig?.extra as Record<
   string,
@@ -64,6 +65,11 @@ export function SubscriptionProvider({
   const currentUserIdRef = React.useRef<string | null>(null);
 
   const updateFromCustomerInfo = useCallback((info: CustomerInfo | null) => {
+    if (REVENUECAT_DISABLED) {
+      setIsPremium(true);
+      return;
+    }
+
     const uid = currentUserIdRef.current;
     if (uid && GRANDFATHERED_USER_IDS.has(uid)) {
       log.info("Grandfathered user → isPremium = true");
@@ -251,6 +257,14 @@ export function SubscriptionProvider({
 
   const showPaywall = useCallback(
     (opts?: { onConvert?: () => void; onDismiss?: () => void }) => {
+      if (REVENUECAT_DISABLED) {
+        log.info("Ignoring showPaywall (subscriptions disabled)");
+        onPaywallConvertRef.current = null;
+        onPaywallDismissRef.current = null;
+        setPaywallVisible(false);
+        return;
+      }
+
       log.info("Showing paywall");
       const onConvert =
         typeof opts?.onConvert === "function" ? opts.onConvert : null;

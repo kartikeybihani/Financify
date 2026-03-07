@@ -29,6 +29,7 @@ import type {
   PurchasesPackage,
 } from "react-native-purchases";
 import { useSubscription } from "@/src/contexts/SubscriptionContext";
+import { SUBSCRIPTIONS_ENABLED } from "@/src/constants/subscription";
 import logger from "@/src/utils/core/logger";
 import * as WebBrowser from "expo-web-browser";
 
@@ -228,7 +229,16 @@ export interface PaywallModalProps {
   onClose: (reason?: "convert" | "dismiss") => void;
 }
 
-export default function PaywallModal({ visible, onClose }: PaywallModalProps) {
+export default function PaywallModal(
+  { visible, onClose }: PaywallModalProps = {
+    visible: false,
+    onClose: () => {},
+  },
+) {
+  if (!SUBSCRIPTIONS_ENABLED) {
+    return null;
+  }
+
   const insets = useSafeAreaInsets();
   const { applyCustomerInfo, refetch } = useSubscription();
   const [rendered, setRendered] = useState(visible);
