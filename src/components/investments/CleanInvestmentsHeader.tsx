@@ -74,7 +74,9 @@ export default function CleanInvestmentsHeader({
     >
       <View style={styles.header}>
         <View style={styles.leftIconContainer}>
-          <View style={styles.iconContainer}>
+          <View
+            style={isDemoMode ? styles.demoIconContainer : styles.iconContainer}
+          >
             <Ionicons name="trending-up" size={22} color="#4A90E2" />
           </View>
         </View>
@@ -83,23 +85,27 @@ export default function CleanInvestmentsHeader({
           <Text style={styles.title}>Investments</Text>
         </View>
 
-        <TouchableOpacity
-          style={[
-            styles.refreshButton,
-            isRefreshing && styles.refreshButtonActive,
-          ]}
-          onPress={onRefresh}
-          disabled={isRefreshing}
-          activeOpacity={0.7}
-        >
-          <Animated.View style={{ transform: [{ rotate: rotation }] }}>
-            <MaterialIcons
-              name={isRefreshing ? "hourglass-empty" : "sync"}
-              size={18}
-              color="#4A90E2"
-            />
-          </Animated.View>
-        </TouchableOpacity>
+        {isDemoMode ? (
+          <View style={styles.rightSpacer} />
+        ) : (
+          <TouchableOpacity
+            style={[
+              styles.refreshButton,
+              isRefreshing && styles.refreshButtonActive,
+            ]}
+            onPress={onRefresh}
+            disabled={isRefreshing}
+            activeOpacity={0.7}
+          >
+            <Animated.View style={{ transform: [{ rotate: rotation }] }}>
+              <MaterialIcons
+                name={isRefreshing ? "hourglass-empty" : "sync"}
+                size={18}
+                color="#4A90E2"
+              />
+            </Animated.View>
+          </TouchableOpacity>
+        )}
       </View>
     </LinearGradient>
   );
@@ -114,9 +120,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 20,
-    paddingVertical: 6,
-    minHeight: 40,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+    minHeight: 50,
     position: "relative",
   },
   leftIconContainer: {
@@ -124,6 +130,7 @@ const styles = StyleSheet.create({
     left: 20,
     top: 0,
     bottom: 0,
+    alignItems: "center",
     justifyContent: "center",
   },
   iconContainer: {
@@ -136,6 +143,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(74, 144, 226, 0.3)",
   },
+  demoIconContainer: {
+    backgroundColor: "rgba(74, 144, 226, 0.1)",
+    padding: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(74, 144, 226, 0.2)",
+  },
   titleContainer: {
     alignItems: "center",
     justifyContent: "center",
@@ -145,6 +159,12 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     color: "#fff",
     letterSpacing: 0.3,
+    fontFamily: Platform.OS === "ios" ? "System" : "sans-serif",
+  },
+  rightSpacer: {
+    position: "absolute",
+    right: 20,
+    width: 40,
   },
   refreshButton: {
     width: 36,

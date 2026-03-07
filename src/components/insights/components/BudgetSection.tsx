@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef } from "react";
-import { View, Text, StyleSheet } from "react-native";
+import { View, StyleSheet } from "react-native";
 import BudgetView from "@/src/components/insights/BudgetView";
 import AddCategoryModal from "./AddCategoryModal";
 import BudgetEmptyState from "./BudgetEmptyState";
@@ -8,7 +8,6 @@ import BudgetCreationModal from "@/src/components/modals/BudgetCreationModal";
 import MonthlyBudgetEditModal from "@/src/components/modals/MonthlyBudgetEditModal";
 import { useBudget } from "@/src/hooks/useBudget";
 import { LoadingIndicator } from "@/src/shared/components/LoadingStates";
-import logger from "@/src/utils/core/logger";
 import { useDemoMode } from "@/src/contexts/DemoContext";
 import {
   demoBudgetData,
@@ -69,7 +68,6 @@ export default function BudgetSection({
     totalBudget,
     totalSpent: budgetTotalSpent,
     loading: budgetLoading,
-    initializeBudget,
     refreshBudget,
     updateCategoryBudget,
     deleteCategoryBudget,
@@ -80,12 +78,14 @@ export default function BudgetSection({
     deleteCategory,
   } = useBudget(categoryBreakdown);
 
-  // Check if user has an active budget period with entries
-  const hasActiveBudget =
+  // Keep rendering the budget view whenever we have active entries,
+  // even if a background refresh is in-flight.
+  const hasActiveBudgetData =
     isDemoMode ||
-    (budgetSummary?.period?.status === "active" &&
-      budgetData.length > 0 &&
-      !budgetLoading);
+    (budgetSummary?.period?.status === "active" && budgetData.length > 0);
+
+  const shouldShowInitialLoading =
+    !isDemoMode && budgetLoading && !hasActiveBudgetData && !budgetSummary;
 
   // Calculate total spent from category breakdown (fallback)
   const totalSpent = categoryBreakdown.reduce(
@@ -110,7 +110,7 @@ export default function BudgetSection({
   // Only expose the FAB callback when user has an active budget
   useEffect(() => {
     if (onOpenAddCategoryModalRef) {
-      if (hasActiveBudget) {
+      if (hasActiveBudgetData) {
         const stableCallback = () => {
           openAddCategoryModalRef.current();
         };
@@ -123,7 +123,7 @@ export default function BudgetSection({
     return () => {
       onOpenAddCategoryModalRef?.(null);
     };
-  }, [onOpenAddCategoryModalRef, hasActiveBudget]);
+  }, [onOpenAddCategoryModalRef, hasActiveBudgetData]);
 
   // Expose refreshBudget function to parent for pull-to-refresh
   useEffect(() => {
@@ -163,12 +163,12 @@ export default function BudgetSection({
           totalSpent={demoBudgetTotalSpent}
           budgetSummary={null}
         />
-      ) : budgetLoading ? (
+      ) : shouldShowInitialLoading ? (
         <LoadingIndicator
           message="Loading your budget..."
           style={styles.loadingIndicator}
         />
-      ) : !hasActiveBudget ? (
+      ) : !hasActiveBudgetData ? (
         <BudgetEmptyState
           onCreateWithFinny={handleCreateWithFinny}
           onCreateManually={handleCreateManually}

@@ -14,7 +14,7 @@ import {
   DeviceEventEmitter,
   StyleSheet,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
+import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { Ionicons, AntDesign, FontAwesome6 } from "@expo/vector-icons";
 import { useRouter, useFocusEffect } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
@@ -52,6 +52,7 @@ import {
   demoInvestmentHoldings,
   demoInvestmentBalances,
 } from "@/src/data/demo";
+import DemoBanner from "@/src/components/demo/DemoBanner";
 import { PremiumLockOverlay } from "@/src/components/subscription/PremiumLockOverlay";
 import IconButton from "@/src/components/shared/IconButton";
 import FinnyLoadingIndicator from "@/src/components/shared/FinnyLoadingIndicator";
@@ -199,6 +200,7 @@ export default function InvestmentsScreen({
 }) {
   const router = useRouter();
   const { isDemoMode } = useDemoMode();
+  const insets = useSafeAreaInsets();
   const { isPremium, showPaywall } = useSubscription();
   const initialUserId = getUserIdSync();
   const initialCachedData =
@@ -2726,6 +2728,11 @@ export default function InvestmentsScreen({
   return (
     <>
       <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+        {isDemoMode && (
+          <View style={{ paddingTop: insets.top }}>
+            <DemoBanner />
+          </View>
+        )}
         <View style={styles.container}>
           <CleanInvestmentsHeader
             isRefreshing={isRefreshing || isSyncing}
