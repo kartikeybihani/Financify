@@ -14,6 +14,7 @@ import {
   Platform,
   Keyboard,
   Pressable,
+  KeyboardAvoidingView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -80,9 +81,9 @@ const CategoryEditModal: React.FC<Props> = ({
     category ? Math.round(category.budget) : 0
   );
   const [mode, setMode] = useState<"edit" | "group">("edit");
+  const [isSaving, setIsSaving] = useState(false);
   const screenHeight = Dimensions.get("window").height;
   const slideAnim = useRef(new Animated.Value(screenHeight)).current;
-  const keyboardOffset = useRef(new Animated.Value(0)).current;
   const [rendered, setRendered] = useState(visible);
   const [currentCategory, setCurrentCategory] = useState(category);
   const amountInputRef = useRef<TextInput>(null);
@@ -103,6 +104,7 @@ const CategoryEditModal: React.FC<Props> = ({
       const budgetAmount = category ? Math.round(category.budget) : 0;
       setAmount(budgetAmount.toString());
       setOriginalAmount(budgetAmount);
+      setIsSaving(false);
       setMode("edit"); // Reset to edit mode when modal opens
       setRendered(true);
       slideAnim.setValue(screenHeight);
@@ -125,7 +127,7 @@ const CategoryEditModal: React.FC<Props> = ({
         useNativeDriver: true,
       }).start(() => setRendered(false));
     }
-  }, [visible, category, rendered, screenHeight, slideAnim]);
+  }, [visible, category, rendered, screenHeight, slideAnim, iconPickerAnim]);
   
   // Wrapper for onClose that saves any pending name changes
   const handleClose = async () => {
@@ -164,43 +166,18 @@ const CategoryEditModal: React.FC<Props> = ({
     }
   }, [isEditingName]);
 
-  // Handle keyboard events manually for smooth bottom sheet behavior
-  useEffect(() => {
-    const showEvent =
-      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent =
-      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      Animated.timing(keyboardOffset, {
-        toValue: e.endCoordinates.height,
-        duration: Platform.OS === "ios" ? e.duration || 250 : 200,
-        easing: Easing.out(Easing.ease),
-        useNativeDriver: true,
-      }).start();
-    });
-
-    const hideSub = Keyboard.addListener(hideEvent, (e) => {
-      Animated.timing(keyboardOffset, {
-        toValue: 0,
-        duration: Platform.OS === "ios" ? e.duration || 250 : 200,
-        easing: Easing.in(Easing.ease),
-        useNativeDriver: true,
-      }).start();
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, [keyboardOffset]);
-
   // Use category prop directly instead of currentCategory to avoid timing issues
   if (!visible || !category) return null;
 
   const handleSave = async () => {
+    if (isSaving) return;
+
     const parsed = parseAmount();
     if (parsed === null) return;
+
+    // Ensure a single tap can both dismiss keyboard and save.
+    Keyboard.dismiss();
+    setIsSaving(true);
 
     // Save budget (amount will animate smoothly via optimistic update)
     const success = await onSave(parsed).catch(() => {
@@ -211,7 +188,9 @@ const CategoryEditModal: React.FC<Props> = ({
     if (success) {
       // Close modal after successful save
       handleClose();
+      return;
     }
+    setIsSaving(false);
   };
 
   const handleGroup = async (parentCategoryId: string) => {
@@ -398,148 +377,150 @@ const CategoryEditModal: React.FC<Props> = ({
           onPress={handleClose}
           style={StyleSheet.absoluteFillObject}
         />
-        <Animated.View
-          style={[
-            styles.container,
-            {
-              height: screenHeight * 0.5, // 50% height as requested
-              transform: [
-                { translateY: slideAnim },
-                { translateY: Animated.multiply(keyboardOffset, -1) },
-              ],
-            },
-          ]}
+        <KeyboardAvoidingView
+          style={styles.keyboardAvoiding}
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 8 : 0}
         >
-          <View style={styles.handle} />
-          <ScrollView
-            style={styles.scrollContent}
-            contentContainerStyle={styles.scrollContentContainer}
-            showsVerticalScrollIndicator={true}
-            keyboardShouldPersistTaps="always"
-            nestedScrollEnabled={true}
+          <Animated.View
+            style={[
+              styles.container,
+              {
+                height: screenHeight * 0.5, // 50% height as requested
+                transform: [{ translateY: slideAnim }],
+              },
+            ]}
           >
-            <View style={styles.header}>
-              <View style={styles.headerContent}>
-                {/* Icon on the left */}
-                <TouchableOpacity
-                  style={styles.headerIconButton}
-                  onPress={() => {
-                    setShowIconPicker(!showIconPicker);
-                    setIsEditingName(false);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  {iconDisplay.type === "emoji" ? (
-                    <Text style={styles.headerIconEmoji}>{iconDisplay.value}</Text>
-                  ) : (
-                    <Ionicons
-                      name={iconDisplay.value}
-                      size={28}
-                      color={category?.color || "#4A90E2"}
-                      style={styles.headerIconIonicon}
-                    />
-                  )}
-                </TouchableOpacity>
-                
-                {/* Category name - editable */}
-                <View style={styles.headerNameContainer}>
-                  {isEditingName ? (
-                    <TextInput
-                      ref={nameInputRef}
-                      style={styles.headerNameInput}
-                      value={editingName}
-                      onChangeText={setEditingName}
-                      onBlur={() => {
-                        handleNameUpdate(editingName);
-                        setShowIconPicker(false);
-                      }}
-                      onSubmitEditing={() => {
-                        handleNameUpdate(editingName);
-                        setShowIconPicker(false);
-                      }}
-                      autoFocus
-                      selectTextOnFocus
-                    />
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.headerNameButton}
-                      onPress={() => {
-                        setIsEditingName(true);
-                        setShowIconPicker(false);
-                      }}
-                      activeOpacity={0.7}
-                    >
-                      <Text style={styles.title} numberOfLines={1}>
-                        {currentCategory?.category || category?.category || "Category"}
-                      </Text>
+            <View style={styles.handle} />
+            <ScrollView
+              style={styles.scrollContent}
+              contentContainerStyle={styles.scrollContentContainer}
+              showsVerticalScrollIndicator={true}
+              keyboardShouldPersistTaps="always"
+              nestedScrollEnabled={true}
+            >
+              <View style={styles.header}>
+                <View style={styles.headerContent}>
+                  {/* Icon on the left */}
+                  <TouchableOpacity
+                    style={styles.headerIconButton}
+                    onPress={() => {
+                      setShowIconPicker(!showIconPicker);
+                      setIsEditingName(false);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    {iconDisplay.type === "emoji" ? (
+                      <Text style={styles.headerIconEmoji}>{iconDisplay.value}</Text>
+                    ) : (
                       <Ionicons
-                        name="pencil-outline"
-                        size={18}
-                        color="rgba(255,255,255,0.6)"
-                        style={styles.pencilIcon}
+                        name={iconDisplay.value}
+                        size={28}
+                        color={category?.color || "#4A90E2"}
+                        style={styles.headerIconIonicon}
                       />
-                    </TouchableOpacity>
-                  )}
-                  {parentLabel && (
-                    <Text style={styles.subtitle}>Child of {parentLabel}</Text>
-                  )}
-                </View>
-              </View>
-            </View>
-            
-            {/* Icon Picker Section */}
-            {showIconPicker && (
-              <Animated.View
-                style={[
-                  styles.iconPickerContainer,
-                  {
-                    opacity: iconPickerAnim,
-                    transform: [
-                      {
-                        translateY: Animated.multiply(
-                          iconPickerAnim,
-                          new Animated.Value(-10)
-                        ),
-                      },
-                    ],
-                  },
-                ]}
-              >
-                <Text style={styles.iconPickerLabel}>CHOOSE ICON</Text>
-                <ScrollView
-                  horizontal
-                  showsHorizontalScrollIndicator={false}
-                  style={styles.iconScroll}
-                  contentContainerStyle={styles.iconScrollContent}
-                  bounces={false}
-                >
-                  {CURATED_ICONS.map((icon, index) => {
-                    const isSelected = currentIcon === icon.value;
-                    return (
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Category name - editable */}
+                  <View style={styles.headerNameContainer}>
+                    {isEditingName ? (
+                      <TextInput
+                        ref={nameInputRef}
+                        style={styles.headerNameInput}
+                        value={editingName}
+                        onChangeText={setEditingName}
+                        onBlur={() => {
+                          handleNameUpdate(editingName);
+                          setShowIconPicker(false);
+                        }}
+                        onSubmitEditing={() => {
+                          handleNameUpdate(editingName);
+                          setShowIconPicker(false);
+                        }}
+                        autoFocus
+                        selectTextOnFocus
+                      />
+                    ) : (
                       <TouchableOpacity
-                        key={`${icon.type}-${icon.value}-${index}`}
-                        style={[
-                          styles.iconOption,
-                          isSelected && styles.iconOptionSelected,
-                        ]}
-                        onPress={() => handleIconUpdate(icon.value)}
+                        style={styles.headerNameButton}
+                        onPress={() => {
+                          setIsEditingName(true);
+                          setShowIconPicker(false);
+                        }}
                         activeOpacity={0.7}
                       >
-                        {icon.type === "emoji" ? (
-                          <Text style={styles.iconEmojiRow}>{icon.value}</Text>
-                        ) : (
-                          <Ionicons
-                            name={icon.value as keyof typeof Ionicons.glyphMap}
-                            size={20}
-                            color="#fff"
-                          />
-                        )}
+                        <Text style={styles.title} numberOfLines={1}>
+                          {currentCategory?.category || category?.category || "Category"}
+                        </Text>
+                        <Ionicons
+                          name="pencil-outline"
+                          size={18}
+                          color="rgba(255,255,255,0.6)"
+                          style={styles.pencilIcon}
+                        />
                       </TouchableOpacity>
-                    );
-                  })}
-                </ScrollView>
-              </Animated.View>
-            )}
+                    )}
+                    {parentLabel && (
+                      <Text style={styles.subtitle}>Child of {parentLabel}</Text>
+                    )}
+                  </View>
+                </View>
+              </View>
+
+              {/* Icon Picker Section */}
+              {showIconPicker && (
+                <Animated.View
+                  style={[
+                    styles.iconPickerContainer,
+                    {
+                      opacity: iconPickerAnim,
+                      transform: [
+                        {
+                          translateY: Animated.multiply(
+                            iconPickerAnim,
+                            new Animated.Value(-10)
+                          ),
+                        },
+                      ],
+                    },
+                  ]}
+                >
+                  <Text style={styles.iconPickerLabel}>CHOOSE ICON</Text>
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.iconScroll}
+                    contentContainerStyle={styles.iconScrollContent}
+                    bounces={false}
+                  >
+                    {CURATED_ICONS.map((icon, index) => {
+                      const isSelected = currentIcon === icon.value;
+                      return (
+                        <TouchableOpacity
+                          key={`${icon.type}-${icon.value}-${index}`}
+                          style={[
+                            styles.iconOption,
+                            isSelected && styles.iconOptionSelected,
+                          ]}
+                          onPress={() => handleIconUpdate(icon.value)}
+                          activeOpacity={0.7}
+                        >
+                          {icon.type === "emoji" ? (
+                            <Text style={styles.iconEmojiRow}>{icon.value}</Text>
+                          ) : (
+                            <Ionicons
+                              name={icon.value as keyof typeof Ionicons.glyphMap}
+                              size={20}
+                              color="#fff"
+                            />
+                          )}
+                        </TouchableOpacity>
+                      );
+                    })}
+                  </ScrollView>
+                </Animated.View>
+              )}
 
                 {mode === "edit" ? (
                   <>
@@ -558,10 +539,10 @@ const CategoryEditModal: React.FC<Props> = ({
                           placeholderTextColor="rgba(255,255,255,0.4)"
                         />
                         {hasBudgetChanged && (
-                          <TouchableOpacity
-                            onPress={handleSave}
-                            activeOpacity={0.7}
-                            delayPressIn={0}
+                          <Pressable
+                            onPressIn={handleSave}
+                            disabled={isSaving}
+                            hitSlop={8}
                             style={styles.saveButtonInline}
                           >
                             <LinearGradient
@@ -570,9 +551,11 @@ const CategoryEditModal: React.FC<Props> = ({
                               end={{ x: 1, y: 1 }}
                               style={styles.saveButtonInlineGradient}
                             >
-                              <Text style={styles.saveButtonInlineText}>Save</Text>
+                              <Text style={styles.saveButtonInlineText}>
+                                {isSaving ? "Saving..." : "Save"}
+                              </Text>
                             </LinearGradient>
-                          </TouchableOpacity>
+                          </Pressable>
                         )}
                       </View>
                     </View>
@@ -784,8 +767,9 @@ const CategoryEditModal: React.FC<Props> = ({
                     </TouchableOpacity>
                   </>
                 )}
-              </ScrollView>
-        </Animated.View>
+            </ScrollView>
+          </Animated.View>
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
@@ -795,6 +779,10 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: "rgba(0,0,0,0.75)",
+    justifyContent: "flex-end",
+  },
+  keyboardAvoiding: {
+    width: "100%",
     justifyContent: "flex-end",
   },
   container: {

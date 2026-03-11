@@ -131,7 +131,7 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
         : "Safe to spend";
     const daysLeftLabel =
       daysLeft === 1 ? "1 day left" : `${daysLeft} days left`;
-    const budgetActionLabel = hasBudget ? "Budget" : "Set Up";
+    const budgetActionLabel = hasBudget ? "Budget" : "Build with Finny";
 
     return (
       <View style={styles.netWorthCard}>
@@ -203,11 +203,11 @@ export const QuickStats: React.FC<QuickStatsProps> = React.memo(
                 </>
               ) : (
                 <>
-                  <Text style={localStyles.budgetStatusLabel}>
-                    No budget yet
+                  <Text style={localStyles.emptyBudgetTitle}>
+                    Build your budget with Finny
                   </Text>
                   <Text style={localStyles.budgetHint}>
-                    Set one to get daily spend guidance.
+                    See your Finny-built budget in under a minute.
                   </Text>
                 </>
               )}
@@ -302,10 +302,18 @@ const localStyles = StyleSheet.create({
     fontWeight: "700",
     letterSpacing: -0.4,
   },
+  emptyBudgetTitle: {
+    color: "#E8F1FF",
+    fontSize: 11,
+    fontWeight: "600",
+    letterSpacing: 0.1,
+    flexShrink: 1,
+    marginBottom: 2,
+  },
   budgetHint: {
     marginTop: 1,
     fontSize: 9,
-    color: "rgba(255, 255, 255, 0.65)",
+    color: "rgba(255, 255, 255, 0.7)",
     lineHeight: 12,
   },
   inlineBudgetLink: {

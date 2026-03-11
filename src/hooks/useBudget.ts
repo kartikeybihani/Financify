@@ -129,6 +129,9 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
 
   // Load budget data - show cache immediately, refresh in background
   const loadBudget = useCallback(async (isRefresh: boolean = false) => {
+    const hasVisibleBudgetState =
+      !!initialCachedBudget || hasInitiallyLoadedRef.current;
+
     // If we have cached data and this is not a manual refresh, show cache and refresh in background
     if (initialCachedBudget && !isRefresh) {
       // Show cached data immediately (already set in state initialization)
@@ -141,7 +144,13 @@ export function useBudget(categoryBreakdown?: CategoryBreakdown): UseBudgetRetur
       return;
     }
 
-    // No cache or manual refresh - show loading, then load from database
+    // During manual refresh, keep showing current budget UI and refresh in background.
+    if (isRefresh && hasVisibleBudgetState) {
+      await loadBudgetFromDB();
+      return;
+    }
+
+    // No visible budget data yet - show loading, then load from database
     setLoading(true);
     await loadBudgetFromDB();
   }, [initialCachedBudget, loadBudgetFromDB]);
