@@ -1,6 +1,22 @@
 -- WARNING: This schema is for context only and is not meant to be run.
 -- Table order and constraints may not be valid for execution.
 
+CREATE TABLE public.account_balance_anchors (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  user_id uuid NOT NULL,
+  item_id text NOT NULL,
+  account_id text NOT NULL,
+  account_type text,
+  account_subtype text,
+  anchor_current numeric,
+  anchor_available numeric,
+  anchor_limit numeric,
+  anchored_at timestamp with time zone NOT NULL,
+  anchor_source text NOT NULL CHECK (anchor_source = ANY (ARRAY['plaid_weekly'::text, 'plaid_manual'::text, 'plaid_connect'::text])),
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT account_balance_anchors_pkey PRIMARY KEY (id),
+  CONSTRAINT account_balance_anchors_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
 CREATE TABLE public.accounts (
   account_id text NOT NULL,
   item_id text NOT NULL,
@@ -136,6 +152,8 @@ CREATE TABLE public.chat_sessions (
   messages jsonb NOT NULL,
   created_at timestamp with time zone NOT NULL DEFAULT now(),
   updated_at timestamp with time zone NOT NULL DEFAULT now(),
+  last_turn_meta jsonb,
+  last_finance_turn_meta jsonb,
   CONSTRAINT chat_sessions_pkey PRIMARY KEY (id),
   CONSTRAINT chat_sessions_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
@@ -174,6 +192,27 @@ CREATE TABLE public.conversation_logs (
   request_id text,
   CONSTRAINT conversation_logs_pkey PRIMARY KEY (id),
   CONSTRAINT conversation_logs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.derived_balance_runs (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  run_id uuid NOT NULL,
+  item_id text NOT NULL,
+  user_id uuid NOT NULL,
+  account_id text NOT NULL,
+  cursor_start text,
+  cursor_end text NOT NULL,
+  posted_delta_current numeric NOT NULL DEFAULT 0,
+  posted_delta_available numeric NOT NULL DEFAULT 0,
+  pending_delta_available numeric NOT NULL DEFAULT 0,
+  prev_current numeric,
+  prev_available numeric,
+  new_current numeric,
+  new_available numeric,
+  status text NOT NULL CHECK (status = ANY (ARRAY['applied'::text, 'skipped'::text, 'error'::text])),
+  reason text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT derived_balance_runs_pkey PRIMARY KEY (id),
+  CONSTRAINT derived_balance_runs_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
 CREATE TABLE public.finny_recurring_analysis (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
@@ -491,6 +530,13 @@ CREATE TABLE public.supermemory_documents (
   CONSTRAINT supermemory_documents_pkey PRIMARY KEY (id),
   CONSTRAINT supermemory_documents_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
+CREATE TABLE public.sync_cursor_guards (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  item_id text NOT NULL,
+  cursor_end text NOT NULL,
+  applied_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT sync_cursor_guards_pkey PRIMARY KEY (id)
+);
 CREATE TABLE public.sync_logs (
   id uuid NOT NULL DEFAULT gen_random_uuid(),
   sync_type text NOT NULL DEFAULT 'scheduled'::text,
@@ -530,6 +576,7 @@ CREATE TABLE public.transactions (
   authorized_date date,
   category_id uuid,
   is_reviewed boolean NOT NULL DEFAULT false,
+  updated_at timestamp with time zone NOT NULL DEFAULT now(),
   CONSTRAINT transactions_pkey PRIMARY KEY (id),
   CONSTRAINT transactions_account_id_fkey FOREIGN KEY (account_id) REFERENCES public.accounts(account_id),
   CONSTRAINT transactions_linked_goal_id_fkey FOREIGN KEY (linked_goal_id) REFERENCES public.goals(id),
@@ -552,6 +599,9 @@ CREATE TABLE public.user_items (
   last_synced_at timestamp with time zone,
   last_automated_sync timestamp with time zone,
   sync_status text DEFAULT 'pending'::text,
+  sync_enabled boolean NOT NULL DEFAULT true,
+  sync_disabled_reason text,
+  sync_disabled_at timestamp with time zone,
   CONSTRAINT user_items_pkey PRIMARY KEY (id),
   CONSTRAINT user_items_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
 );
