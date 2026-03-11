@@ -71,7 +71,7 @@
     "fs": "^0.0.1-security",
     "i": "^0.3.7",
     "node-fetch": "^3.3.2",
-    "npm": "^11.6.2",
+    "npm": "^11.11.1",
     "patch-package": "^8.0.0",
     "plaid": "^31.1.0",
     "posthog-react-native": "^4.22.0",
@@ -102,7 +102,7 @@
     "stream-browserify": "^3.0.0",
     "text-encoding": "^0.7.0",
     "uuid": "^11.1.0",
-    "vercel": "^50.26.1"
+    "vercel": "^50.32.2"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",
@@ -122,9 +122,21 @@
   "overrides": {
     "lodash": "^4.17.21",
     "axios": "^1.12.0",
-    "tar": ">=7.5.3",
+    "tar": "^7.5.11",
     "path-to-regexp": ">=6.2.3",
-    "undici": ">=6.22.1"
+    "undici": ">=6.22.1",
+    "@vercel/python-analysis": {
+      "minimatch": "^10.2.4"
+    },
+    "@vercel/static-config": {
+      "ajv": "^8.18.0"
+    },
+    "@vercel/fun": {
+      "@tootallnate/once": "^3.0.1"
+    },
+    "http-proxy-agent": {
+      "@tootallnate/once": "^3.0.1"
+    }
   },
   "resolutions": {
     "react": "^19.1.0",
