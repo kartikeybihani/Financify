@@ -526,8 +526,16 @@ export function useUnifiedFinancialData(): UnifiedFinancialData {
     // Listen for goals updates
     const goalsSubscription = DeviceEventEmitter.addListener(
       "goalsUpdated",
-      () => {
-        logger.debug("🔄 [UNIFIED] Goals update event received");
+      (eventData?: { action?: string; goalId?: string }) => {
+        logger.debug("🔄 [UNIFIED] Goals update event received", eventData);
+
+        // Keep Home Goal box responsive on delete before full refetch returns.
+        if (eventData?.action === "deleted" && eventData.goalId) {
+          setGoals((prevGoals) =>
+            prevGoals.filter((goal) => goal.id !== eventData.goalId),
+          );
+        }
+
         fetchAllData(false);
       }
     );

@@ -62,7 +62,7 @@ const Goals: React.FC<GoalsProps> = ({
 
   const [selectedGoal, setSelectedGoal] = useState<Goal | null>(null);
   const [localGoalsData, setLocalGoalsData] = useState<Goal[]>(goalsData);
-  const [deletedGoal, setDeletedGoal] = useState<Goal | null>(null); // Store for undo
+  const deletedGoalRef = useRef<Goal | null>(null); // Keep latest deleted goal for timeout callbacks
   const deleteTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null); // Store timeout for delayed deletion
   const prevPremiumLockedRef = useRef(isPremiumLocked);
 
@@ -220,7 +220,7 @@ const Goals: React.FC<GoalsProps> = ({
 
   const handleDeleteGoal = async (goalToDelete: Goal) => {
     // CRITICAL: Store deleted goal for potential undo BEFORE any UI changes
-    setDeletedGoal(goalToDelete);
+    deletedGoalRef.current = goalToDelete;
 
     // CRITICAL: Optimistic removal from UI - user sees immediate feedback
     setLocalGoalsData((prev) => prev.filter((g) => g.id !== goalToDelete.id));
@@ -246,8 +246,9 @@ const Goals: React.FC<GoalsProps> = ({
     // Using 3.5s instead of 3s to ensure notification animation completes first
     // This gives user time to undo via the notification
     deleteTimeoutRef.current = setTimeout(async () => {
-      // Double-check that undo wasn't called (deletedGoal should be null if undo was used)
-      if (!deletedGoal || deletedGoal.id !== goalToDelete.id) {
+      const pendingDeletedGoal = deletedGoalRef.current;
+      // Double-check that undo wasn't called (deletedGoalRef should be null if undo was used)
+      if (!pendingDeletedGoal || pendingDeletedGoal.id !== goalToDelete.id) {
         // Undo was called, don't delete
         deleteTimeoutRef.current = null;
         return;
@@ -262,13 +263,13 @@ const Goals: React.FC<GoalsProps> = ({
           await refreshGoals();
         }
         // Clear the stored deleted goal after successful deletion
-        setDeletedGoal(null);
+        deletedGoalRef.current = null;
         deleteTimeoutRef.current = null;
       } catch (error) {
         logger.error("Error deleting goal from server:", error);
         // On error, restore the goal in UI
         setLocalGoalsData((prev) => [...prev, goalToDelete]);
-        setDeletedGoal(null);
+        deletedGoalRef.current = null;
         deleteTimeoutRef.current = null;
         setState((prev: GoalsState) => ({
           ...prev,
@@ -347,16 +348,17 @@ const Goals: React.FC<GoalsProps> = ({
     }
 
     // CRITICAL: Restore the goal to local data (it was never deleted from server)
-    if (deletedGoal && deletedGoal.id === goalId) {
+    const pendingDeletedGoal = deletedGoalRef.current;
+    if (pendingDeletedGoal && pendingDeletedGoal.id === goalId) {
       setLocalGoalsData((prev) => {
         // Check if goal already exists (prevent duplicates)
         const exists = prev.some((g) => g.id === goalId);
         if (exists) return prev;
-        return [...prev, deletedGoal];
+        return [...prev, pendingDeletedGoal];
       });
 
       // Clear the stored deleted goal
-      setDeletedGoal(null);
+      deletedGoalRef.current = null;
     }
 
     // Hide notification

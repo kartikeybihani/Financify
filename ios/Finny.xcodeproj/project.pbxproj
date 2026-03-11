@@ -366,7 +366,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = 8R384P5K54;
+				DEVELOPMENT_TEAM = 53SZ6G286C;
 				ENABLE_BITCODE = NO;
 				GCC_PREPROCESSOR_DEFINITIONS = (
 					"$(inherited)",
@@ -386,7 +386,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_DEBUG";
-				PRODUCT_BUNDLE_IDENTIFIER = com.kartikey08.financify;
+				PRODUCT_BUNDLE_IDENTIFIER = com.deltatechnologies.financify;
 				PRODUCT_NAME = Finny;
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				SWIFT_OBJC_BRIDGING_HEADER = "Finny/Finny-Bridging-Header.h";
@@ -407,7 +407,7 @@
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 2;
-				DEVELOPMENT_TEAM = 8R384P5K54;
+				DEVELOPMENT_TEAM = 53SZ6G286C;
 				INFOPLIST_FILE = Finny/Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Finny;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.1;
@@ -422,7 +422,7 @@
 					"-lc++",
 				);
 				OTHER_SWIFT_FLAGS = "$(inherited) -D EXPO_CONFIGURATION_RELEASE";
-				PRODUCT_BUNDLE_IDENTIFIER = com.kartikey08.financify;
+				PRODUCT_BUNDLE_IDENTIFIER = com.deltatechnologies.financify;
 				PRODUCT_NAME = Finny;
 				SWIFT_OBJC_BRIDGING_HEADER = "Finny/Finny-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
