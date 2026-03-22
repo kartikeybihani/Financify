@@ -17,7 +17,11 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { supabase } from "@/src/lib/supabase/supabase";
 import { FontAwesome, Ionicons } from "@expo/vector-icons";
-import { fetchLinkToken, handlePlaidConnect } from "@/src/utils/plaid/plaid";
+import {
+  fetchLinkToken,
+  handlePlaidConnect,
+  syncTransactions,
+} from "@/src/utils/plaid/plaid";
 import { BlurView } from "expo-blur";
 import * as WebBrowser from "expo-web-browser";
 import logger from "@/src/utils/core/logger";
@@ -62,6 +66,17 @@ interface AccountAnalysisResult {
 }
 
 const ONBOARDING_AI_CONSENT_SOURCE = "onboarding_bank_connection";
+const ONBOARDING_EARLY_INSIGHTS_MAX_ATTEMPTS = 3;
+const ONBOARDING_EARLY_INSIGHTS_IN_PROGRESS_TTL_MS = 2 * 60 * 1000;
+const ONBOARDING_EARLY_INSIGHTS_BASE_DELAY_MS = 800;
+
+type EarlyInsightsTriggerState = {
+  status: "in_progress" | "completed" | "failed";
+  updatedAt: number;
+  requestId: string;
+  attempts: number;
+  lastError?: string | null;
+};
 
 export default function AccountConnectionScreen() {
   const CONNECTION_DOT_COUNT = 8;
@@ -71,6 +86,7 @@ export default function AccountConnectionScreen() {
   const [isLoading, setIsLoading] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [isClosingPlaid, setIsClosingPlaid] = useState(false);
+  const [isContinuing, setIsContinuing] = useState(false);
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [hasConnectedBank, setHasConnectedBank] = useState(false);
   const [hasUpdatedStage, setHasUpdatedStage] = useState(false);
@@ -179,6 +195,132 @@ export default function AccountConnectionScreen() {
 
   const getOnboardingMemoryStoredKey = (userId: string) =>
     `onboarding:memory_stored:${userId}`;
+
+  const getOnboardingEarlyInsightsTriggerKey = (userId: string) =>
+    `onboarding:early_insights_trigger:${userId}`;
+
+  const sleep = (ms: number) =>
+    new Promise((resolve) => setTimeout(resolve, ms));
+
+  const writeEarlyInsightsTriggerState = (
+    userId: string,
+    state: EarlyInsightsTriggerState,
+  ) => {
+    AppStorage.setItemSync(
+      getOnboardingEarlyInsightsTriggerKey(userId),
+      JSON.stringify(state),
+    );
+  };
+
+  const triggerOnboardingEarlyInsightsAfterContinue = async (userId: string) => {
+    const key = getOnboardingEarlyInsightsTriggerKey(userId);
+    const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const now = Date.now();
+
+    try {
+      const raw = AppStorage.getItemSync(key);
+      if (raw) {
+        const parsed = JSON.parse(raw) as EarlyInsightsTriggerState;
+        if (parsed?.status === "completed") {
+          logger.info(
+            "ℹ️ AccountConnectionScreen: Early insights already triggered, skipping",
+            { userId, requestId },
+          );
+          return;
+        }
+        if (
+          parsed?.status === "in_progress" &&
+          now - Number(parsed?.updatedAt || 0) <
+            ONBOARDING_EARLY_INSIGHTS_IN_PROGRESS_TTL_MS
+        ) {
+          logger.info(
+            "ℹ️ AccountConnectionScreen: Early insights trigger already in progress, skipping duplicate",
+            { userId, requestId },
+          );
+          return;
+        }
+      }
+    } catch (error) {
+      logger.warn(
+        "⚠️ AccountConnectionScreen: Failed to read early insights trigger state",
+        error,
+      );
+    }
+
+    const { data: latestItemRow, error: itemError } = await supabase
+      .from("user_items")
+      .select("item_id")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (itemError || !latestItemRow?.item_id) {
+      writeEarlyInsightsTriggerState(userId, {
+        status: "failed",
+        updatedAt: Date.now(),
+        requestId,
+        attempts: 0,
+        lastError: itemError?.message || "No connected item_id found",
+      });
+      logger.warn(
+        "⚠️ AccountConnectionScreen: Cannot trigger early insights (no connected item)",
+        { userId, requestId, error: itemError?.message || null },
+      );
+      return;
+    }
+
+    const itemId = latestItemRow.item_id;
+
+    for (let attempt = 1; attempt <= ONBOARDING_EARLY_INSIGHTS_MAX_ATTEMPTS; attempt++) {
+      writeEarlyInsightsTriggerState(userId, {
+        status: "in_progress",
+        updatedAt: Date.now(),
+        requestId,
+        attempts: attempt,
+        lastError: null,
+      });
+
+      try {
+        await syncTransactions(itemId, { enrichmentMode: "early_only" });
+        writeEarlyInsightsTriggerState(userId, {
+          status: "completed",
+          updatedAt: Date.now(),
+          requestId,
+          attempts: attempt,
+          lastError: null,
+        });
+        logger.info(
+          "✅ AccountConnectionScreen: Triggered onboarding early insights generation",
+          { userId, requestId, attempt, itemId },
+        );
+        return;
+      } catch (error: any) {
+        const errorMessage = error?.message || String(error);
+        logger.warn(
+          "⚠️ AccountConnectionScreen: Early insights trigger attempt failed",
+          { userId, requestId, attempt, itemId, error: errorMessage },
+        );
+
+        if (attempt >= ONBOARDING_EARLY_INSIGHTS_MAX_ATTEMPTS) {
+          writeEarlyInsightsTriggerState(userId, {
+            status: "failed",
+            updatedAt: Date.now(),
+            requestId,
+            attempts: attempt,
+            lastError: errorMessage,
+          });
+          return;
+        }
+
+        const jitterMs = Math.floor(Math.random() * 250);
+        const delayMs =
+          ONBOARDING_EARLY_INSIGHTS_BASE_DELAY_MS * Math.pow(2, attempt - 1) +
+          jitterMs;
+        await sleep(delayMs);
+      }
+    }
+  };
 
   const fetchLast30DaysTransactions = async (userId: string) => {
     const end = new Date();
@@ -705,6 +847,9 @@ export default function AccountConnectionScreen() {
           }
         },
         {
+          syncOptions: {
+            enrichmentMode: "base_only",
+          },
           onProgress: (stage) => {
             setIsLoading(false);
             setIsClosingPlaid(false);
@@ -748,7 +893,14 @@ export default function AccountConnectionScreen() {
   };
 
   const handleContinue = async () => {
+    if (isContinuing) return;
+    setIsContinuing(true);
     try {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      const currentUserId = user?.id || null;
+
       const trimmedIncome = monthlyIncomeInput.replace(/[^0-9.]/g, "").trim();
       if (trimmedIncome.length > 0) {
         const parsedIncome = Number(trimmedIncome);
@@ -761,17 +913,14 @@ export default function AccountConnectionScreen() {
         }
 
         setIsSavingIncome(true);
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user?.id) {
+        if (currentUserId) {
           const { error: incomeError } = await supabase
             .from("profiles")
             .update({
               monthly_income: Math.round(parsedIncome),
               monthly_income_updated_at: new Date().toISOString(),
             })
-            .eq("id", user.id);
+            .eq("id", currentUserId);
           if (incomeError) throw incomeError;
         }
       }
@@ -782,14 +931,11 @@ export default function AccountConnectionScreen() {
 
       // Update profiles step -> 4 (final screen next)
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (user?.id) {
+        if (currentUserId) {
           await supabase
             .from("profiles")
             .update({ onboarding_step: 4 })
-            .eq("id", user.id);
+            .eq("id", currentUserId);
         }
       } catch (e) {
         logger.error(
@@ -803,6 +949,17 @@ export default function AccountConnectionScreen() {
       );
       logOnboardingEvent({ stage: "plaid", action: "continue" });
 
+      // Trigger onboarding early insights after user explicitly continues.
+      // Runs in the background while final screen shows loading state.
+      if (currentUserId) {
+        triggerOnboardingEarlyInsightsAfterContinue(currentUserId).catch((e) => {
+          logger.warn(
+            "⚠️ AccountConnectionScreen: Early insights trigger crashed",
+            e,
+          );
+        });
+      }
+
       // Navigate immediately to final screen to avoid waiting for gate refresh
       router.replace("/(onboarding-complete)" as any);
     } catch (error) {
@@ -814,6 +971,7 @@ export default function AccountConnectionScreen() {
       );
     } finally {
       setIsSavingIncome(false);
+      setIsContinuing(false);
     }
   };
 
@@ -1317,9 +1475,9 @@ export default function AccountConnectionScreen() {
               <TouchableOpacity
                 style={styles.continueButton}
                 onPress={handleContinue}
-                disabled={isSavingIncome}
+                disabled={isSavingIncome || isContinuing}
               >
-                {isSavingIncome ? (
+                {isSavingIncome || isContinuing ? (
                   <ActivityIndicator color="#fff" />
                 ) : (
                   <Text style={styles.continueButtonText}>Continue</Text>

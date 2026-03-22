@@ -19,6 +19,17 @@ import {
 
 const BASE_URL = API_BASE_URL;
 
+export type SyncEnrichmentMode =
+  | "full"
+  | "none"
+  | "base_only"
+  | "early_only";
+
+type SyncTransactionsOptions = {
+  skipEnrichment?: boolean;
+  enrichmentMode?: SyncEnrichmentMode;
+};
+
 // === Last Used Item Management ===
 import { setLastUsedItemId, getLastUsedItemId } from "@/src/utils/cache/lastUsedItem";
 
@@ -140,6 +151,7 @@ export const handlePlaidConnect = async (
       stage: "exchange" | "accounts" | "transactions" | "finalizing",
       institution?: { name: string; id: string },
     ) => void;
+    syncOptions?: SyncTransactionsOptions;
   }
 ) => {
   if (!linkToken) return;
@@ -259,11 +271,11 @@ export const handlePlaidConnect = async (
           // Don't fail the whole connection if account storage fails
         }
         
-        // 💸 Trigger initial transaction sync (includes Finny recurring analysis after tx write)
+        // 💸 Trigger initial transaction sync (enrichment behavior depends on syncOptions)
         try {
           options?.onProgress?.("transactions", institution);
           logger.info("🔄 Syncing initial transactions...");
-          await syncTransactions(item_id);
+          await syncTransactions(item_id, options?.syncOptions);
           logger.info("✅ Initial transaction sync completed");
         } catch (syncError) {
           logger.error("⚠️ Failed to sync initial transactions (continuing anyway):", syncError);
@@ -590,11 +602,12 @@ export const fetchInitialData = async () => {
 // === Sync Transactions (with fallback) ===
 export const syncTransactions = async (
   item_id: string,
-  options?: { skipEnrichment?: boolean },
+  options?: SyncTransactionsOptions,
 ) => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) throw new Error("User not authenticated");
   const skipEnrichment = options?.skipEnrichment === true;
+  const enrichmentMode = options?.enrichmentMode;
 
   // Skip SnapTrade investment accounts
   if (item_id.startsWith('snaptrade-')) {
@@ -612,6 +625,7 @@ export const syncTransactions = async (
         item_id,
         user_id: user.id,
         skip_enrichment: skipEnrichment,
+        ...(enrichmentMode ? { enrichment_mode: enrichmentMode } : {}),
       }),
     });
     
@@ -895,12 +909,13 @@ export const getItemIds = async (): Promise<string[]> => {
 
 // Manual sync for UI - syncs all connected accounts for the current user
 export const syncAllUserTransactions = async (
-  options?: { skipEnrichment?: boolean },
+  options?: SyncTransactionsOptions,
 ) => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.id) throw new Error("User not authenticated");
     const skipEnrichment = options?.skipEnrichment === true;
+    const enrichmentMode = options?.enrichmentMode;
     
     // Clear cache first (simplified approach)
     logger.info("🧹 Clearing cache before sync...");
@@ -930,7 +945,7 @@ export const syncAllUserTransactions = async (
     
     // Sync each Plaid account only
     const syncPromises = plaidItems.map(item => 
-      syncTransactions(item.item_id, { skipEnrichment }).catch(error => {
+      syncTransactions(item.item_id, { skipEnrichment, enrichmentMode }).catch(error => {
         logger.error(`Failed to sync item ${item.item_id}:`, error);
         
         // Check if error indicates login required

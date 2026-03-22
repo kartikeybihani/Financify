@@ -1421,14 +1421,34 @@ export default async function handler(req, res) {
   }
 
   // Original transactions sync logic
-  const { item_id, user_id, skip_enrichment } = req.body;
+  const { item_id, user_id, skip_enrichment, enrichment_mode } = req.body;
   if (!item_id) return res.status(400).json({ error: "Missing item_id" });
   const skipEnrichment = skip_enrichment === true;
+  const normalizedEnrichmentMode =
+    typeof enrichment_mode === "string"
+      ? enrichment_mode.trim().toLowerCase()
+      : null;
+  const allowedEnrichmentModes = new Set([
+    "full",
+    "none",
+    "base_only",
+    "early_only",
+  ]);
+  const requestedEnrichmentMode = allowedEnrichmentModes.has(
+    normalizedEnrichmentMode,
+  )
+    ? normalizedEnrichmentMode
+    : null;
+  const effectiveEnrichmentMode = skipEnrichment
+    ? "none"
+    : requestedEnrichmentMode || "full";
 
   console.log("[TRANSACTIONS_SYNC] build", {
     API_BUILD,
     item_id,
     skip_enrichment: skipEnrichment,
+    requested_enrichment_mode: requestedEnrichmentMode,
+    effective_enrichment_mode: effectiveEnrichmentMode,
   });
 
   try {
@@ -1475,6 +1495,14 @@ export default async function handler(req, res) {
     );
     const hasAiEnrichmentConsent =
       hasOnboardingAiConsent || hasChatMemoryConsent;
+    const shouldRunRecurringAnalysis = effectiveEnrichmentMode === "full";
+    const shouldRunEarlyInsights =
+      effectiveEnrichmentMode === "full" ||
+      effectiveEnrichmentMode === "early_only";
+    const shouldRunBaseAnalysis =
+      effectiveEnrichmentMode === "full" ||
+      effectiveEnrichmentMode === "base_only";
+    const shouldRunNotificationPatterns = effectiveEnrichmentMode === "full";
 
     if (!hasOnboardingAiConsent && hasChatMemoryConsent) {
       console.log(
@@ -1482,6 +1510,15 @@ export default async function handler(req, res) {
         { userId },
       );
     }
+
+    console.log("[TRANSACTIONS_SYNC] enrichment plan", {
+      userId,
+      effective_enrichment_mode: effectiveEnrichmentMode,
+      run_recurring_analysis: shouldRunRecurringAnalysis,
+      run_early_insights: shouldRunEarlyInsights,
+      run_base_analysis: shouldRunBaseAnalysis,
+      run_notification_patterns: shouldRunNotificationPatterns,
+    });
 
     // Fetch user_id and transactions_cursor together in one query for efficiency
     const { data: itemData, error: fetchErr } = await supabase
@@ -2433,10 +2470,10 @@ export default async function handler(req, res) {
 
     // 7.4) Run Finny recurring analysis AFTER transactions are synced (new account connect)
     // Must run after transaction upsert so analysis has data to work with
-    if (skipEnrichment) {
+    if (!shouldRunRecurringAnalysis) {
       console.log(
-        "[TRANSACTIONS_SYNC] recurring analysis: skipped (skip_enrichment=true)",
-        { userId },
+        "[TRANSACTIONS_SYNC] recurring analysis: skipped (mode)",
+        { userId, effective_enrichment_mode: effectiveEnrichmentMode },
       );
     } else if (!hasAiEnrichmentConsent) {
       console.log("[TRANSACTIONS_SYNC] recurring analysis: skipped (no consent)", {
@@ -2476,10 +2513,10 @@ export default async function handler(req, res) {
     // 7.5) Generate onboarding early_insights (best-effort, does not block sync)
     // Runs after transactions have been written, so it can read from DB.
     // Stores raw JSON in `profiles.early_insights`.
-    if (skipEnrichment) {
+    if (!shouldRunEarlyInsights) {
       console.log(
-        "[TRANSACTIONS_SYNC] early_insights: skipped (skip_enrichment=true)",
-        { userId },
+        "[TRANSACTIONS_SYNC] early_insights: skipped (mode)",
+        { userId, effective_enrichment_mode: effectiveEnrichmentMode },
       );
     } else if (!hasAiEnrichmentConsent) {
       console.log("[TRANSACTIONS_SYNC] early_insights: skipped (no consent)", {
@@ -2768,10 +2805,10 @@ export default async function handler(req, res) {
     // Runs after transactions have been written, so it can read from DB.
     // Stores raw JSON in `profiles.base_analysis`.
     // Only runs if base_analysis doesn't already exist (first account connection).
-    if (skipEnrichment) {
+    if (!shouldRunBaseAnalysis) {
       console.log(
-        "[TRANSACTIONS_SYNC] base_analysis: skipped (skip_enrichment=true)",
-        { userId },
+        "[TRANSACTIONS_SYNC] base_analysis: skipped (mode)",
+        { userId, effective_enrichment_mode: effectiveEnrichmentMode },
       );
     } else if (!hasAiEnrichmentConsent) {
       console.log("[TRANSACTIONS_SYNC] base_analysis: skipped (no consent)", {
@@ -2988,10 +3025,10 @@ export default async function handler(req, res) {
 
     // 8) Detect notification patterns (fire and forget - don't block response)
     // Always run pattern detection, even if no new transactions - analyzes last 60 days
-    if (skipEnrichment) {
+    if (!shouldRunNotificationPatterns) {
       console.log(
-        "[TRANSACTIONS_SYNC] notification patterns: skipped (skip_enrichment=true)",
-        { userId },
+        "[TRANSACTIONS_SYNC] notification patterns: skipped (mode)",
+        { userId, effective_enrichment_mode: effectiveEnrichmentMode },
       );
     } else if (!hasAiEnrichmentConsent) {
       console.log(
@@ -3021,6 +3058,7 @@ export default async function handler(req, res) {
       has_chat_memory_consent: hasChatMemoryConsent,
       has_ai_enrichment_consent: hasAiEnrichmentConsent,
       skip_enrichment: skipEnrichment,
+      enrichment_mode: effectiveEnrichmentMode,
       api_build: "transactions_sync+early_insights@2026-01-19",
     });
   } catch (e) {
