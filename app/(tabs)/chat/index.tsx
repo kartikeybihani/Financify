@@ -49,6 +49,7 @@ import { useSubscription } from "@/src/contexts/SubscriptionContext";
 import { useFreeMessageLimit } from "@/src/hooks/useFreeMessageLimit";
 import { FREE_MESSAGES_PER_DAY } from "@/src/constants/subscription";
 import logger from "@/src/utils/core/logger";
+import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 import {
   CHAT_MEMORY_CONSENT_KEY,
   getAiConsentStorageKey,
@@ -481,9 +482,7 @@ function ChatScreenContent() {
         return;
       }
 
-      const BASE_URL =
-        process.env.EXPO_PUBLIC_APP_BASE_URL ||
-        "https://financify-rose.vercel.app";
+      const BASE_URL = API_BASE_URL;
 
       logger.debug(
         `🚀 [CONTEXT_PREBUILD] [${callId}] Making API call to ${BASE_URL}/api/finny...`,

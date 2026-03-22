@@ -806,8 +806,29 @@ export default async function handler(req, res) {
     if (retryAfter > 0) {
       res.setHeader("Retry-After", retryAfter);
     }
+    const rateLimitMessage = "Too many assistant requests. Please wait before retrying.";
+    if (wantsStreaming) {
+      res.writeHead(200, {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+        "X-Accel-Buffering": "no",
+        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Headers": "Cache-Control",
+      });
+      if (typeof res.flushHeaders === "function") {
+        res.flushHeaders();
+      }
+      sendStreamEvent(
+        res,
+        "complete",
+        buildStreamFallbackResponse(rateLimitMessage),
+      );
+      res.end();
+      return;
+    }
     return res.status(429).json({
-      error: "Too many assistant requests. Please wait before retrying.",
+      error: rateLimitMessage,
       retry_after: retryAfter,
     });
   }

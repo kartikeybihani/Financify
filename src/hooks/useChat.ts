@@ -884,6 +884,64 @@ export const useChat = (userName?: string | null) => {
 
       const fallbackMessage = "Sorry — I hit a snag while responding. Please try again.";
 
+      const appendTerminalMessage = (text: string) => {
+        const messageText = (text || fallbackMessage).trim() || fallbackMessage;
+        finalResponseMessage = messageText;
+        setChatMessages(prev => {
+          const updated = [...prev];
+          const messageIndex = updated.findIndex(msg => msg.id === messageId);
+          const baseMessage: ChatMessage = {
+            id: messageId,
+            sender: "finny" as const,
+            text: messageText,
+            timestamp: messageIndex >= 0 ? updated[messageIndex].timestamp : Date.now(),
+            type: "text" as const,
+            isStreaming: false,
+          };
+          if (messageIndex >= 0) {
+            updated[messageIndex] = { ...updated[messageIndex], ...baseMessage };
+          } else {
+            updated.push(baseMessage);
+          }
+          return updated;
+        });
+        shouldPersistRef.current = true;
+        didAppendAny = true;
+        didAppendFinal = true;
+      };
+
+      const parseHttpErrorMessage = (status: number, rawBody: string): string => {
+        const normalizedBody = String(rawBody || "").trim();
+        let payloadMessage: string | null = null;
+
+        if (normalizedBody) {
+          try {
+            const payload = JSON.parse(normalizedBody);
+            if (typeof payload?.message === "string" && payload.message.trim()) {
+              payloadMessage = payload.message.trim();
+            } else if (typeof payload?.error === "string" && payload.error.trim()) {
+              payloadMessage = payload.error.trim();
+            }
+          } catch {
+            // Response might be HTML/plain text, ignore parse failure.
+          }
+        }
+
+        if (status === 401) {
+          return payloadMessage || "Please log in to continue.";
+        }
+        if (status === 429) {
+          return payloadMessage || "You're sending messages a bit too quickly. Please wait a moment and try again.";
+        }
+        if (status >= 500) {
+          return payloadMessage || "Server is having trouble right now. Please try again.";
+        }
+        if (payloadMessage) {
+          return payloadMessage;
+        }
+        return fallbackMessage;
+      };
+
       const safeResolve = (value: string | null) => {
         if (settled) return;
         settled = true;
@@ -912,31 +970,9 @@ export const useChat = (userName?: string | null) => {
             // no-op
           }
 
-          const fallback = fallbackMessage;
-          finalResponseMessage = fallback;
-          setChatMessages(prev => {
-            const updated = [...prev];
-            const messageIndex = updated.findIndex(msg => msg.id === messageId);
-            const baseMessage: ChatMessage = {
-              id: messageId,
-              sender: "finny" as const,
-              text: fallback,
-              timestamp: messageIndex >= 0 ? updated[messageIndex].timestamp : Date.now(),
-              type: "text" as const,
-              isStreaming: false,
-            };
-            if (messageIndex >= 0) {
-              updated[messageIndex] = { ...updated[messageIndex], ...baseMessage };
-            } else {
-              updated.push(baseMessage);
-            }
-            return updated;
-          });
-          didAppendAny = true;
-          didAppendFinal = true;
-          shouldPersistRef.current = true;
+          appendTerminalMessage(fallbackMessage);
           finalizeTyping();
-          safeResolve(fallback);
+          safeResolve(finalResponseMessage);
         }, STREAM_TIMEOUT_MS);
       };
 
@@ -1287,6 +1323,35 @@ export const useChat = (userName?: string | null) => {
           return;
         }
         finalizeTyping();
+
+        const httpStatus = Number(xhr.status || 0);
+        const contentType = (xhr.getResponseHeader?.("Content-Type") || "").toLowerCase();
+        const responseText = typeof xhr.responseText === "string" ? xhr.responseText : "";
+        const isSseResponse = contentType.includes("text/event-stream");
+
+        if (!didAppendFinal && httpStatus >= 400) {
+          const errorMessage = parseHttpErrorMessage(httpStatus, responseText);
+          logger.warn(
+            `⚠️ [STREAMING] Received HTTP ${httpStatus} while streaming. Using parsed error message.`,
+          );
+          appendTerminalMessage(errorMessage);
+          safeResolve(finalResponseMessage);
+          return;
+        }
+
+        if (
+          !didAppendFinal &&
+          !didAppendAny &&
+          responseText.trim().length > 0 &&
+          !isSseResponse
+        ) {
+          logger.warn(
+            `⚠️ [STREAMING] Non-SSE response received (status: ${httpStatus || "unknown"}, content-type: ${contentType || "unknown"})`,
+          );
+          appendTerminalMessage(parseHttpErrorMessage(httpStatus, responseText));
+          safeResolve(finalResponseMessage);
+          return;
+        }
         
         // Ensure we always have a final response message
         // Priority: finalResponseMessage (from complete event) > accumulatedText (from text chunks)
@@ -1295,29 +1360,7 @@ export const useChat = (userName?: string | null) => {
             finalResponseMessage = accumulatedText;
           } else {
             if (!didAppendFinal) {
-              const fallback = fallbackMessage;
-              setChatMessages(prev => {
-                const updated = [...prev];
-                const messageIndex = updated.findIndex(msg => msg.id === messageId);
-                const baseMessage: ChatMessage = {
-                  id: messageId,
-                  sender: "finny" as const,
-                  text: fallback,
-                  timestamp: messageIndex >= 0 ? updated[messageIndex].timestamp : Date.now(),
-                  type: "text" as const,
-                  isStreaming: false,
-                };
-                if (messageIndex >= 0) {
-                  updated[messageIndex] = { ...updated[messageIndex], ...baseMessage };
-                } else {
-                  updated.push(baseMessage);
-                }
-                return updated;
-              });
-              shouldPersistRef.current = true;
-              didAppendAny = true;
-              didAppendFinal = true;
-              finalResponseMessage = fallback;
+              appendTerminalMessage(fallbackMessage);
             } else {
               // If we still don't have a message, try to get it from the chat state
               // This is a fallback in case the message was set but not captured
