@@ -588,9 +588,13 @@ export const fetchInitialData = async () => {
 };
 
 // === Sync Transactions (with fallback) ===
-export const syncTransactions = async (item_id: string) => {
+export const syncTransactions = async (
+  item_id: string,
+  options?: { skipEnrichment?: boolean },
+) => {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user?.id) throw new Error("User not authenticated");
+  const skipEnrichment = options?.skipEnrichment === true;
 
   // Skip SnapTrade investment accounts
   if (item_id.startsWith('snaptrade-')) {
@@ -604,7 +608,11 @@ export const syncTransactions = async (item_id: string) => {
     const res = await authenticatedFetch(`${BASE_URL}/api/transactions_sync`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ item_id, user_id: user.id }),
+      body: JSON.stringify({
+        item_id,
+        user_id: user.id,
+        skip_enrichment: skipEnrichment,
+      }),
     });
     
     // Check if response is JSON
@@ -886,10 +894,13 @@ export const getItemIds = async (): Promise<string[]> => {
 
 
 // Manual sync for UI - syncs all connected accounts for the current user
-export const syncAllUserTransactions = async () => {
+export const syncAllUserTransactions = async (
+  options?: { skipEnrichment?: boolean },
+) => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user?.id) throw new Error("User not authenticated");
+    const skipEnrichment = options?.skipEnrichment === true;
     
     // Clear cache first (simplified approach)
     logger.info("🧹 Clearing cache before sync...");
@@ -919,7 +930,7 @@ export const syncAllUserTransactions = async () => {
     
     // Sync each Plaid account only
     const syncPromises = plaidItems.map(item => 
-      syncTransactions(item.item_id).catch(error => {
+      syncTransactions(item.item_id, { skipEnrichment }).catch(error => {
         logger.error(`Failed to sync item ${item.item_id}:`, error);
         
         // Check if error indicates login required
@@ -944,13 +955,40 @@ export const syncAllUserTransactions = async () => {
     
     const results = await Promise.all(syncPromises);
     const successful = results.filter(result => !result.error).length;
+    const totals = results.reduce(
+      (acc, result: any) => {
+        if (result?.error) return acc;
+        acc.added += Number(result?.added || 0);
+        acc.modified += Number(result?.modified || 0);
+        acc.removed += Number(result?.removed || 0);
+        return acc;
+      },
+      { added: 0, modified: 0, removed: 0 },
+    );
+    const missingConsentCount = skipEnrichment
+      ? 0
+      : results.filter(
+          (result: any) =>
+            result &&
+            result.error == null &&
+            result.has_ai_enrichment_consent === false,
+        ).length;
     
     logger.info(`✅ Sync completed: ${successful}/${plaidItems.length} Plaid accounts synced successfully`);
+    logger.info("📊 Transaction deltas across synced accounts:", totals);
+    if (missingConsentCount > 0) {
+      logger.warn(
+        `⚠️ Onboarding AI consent missing for ${missingConsentCount} synced account(s); enrichment jobs were skipped.`,
+      );
+    }
     
     return { 
       synced: successful,
       total: plaidItems.length,
-      results 
+      results,
+      ...totals,
+      missingConsentCount,
+      enrichmentSkipped: skipEnrichment,
     };
   } catch (err) {
     logger.error("Error in manual sync:", err);

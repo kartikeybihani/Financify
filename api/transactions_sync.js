@@ -32,6 +32,7 @@ import crypto from "crypto";
 import {
   hasAcceptedAiConsent,
   ONBOARDING_AI_CONSENT_KEY,
+  CHAT_MEMORY_CONSENT_KEY,
 } from "../lib/aiConsent.js";
 import {
   STANDARD_MODEL,
@@ -1420,10 +1421,15 @@ export default async function handler(req, res) {
   }
 
   // Original transactions sync logic
-  const { item_id, user_id } = req.body;
+  const { item_id, user_id, skip_enrichment } = req.body;
   if (!item_id) return res.status(400).json({ error: "Missing item_id" });
+  const skipEnrichment = skip_enrichment === true;
 
-  console.log("[TRANSACTIONS_SYNC] build", { API_BUILD, item_id });
+  console.log("[TRANSACTIONS_SYNC] build", {
+    API_BUILD,
+    item_id,
+    skip_enrichment: skipEnrichment,
+  });
 
   try {
     // 1) Verify user owns this item and get user_id + cursor in one query
@@ -1462,6 +1468,20 @@ export default async function handler(req, res) {
       userId,
       ONBOARDING_AI_CONSENT_KEY,
     );
+    const hasChatMemoryConsent = await hasAcceptedAiConsent(
+      supabase,
+      userId,
+      CHAT_MEMORY_CONSENT_KEY,
+    );
+    const hasAiEnrichmentConsent =
+      hasOnboardingAiConsent || hasChatMemoryConsent;
+
+    if (!hasOnboardingAiConsent && hasChatMemoryConsent) {
+      console.log(
+        "[TRANSACTIONS_SYNC] onboarding consent missing; using chat consent fallback for enrichment",
+        { userId },
+      );
+    }
 
     // Fetch user_id and transactions_cursor together in one query for efficiency
     const { data: itemData, error: fetchErr } = await supabase
@@ -2413,7 +2433,12 @@ export default async function handler(req, res) {
 
     // 7.4) Run Finny recurring analysis AFTER transactions are synced (new account connect)
     // Must run after transaction upsert so analysis has data to work with
-    if (!hasOnboardingAiConsent) {
+    if (skipEnrichment) {
+      console.log(
+        "[TRANSACTIONS_SYNC] recurring analysis: skipped (skip_enrichment=true)",
+        { userId },
+      );
+    } else if (!hasAiEnrichmentConsent) {
       console.log("[TRANSACTIONS_SYNC] recurring analysis: skipped (no consent)", {
         userId,
       });
@@ -2451,7 +2476,12 @@ export default async function handler(req, res) {
     // 7.5) Generate onboarding early_insights (best-effort, does not block sync)
     // Runs after transactions have been written, so it can read from DB.
     // Stores raw JSON in `profiles.early_insights`.
-    if (!hasOnboardingAiConsent) {
+    if (skipEnrichment) {
+      console.log(
+        "[TRANSACTIONS_SYNC] early_insights: skipped (skip_enrichment=true)",
+        { userId },
+      );
+    } else if (!hasAiEnrichmentConsent) {
       console.log("[TRANSACTIONS_SYNC] early_insights: skipped (no consent)", {
         userId,
       });
@@ -2738,7 +2768,12 @@ export default async function handler(req, res) {
     // Runs after transactions have been written, so it can read from DB.
     // Stores raw JSON in `profiles.base_analysis`.
     // Only runs if base_analysis doesn't already exist (first account connection).
-    if (!hasOnboardingAiConsent) {
+    if (skipEnrichment) {
+      console.log(
+        "[TRANSACTIONS_SYNC] base_analysis: skipped (skip_enrichment=true)",
+        { userId },
+      );
+    } else if (!hasAiEnrichmentConsent) {
       console.log("[TRANSACTIONS_SYNC] base_analysis: skipped (no consent)", {
         userId,
       });
@@ -2953,7 +2988,12 @@ export default async function handler(req, res) {
 
     // 8) Detect notification patterns (fire and forget - don't block response)
     // Always run pattern detection, even if no new transactions - analyzes last 60 days
-    if (!hasOnboardingAiConsent) {
+    if (skipEnrichment) {
+      console.log(
+        "[TRANSACTIONS_SYNC] notification patterns: skipped (skip_enrichment=true)",
+        { userId },
+      );
+    } else if (!hasAiEnrichmentConsent) {
       console.log(
         "[TRANSACTIONS_SYNC] notification patterns: skipped (no consent)",
         { userId },
@@ -2977,6 +3017,10 @@ export default async function handler(req, res) {
       added: added.length,
       modified: modified.length,
       removed: removed.length,
+      has_onboarding_ai_consent: hasOnboardingAiConsent,
+      has_chat_memory_consent: hasChatMemoryConsent,
+      has_ai_enrichment_consent: hasAiEnrichmentConsent,
+      skip_enrichment: skipEnrichment,
       api_build: "transactions_sync+early_insights@2026-01-19",
     });
   } catch (e) {

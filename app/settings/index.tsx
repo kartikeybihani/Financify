@@ -276,10 +276,14 @@ export default function SettingsScreen() {
       setIsSyncingTransactions(true);
       logger.info("[SettingsIndex] Starting transaction sync...");
 
-      const result = await syncAllUserTransactions();
+      const result = await syncAllUserTransactions({ skipEnrichment: true });
       const synced = result.synced || 0;
       const total = result.total ?? synced;
       const results = Array.isArray(result.results) ? result.results : [];
+      const added = Number(result.added || 0);
+      const modified = Number(result.modified || 0);
+      const removed = Number(result.removed || 0);
+      const missingConsentCount = Number(result.missingConsentCount || 0);
       const failed = results.filter((entry) => entry?.error).length;
       const requiresUpdateCount = results.filter(
         (entry) => entry?.requires_update_mode,
@@ -310,17 +314,30 @@ export default function SettingsScreen() {
           requiresUpdateCount > 0
             ? " Some accounts need reconnection to continue syncing."
             : "";
+        const deltaMessage = ` Transaction updates: ${added} new, ${modified} updated, ${removed} removed.`;
+        const consentMessage =
+          missingConsentCount > 0
+            ? " AI enrichment was skipped for some accounts because onboarding consent is missing."
+            : "";
 
         Alert.alert(
           synced === 0 ? "Sync Failed" : "Sync Partially Complete",
           synced === 0
-            ? `Unable to sync any bank connections.${reauthMessage}`
-            : `Synced ${synced}/${total} bank connection(s).${reauthMessage}`,
+            ? `Unable to sync any bank connections.${reauthMessage}${consentMessage}`
+            : `Synced ${synced}/${total} bank connection(s).${reauthMessage}${deltaMessage}${consentMessage}`,
         );
       } else {
+        const noNewTransactions =
+          added === 0 && modified === 0 && removed === 0
+            ? " No new transaction changes were available from Plaid."
+            : "";
+        const consentMessage =
+          missingConsentCount > 0
+            ? " AI enrichment was skipped for some accounts because onboarding consent is missing."
+            : "";
         Alert.alert(
           "Sync Complete",
-          `Synced ${synced}/${total} bank connection(s).`,
+          `Synced ${synced}/${total} bank connection(s). Transaction updates: ${added} new, ${modified} updated, ${removed} removed.${noNewTransactions}${consentMessage}`,
         );
       }
     } catch (error: any) {

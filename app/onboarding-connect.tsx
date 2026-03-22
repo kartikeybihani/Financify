@@ -393,14 +393,23 @@ export default function AccountConnectionScreen() {
         const consentState = AppStorage.getItemSync(
           getOnboardingConsentStorageKey(user.id),
         );
-        if (consentState === "accepted") {
-          setHasAcceptedAiDisclosure(true);
+        const hasLocalOnboardingConsent = consentState === "accepted";
+        setHasAcceptedAiDisclosure(hasLocalOnboardingConsent);
+
+        if (hasLocalOnboardingConsent) {
+          // Best-effort backfill in case local consent exists but DB row was lost.
+          persistAiConsent(
+            user.id,
+            ONBOARDING_AI_CONSENT_KEY,
+            ONBOARDING_AI_CONSENT_SOURCE,
+          ).catch((error) => {
+            logger.warn("Failed to backfill onboarding AI consent:", error);
+          });
         }
 
         const accounts = await fetchConnectedAccounts(user.id);
         if (accounts.length > 0) {
           setHasConnectedBank(true);
-          setHasAcceptedAiDisclosure(true);
           setConnectedAccounts(accounts);
           // If accounts already exist, this is not the first connection
           setIsFirstConnection(false);

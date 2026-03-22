@@ -200,8 +200,8 @@ export const handleReAuth = async (
     // 4a. Refresh both balances and transactions from Plaid
     await refreshBothBalancesAndTransactions(item_id);
 
-    // 4b. Sync all transactions
-    await syncAllUserTransactions();
+    // 4b. Sync all transactions (manual flow: skip enrichment jobs)
+    await syncAllUserTransactions({ skipEnrichment: true });
 
     // Step 5: Refresh UI from database (the single source of truth)
     await callbacks.fetchFreshData();
@@ -291,8 +291,12 @@ export const handleRefreshLatestData = async (
       type: "cloud",
       message: "Syncing transactions to database...",
     });
-    logger.info("🔄 Step 3: Calling syncAllUserTransactions()...");
-    const syncResult = await syncAllUserTransactions();
+    logger.info(
+      "🔄 Step 3: Calling syncAllUserTransactions(skipEnrichment=true)...",
+    );
+    const syncResult = await syncAllUserTransactions({
+      skipEnrichment: true,
+    });
     logger.info("📦 syncAllUserTransactions result:", syncResult);
 
     // Check for re-auth errors in sync results
