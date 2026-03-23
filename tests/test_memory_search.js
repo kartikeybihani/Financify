@@ -24,7 +24,7 @@ const SUPERMEMORY_FETCH_TIMEOUT_MS = 15000;
 async function fetchWithTimeout(
   url,
   options = {},
-  timeoutMs = SUPERMEMORY_FETCH_TIMEOUT_MS
+  timeoutMs = SUPERMEMORY_FETCH_TIMEOUT_MS,
 ) {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
@@ -79,7 +79,7 @@ async function searchSupermemoryMemories(userId, query, options = {}) {
           limit: limit,
           threshold: threshold,
           rerank: true,
-          rewriteQuery: true,
+          rewriteQuery: false,
           include: {
             documents: true,
             summaries: false,
@@ -88,7 +88,7 @@ async function searchSupermemoryMemories(userId, query, options = {}) {
           containerTag: `user_${userId}`,
         }),
       },
-      SUPERMEMORY_FETCH_TIMEOUT_MS
+      SUPERMEMORY_FETCH_TIMEOUT_MS,
     );
 
     if (!response.ok) {
@@ -108,7 +108,7 @@ async function searchSupermemoryMemories(userId, query, options = {}) {
       throw new Error(
         `❌ API error: ${
           errorData.message || errorData.error?.message || response.statusText
-        } (${response.status})`
+        } (${response.status})`,
       );
     }
 
@@ -117,7 +117,7 @@ async function searchSupermemoryMemories(userId, query, options = {}) {
 
     if (!Array.isArray(memories)) {
       throw new Error(
-        `⚠️ Unexpected response format, results is not an array: ${typeof memories}`
+        `⚠️ Unexpected response format, results is not an array: ${typeof memories}`,
       );
     }
 
@@ -145,7 +145,7 @@ async function fetchProfileMemories(userId) {
     console.log(`\n🔍 Fetching all profile memories for user: ${userId}`);
     console.log(`⚙️  Query: "*" (all memories)`);
     console.log(
-      `⚙️  Options: limit=100, threshold=0.0, searchMode='memories'\n`
+      `⚙️  Options: limit=100, threshold=0.0, searchMode='memories'\n`,
     );
 
     const response = await fetchWithTimeout(
@@ -166,7 +166,7 @@ async function fetchProfileMemories(userId) {
           searchMode: "memories",
         }),
       },
-      SUPERMEMORY_FETCH_TIMEOUT_MS
+      SUPERMEMORY_FETCH_TIMEOUT_MS,
     );
 
     if (!response.ok) {
@@ -186,7 +186,7 @@ async function fetchProfileMemories(userId) {
       throw new Error(
         `❌ API error: ${
           errorData.message || errorData.error?.message || response.statusText
-        } (${response.status})`
+        } (${response.status})`,
       );
     }
 
@@ -195,7 +195,7 @@ async function fetchProfileMemories(userId) {
 
     if (!Array.isArray(memories)) {
       throw new Error(
-        `⚠️ Unexpected response format, results is not an array: ${typeof memories}`
+        `⚠️ Unexpected response format, results is not an array: ${typeof memories}`,
       );
     }
 
@@ -322,7 +322,7 @@ function displayResults(results, query) {
     console.log(
       `📌 Result #${index + 1} [${endpoint}] (Similarity: ${(
         item.similarity || 0
-      ).toFixed(3)})`
+      ).toFixed(3)})`,
     );
     console.log(`${"-".repeat(80)}`);
 
@@ -375,12 +375,12 @@ async function main() {
     console.error('Usage: node test_memory_search.js "your query" [mode]');
     console.error("\nModes:");
     console.error(
-      "  --base    - Fetch all profile memories (like detailed-memories screen)"
+      "  --base    - Fetch all profile memories (like detailed-memories screen)",
     );
     console.error("\nExamples:");
     console.error("  # Default search:");
     console.error(
-      '  node test_memory_search.js "what do you know about my goals"'
+      '  node test_memory_search.js "what do you know about my goals"',
     );
     console.error("  # Fetch all profile memories:");
     console.error("  node test_memory_search.js --base");
