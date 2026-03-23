@@ -78,7 +78,7 @@ async function searchSupermemoryMemories(userId, query, options = {}) {
           q: query.trim(),
           limit: limit,
           threshold: threshold,
-          rerank: true,
+          rerank: false,
           rewriteQuery: false,
           include: {
             documents: true,
