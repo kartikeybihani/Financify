@@ -22,7 +22,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     ...config.ios,
     supportsTablet: true,
     usesAppleSignIn: true,
-    bundleIdentifier: "com.deltatechnologies.financify",
+    bundleIdentifier: "com.kartikey08.financify",
     infoPlist: {
       "ITSAppUsesNonExemptEncryption": false,
       "NSAppTransportSecurity": {
@@ -33,7 +33,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   android: {
     ...config.android,
-    package: "com.deltatechnologies.financify",
+    package: "com.kartikey08.financify",
     adaptiveIcon: {
       foregroundImage: "./assets/images/adaptive-icon.png",
       backgroundColor: "#ffffff"
