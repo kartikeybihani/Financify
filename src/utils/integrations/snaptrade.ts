@@ -7,6 +7,80 @@ import { API_BASE_URL } from '@/src/utils/core/apiUrl';
 
 const BASE_URL = API_BASE_URL;
 
+type ParsedApiResponse = {
+  data: any;
+  rawText: string;
+  contentType: string;
+};
+
+const parseApiResponse = async (
+  res: Response,
+  context: string,
+): Promise<ParsedApiResponse> => {
+  const contentType = (res.headers.get("content-type") || "").toLowerCase();
+  const rawText = await res.text();
+
+  if (!rawText) {
+    return { data: {}, rawText: "", contentType };
+  }
+
+  if (contentType.includes("application/json")) {
+    try {
+      return { data: JSON.parse(rawText), rawText, contentType };
+    } catch (parseError: any) {
+      logger.error(`❌ ${context}: malformed JSON response`, {
+        status: res.status,
+        contentType,
+        preview: rawText.slice(0, 200),
+        parseError: parseError?.message,
+      });
+      throw new Error(
+        `${context}: server returned malformed JSON (HTTP ${res.status})`,
+      );
+    }
+  }
+
+  // Some proxies omit content-type even when body is JSON.
+  try {
+    return { data: JSON.parse(rawText), rawText, contentType };
+  } catch {
+    return { data: null, rawText, contentType };
+  }
+};
+
+const buildApiError = (
+  res: Response,
+  data: any,
+  rawText: string,
+  fallbackMessage: string,
+): Error => {
+  const jsonMessage =
+    data && typeof data === "object"
+      ? data.message || data.error || data.detail
+      : null;
+  const snippet = rawText?.trim()?.slice(0, 200) || "";
+  const isHtml = snippet.startsWith("<");
+  const message =
+    jsonMessage ||
+    (isHtml
+      ? `Server returned HTML instead of JSON (HTTP ${res.status}). Please try again.`
+      : snippet || fallbackMessage);
+
+  const apiError: any = new Error(message);
+  apiError.statusCode = res.status;
+  apiError.rawResponse = snippet;
+
+  if (data && typeof data === "object") {
+    if (data.code) apiError.code = data.code;
+    if (data.requiresReconnect !== undefined) {
+      apiError.requiresReconnect = data.requiresReconnect;
+    }
+    if (data.connectionId) apiError.connectionId = data.connectionId;
+  }
+
+  return apiError;
+};
+
 // Storage keys for SnapTrade credentials
 const SNAPTRADE_CREDENTIALS_KEY = 'snaptrade_credentials';
 const SNAPTRADE_CREDENTIALS_VALIDITY_KEY = 'snaptrade_credentials_validity';
@@ -51,16 +125,6 @@ const clearSnaptradeCredentials = async () => {
   }
 };
 
-const hasSnaptradeCredentials = async (): Promise<boolean> => {
-  try {
-    const credentials = await getSnaptradeCredentials();
-    return credentials !== null;
-  } catch (error) {
-    logger.error('Error checking SnapTrade credentials:', error);
-    return false;
-  }
-};
-
 const areSnaptradeCredentialsValid = async (): Promise<boolean> => {
   try {
     const validityTimestamp = AppStorage.getItemSync(SNAPTRADE_CREDENTIALS_VALIDITY_KEY);
@@ -83,7 +147,7 @@ const areSnaptradeCredentialsValid = async (): Promise<boolean> => {
 };
 
 // === Call SnapTrade API ===
-export const callSnapTradeAPI = async (mode: string, params: any = {}) => {
+const callSnapTradeAPI = async (mode: string, params: any = {}) => {
   try {
     logger.info(`🔄 Calling SnapTrade API with mode: ${mode}`, params);
     
@@ -96,8 +160,18 @@ export const callSnapTradeAPI = async (mode: string, params: any = {}) => {
       }),
     });
     
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || `Failed to call SnapTrade API with mode: ${mode}`);
+    const { data, rawText } = await parseApiResponse(
+      res,
+      `SnapTrade API (${mode})`,
+    );
+    if (!res.ok) {
+      throw buildApiError(
+        res,
+        data,
+        rawText,
+        `Failed to call SnapTrade API with mode: ${mode}`,
+      );
+    }
     
     logger.info(`✅ SnapTrade API call successful for mode: ${mode}`, data);
     return data;
@@ -108,7 +182,7 @@ export const callSnapTradeAPI = async (mode: string, params: any = {}) => {
 };
 
 // === Handle SnapTrade Register ===
-export const handleSnapTradeRegister = async (userId: string) => {
+const handleSnapTradeRegister = async (userId: string) => {
   try {
     logger.info("🔄 Registering SnapTrade user:", userId);
     
@@ -215,15 +289,25 @@ export const fetchSnaptradeAccounts = async (userId: string, userSecret: string)
       userSecret: userSecret 
     }),
   });
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || "Failed to fetch SnapTrade accounts");
+  const { data, rawText } = await parseApiResponse(
+    res,
+    "Fetch SnapTrade accounts",
+  );
+  if (!res.ok) {
+    throw buildApiError(
+      res,
+      data,
+      rawText,
+      "Failed to fetch SnapTrade accounts",
+    );
+  }
   
   logger.info("✅ SnapTrade accounts fetched successfully: ", data);
   return data.accounts;
 };
 
 // === Get Stored SnapTrade Credentials ===
-export const getStoredSnaptradeCredentials = async () => {
+const getStoredSnaptradeCredentials = async () => {
   try {
     const credentials = await getSnaptradeCredentials();
     if (!credentials) {
@@ -309,7 +393,7 @@ export const getSnaptradeCredentialsWithFallback = async () => {
 };
 
 // === Refresh Expired Credentials ===
-export const refreshExpiredCredentials = async () => {
+const refreshExpiredCredentials = async () => {
   try {
     logger.info("🔄 Refreshing expired credentials...");
     
@@ -361,87 +445,6 @@ export const getSnaptradeUserSecretFromDB = async (userId: string, snaptradeUser
   }
 };
 
-// === Fetch SnapTrade Accounts Using Stored Credentials ===
-export const fetchSnaptradeAccountsFromStorage = async () => {
-  try {
-    const credentials = await getStoredSnaptradeCredentials();
-    if (!credentials) {
-      throw new Error("No valid SnapTrade credentials found in storage");
-    }
-    
-    // Get the actual authenticated user ID
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
-    
-    // Retrieve userSecret from database
-    const userSecret = await getSnaptradeUserSecretFromDB(user.id, credentials.userId, credentials.accountId);
-    
-    logger.info("🔄 Fetching SnapTrade accounts using stored credentials...");
-    const accounts = await fetchSnaptradeAccounts(credentials.userId, userSecret);
-    logger.info("✅ SnapTrade accounts fetched using stored credentials:", accounts.length);
-    return accounts;
-  } catch (error) {
-    logger.error("❌ Failed to fetch SnapTrade accounts from storage:", error);
-    throw error;
-  }
-};
-
-// === Check if SnapTrade Connection Exists ===
-export const hasSnaptradeConnection = async (): Promise<boolean> => {
-  try {
-    const hasCredentials = await hasSnaptradeCredentials();
-    if (!hasCredentials) return false;
-    
-    const isValid = await areSnaptradeCredentialsValid();
-    return isValid;
-  } catch (error) {
-    logger.error("❌ Failed to check SnapTrade connection:", error);
-    return false;
-  }
-};
-
-// === Check SnapTrade Connection Status ===
-export const getSnaptradeConnectionStatus = async (): Promise<{
-  hasConnection: boolean;
-  isActive: boolean;
-  status: string | null;
-  needsReconnection: boolean;
-}> => {
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return { hasConnection: false, isActive: false, status: null, needsReconnection: false };
-    }
-
-    const { data: connections, error } = await supabase
-      .from("snaptrade_connections")
-      .select("is_active, connection_status")
-      .eq("user_id", user.id)
-      .eq("is_active", true)
-      .order("last_synced_at", { ascending: false })
-      .limit(1);
-
-    if (error || !connections || connections.length === 0) {
-      return { hasConnection: false, isActive: false, status: null, needsReconnection: false };
-    }
-
-    const connection = connections[0];
-    const needsReconnection = !connection.is_active || 
-                             connection.connection_status === "disabled" || 
-                             connection.connection_status === "error";
-
-    return {
-      hasConnection: true,
-      isActive: connection.is_active,
-      status: connection.connection_status,
-      needsReconnection
-    };
-  } catch (error) {
-    logger.error("❌ Failed to check SnapTrade connection status:", error);
-    return { hasConnection: false, isActive: false, status: null, needsReconnection: false };
-  }
-};
-
 // === Clear SnapTrade Connection ===
 export const clearSnaptradeConnection = async (): Promise<void> => {
   try {
@@ -449,169 +452,6 @@ export const clearSnaptradeConnection = async (): Promise<void> => {
     logger.info("✅ SnapTrade connection cleared");
   } catch (error) {
     logger.error("❌ Failed to clear SnapTrade connection:", error);
-    throw error;
-  }
-};
-
-// === Beautify Holdings Response ===
-export const beautifyHoldingsResponse = (holdings: any) => {
-  logger.info("📊 === SNAPTRADE HOLDINGS RESPONSE ===");
-  logger.info("📈 Total Holdings:", holdings.length);
-  logger.info("");
-
-  holdings.forEach((holding: any, index: number) => {
-    const symbol = holding.symbol?.symbol || holding.symbol;
-    const marketValue = holding.units && holding.price ? holding.units * holding.price : 0;
-    
-    logger.info(`🏦 Holding #${index + 1}:`);
-    logger.info(`   📋 Symbol: ${symbol?.symbol || "N/A"}`);
-    logger.info(`   📝 Description: ${symbol?.description || "N/A"}`);
-    logger.info(`   💰 Units: ${holding.units || "N/A"}`);
-    logger.info(`   💵 Price: $${holding.price || "N/A"}`);
-    logger.info(`   💰 Market Value: $${marketValue.toFixed(2)}`);
-    logger.info(`   📊 Average Cost: $${holding.average_purchase_price || "N/A"}`);
-    logger.info(`   📈 Open P&L: $${holding.open_pnl || "N/A"}`);
-    logger.info(`   💱 Currency: ${holding.currency?.code || "N/A"}`);
-    logger.info("");
-  });
-
-  logger.info("=".repeat(60));
-  logger.info(`📈 Number of Holdings: ${holdings.length}`);
-  logger.info("=".repeat(60));
-};
-
-// === Fetch SnapTrade Holdings via API ===
-export const fetchSnaptradeHoldings = async (userId: string, userSecret: string, accountId: string) => {
-  try {
-    logger.info("🔄 Fetching SnapTrade holdings via API...");
-    
-    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        mode: "snaptrade_holdings", 
-        userId: userId,
-        userSecret: userSecret,
-        accountId: accountId
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to fetch SnapTrade holdings");
-    
-    logger.info("✅ SnapTrade holdings fetched successfully via API");
-    
-    // Beautify the response on frontend
-    if (data.holdings && Array.isArray(data.holdings)) {
-      beautifyHoldingsResponse(data.holdings);
-    } else {
-      logger.info("📊 Holdings data structure:", JSON.stringify(data.holdings, null, 2));
-    }
-    
-    return data.holdings;
-  } catch (error) {
-    logger.error("❌ Failed to fetch SnapTrade holdings via API:", error);
-    throw error;
-  }
-};
-
-// === Fetch SnapTrade Holdings Using Stored Credentials ===
-export const fetchSnaptradeHoldingsFromStorage = async (accountId: string) => {
-  try {
-    const credentials = await getStoredSnaptradeCredentials();
-    if (!credentials) {
-      throw new Error("No valid SnapTrade credentials found in storage");
-    }
-    
-    // Get the actual authenticated user ID
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
-    
-    // Retrieve userSecret from database
-    const userSecret = await getSnaptradeUserSecretFromDB(user.id, credentials.userId, credentials.accountId);
-    
-    logger.info("🔄 Fetching SnapTrade holdings using stored credentials...");
-    const holdings = await fetchSnaptradeHoldings(credentials.userId, userSecret, accountId);
-    logger.info("✅ SnapTrade holdings fetched using stored credentials:", holdings.length);
-    return holdings;
-  } catch (error) {
-    logger.error("❌ Failed to fetch SnapTrade holdings from storage:", error);
-    throw error;
-  }
-};
-
-// === Fetch SnapTrade Options ===
-export const fetchSnaptradeOptions = async (userId: string, userSecret: string, accountId: string) => {
-  try {
-    logger.info("🔄 Fetching SnapTrade options via API...");
-    
-    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        mode: "snaptrade_options", 
-        userId: userId,
-        userSecret: userSecret,
-        accountId: accountId
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to fetch SnapTrade options");
-    
-    logger.info("✅ SnapTrade options fetched successfully via API");
-    return data.options;
-  } catch (error) {
-    logger.error("❌ Failed to fetch SnapTrade options via API:", error);
-    throw error;
-  }
-};
-
-// === Fetch SnapTrade Options Using Stored Credentials ===
-export const fetchSnaptradeOptionsFromStorage = async (accountId: string) => {
-  try {
-    const credentials = await getStoredSnaptradeCredentials();
-    if (!credentials) {
-      throw new Error("No valid SnapTrade credentials found in storage");
-    }
-    
-    // Get the actual authenticated user ID
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("User not authenticated");
-    
-    // Retrieve userSecret from database
-    const userSecret = await getSnaptradeUserSecretFromDB(user.id, credentials.userId, credentials.accountId);
-    
-    logger.info("🔄 Fetching SnapTrade options using stored credentials...");
-    const options = await fetchSnaptradeOptions(credentials.userId, userSecret, accountId);
-    logger.info("✅ SnapTrade options fetched using stored credentials:", options.length);
-    return options;
-  } catch (error) {
-    logger.error("❌ Failed to fetch SnapTrade options from storage:", error);
-    throw error;
-  }
-};
-
-// === Fetch SnapTrade Balances ===
-export const fetchSnaptradeBalances = async (userId: string, userSecret: string, accountId: string) => {
-  try {
-    logger.info("🔄 Fetching SnapTrade balances via API...");
-    
-    const res = await authenticatedFetch(`${BASE_URL}/api/plaid`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ 
-        mode: "snaptrade_balances", 
-        userId: userId,
-        userSecret: userSecret,
-        accountId: accountId
-      }),
-    });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to fetch SnapTrade balances");
-    
-    logger.info("✅ SnapTrade balances fetched successfully via API");
-    return data.balances;
-  } catch (error) {
-    logger.error("❌ Failed to fetch SnapTrade balances via API:", error);
     throw error;
   }
 };
@@ -691,7 +531,7 @@ export const storeSnaptradeCredentials = async (
 };
 
 // === Check SnapTrade Connection Status ===
-export const checkSnaptradeConnectionStatus = async (userId: string, accountId: string) => {
+export const checkSnaptradeConnectionStatus = async (_userId: string, accountId: string) => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("User not authenticated");
@@ -706,8 +546,18 @@ export const checkSnaptradeConnectionStatus = async (userId: string, accountId: 
       }),
     });
     
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to check connection status");
+    const { data, rawText } = await parseApiResponse(
+      res,
+      "Check SnapTrade connection status",
+    );
+    if (!res.ok) {
+      throw buildApiError(
+        res,
+        data,
+        rawText,
+        "Failed to check connection status",
+      );
+    }
     return data;
   } catch (error) {
     logger.error("❌ Failed to check connection status:", error);
@@ -716,7 +566,7 @@ export const checkSnaptradeConnectionStatus = async (userId: string, accountId: 
 };
 
 // === Get Connection Details from SnapTrade API ===
-export const getSnaptradeConnectionDetails = async (userId: string, accountId: string) => {
+export const getSnaptradeConnectionDetails = async (_userId: string, accountId: string) => {
   try {
     logger.debug("🔍 Getting connection details from SnapTrade API...");
     
@@ -733,7 +583,10 @@ export const getSnaptradeConnectionDetails = async (userId: string, accountId: s
       }),
     });
     
-    const data = await res.json();
+    const { data, rawText } = await parseApiResponse(
+      res,
+      "Get SnapTrade connection details",
+    );
     
     // Handle 402 error (disabled connection)
     if (res.status === 402) {
@@ -741,12 +594,21 @@ export const getSnaptradeConnectionDetails = async (userId: string, accountId: s
       return {
         disabled: true,
         requiresReconnect: true,
-        connectionId: data.connectionId,
-        message: data.message,
+        connectionId: data?.connectionId,
+        message:
+          data?.message ||
+          "Your investment account connection has been disabled. Please reconnect your account to continue.",
       };
     }
     
-    if (!res.ok) throw new Error(data.error || "Failed to get connection details");
+    if (!res.ok) {
+      throw buildApiError(
+        res,
+        data,
+        rawText,
+        "Failed to get connection details",
+      );
+    }
     
     logger.info("✅ Connection details retrieved:", data);
     return data;
@@ -786,8 +648,18 @@ export const syncSnaptradeInvestments = async (userId: string, accountId: string
         accountId: accountId
       }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to sync SnapTrade investments");
+    const { data, rawText } = await parseApiResponse(
+      res,
+      "Sync SnapTrade investments",
+    );
+    if (!res.ok) {
+      throw buildApiError(
+        res,
+        data,
+        rawText,
+        "Failed to sync SnapTrade investments",
+      );
+    }
     
     logger.info("✅ SnapTrade investments synced successfully");
     return data;
@@ -811,8 +683,13 @@ export const recalculateInvestmentBalances = async (userId: string, accountId: s
         accountId: accountId
       }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to recalculate balances");
+    const { data, rawText } = await parseApiResponse(
+      res,
+      "Recalculate investment balances",
+    );
+    if (!res.ok) {
+      throw buildApiError(res, data, rawText, "Failed to recalculate balances");
+    }
     
     logger.info("✅ Investment balances recalculated successfully");
     return data;
@@ -836,8 +713,18 @@ export const removeSnaptradeBrokerage = async (userId: string, accountId: string
         accountId: accountId
       }),
     });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Failed to remove brokerage authorization");
+    const { data, rawText } = await parseApiResponse(
+      res,
+      "Remove SnapTrade brokerage authorization",
+    );
+    if (!res.ok) {
+      throw buildApiError(
+        res,
+        data,
+        rawText,
+        "Failed to remove brokerage authorization",
+      );
+    }
     
     logger.info("✅ SnapTrade brokerage authorization removed successfully");
     return data;
@@ -861,24 +748,34 @@ export const refreshSnaptradeInvestments = async (userId: string, accountId: str
         accountId: accountId
       }),
     });
-    const data = await res.json();
+    const { data, rawText } = await parseApiResponse(
+      res,
+      "Refresh SnapTrade investments",
+    );
     
     // Check for 402 error (disabled connection)
     if (res.status === 402) {
       logger.error("🔴 Connection is disabled (402 error):", data);
       
       // Create a special error object with requiresReconnect flag
-      const disabledError: any = new Error(data.message || "Connection is disabled. Please reconnect your account.");
-      disabledError.code = data.code || "CONNECTION_DISABLED";
-      disabledError.requiresReconnect = data.requiresReconnect || true;
-      disabledError.connectionId = data.connectionId;
+      const disabledError: any = new Error(
+        data?.message || "Connection is disabled. Please reconnect your account.",
+      );
+      disabledError.code = data?.code || "CONNECTION_DISABLED";
+      disabledError.requiresReconnect = data?.requiresReconnect || true;
+      disabledError.connectionId = data?.connectionId;
       disabledError.statusCode = 402;
       
       throw disabledError;
     }
     
     if (!res.ok) {
-      throw new Error(data.error || "Failed to refresh SnapTrade investments");
+      throw buildApiError(
+        res,
+        data,
+        rawText,
+        "Failed to refresh SnapTrade investments",
+      );
     }
     
     logger.info("✅ SnapTrade investments refresh triggered successfully");
@@ -956,62 +853,90 @@ export const getAllInvestmentConnectionsFromDB = async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return []; // Graceful: don't throw during logout race
 
-    // Get SnapTrade connections
-    const { data: snaptradeConnections, error: snaptradeError } = await supabase
-      .from("snaptrade_connections")
-      .select("*")
-      .eq("user_id", user.id)
-      .order("last_synced_at", { ascending: false });
+    // Fetch both providers in parallel.
+    const [
+      { data: snaptradeConnections, error: snaptradeError },
+      { data: plaidItems, error: plaidError },
+    ] = await Promise.all([
+      supabase
+        .from("snaptrade_connections")
+        .select("*")
+        .eq("user_id", user.id)
+        .order("last_synced_at", { ascending: false }),
+      supabase
+        .from("user_items")
+        .select("item_id, institution_name, last_synced_at")
+        .eq("user_id", user.id),
+    ]);
 
     if (snaptradeError) {
       logger.error("Error fetching SnapTrade connections:", snaptradeError);
     }
-
-    // Get Plaid investment accounts (from user_items where there are investment accounts)
-    const { data: plaidItems, error: plaidError } = await supabase
-      .from("user_items")
-      .select("item_id, institution_name, last_synced_at")
-      .eq("user_id", user.id);
-
     if (plaidError) {
       logger.error("Error fetching Plaid items:", plaidError);
     }
 
-    // Check which Plaid items have investment accounts
+    // Build Plaid investment connections in bulk (avoid per-item N+1 queries).
     const plaidConnections: any[] = [];
-    if (plaidItems && plaidItems.length > 0) {
-      for (const item of plaidItems) {
-        // Check if this item has investment accounts
-        const { data: investmentAccounts } = await supabase
+    const validPlaidItemIds =
+      plaidItems
+        ?.map((item) => item.item_id)
+        .filter((itemId): itemId is string => Boolean(itemId)) || [];
+
+    if (validPlaidItemIds.length > 0) {
+      const [
+        { data: investmentAccounts, error: investmentAccountsError },
+        { data: holdings, error: holdingsError },
+      ] = await Promise.all([
+        supabase
           .from("accounts")
-          .select("account_id, name, type")
-          .eq("item_id", item.item_id)
-          .eq("type", "investment")
-          .limit(1);
+          .select("item_id")
+          .in("item_id", validPlaidItemIds)
+          .eq("type", "investment"),
+        supabase
+          .from("investment_holdings")
+          .select("item_id")
+          .eq("user_id", user.id)
+          .in("item_id", validPlaidItemIds)
+          .eq("provider", "plaid")
+          .eq("is_active", true),
+      ]);
 
-        if (investmentAccounts && investmentAccounts.length > 0) {
-          // Check if there are actual holdings for this item
-          const { data: holdings } = await supabase
-            .from("investment_holdings")
-            .select("id")
-            .eq("user_id", user.id)
-            .eq("item_id", item.item_id)
-            .eq("provider", "plaid")
-            .eq("is_active", true)
-            .limit(1);
+      if (investmentAccountsError) {
+        logger.error(
+          "Error fetching Plaid investment accounts in bulk:",
+          investmentAccountsError,
+        );
+      }
+      if (holdingsError) {
+        logger.error("Error fetching Plaid holdings in bulk:", holdingsError);
+      }
 
-          if (holdings && holdings.length > 0) {
-            plaidConnections.push({
-              account_id: `plaid-${item.item_id}`, // Synthetic account_id for Plaid
-              brokerage_name: item.institution_name || "Plaid Institution",
-              account_name: `${item.institution_name || "Investment"} Account`,
-              last_synced_at: item.last_synced_at,
-              connection_status: "active",
-              is_active: true,
-              provider: "plaid",
-              item_id: item.item_id,
-            });
-          }
+      const itemIdsWithInvestmentAccounts = new Set<string>(
+        (investmentAccounts || [])
+          .map((account: any) => account.item_id)
+          .filter(Boolean),
+      );
+      const itemIdsWithHoldings = new Set<string>(
+        (holdings || []).map((holding: any) => holding.item_id).filter(Boolean),
+      );
+
+      for (const item of plaidItems || []) {
+        if (
+          item.item_id &&
+          itemIdsWithInvestmentAccounts.has(item.item_id) &&
+          itemIdsWithHoldings.has(item.item_id)
+        ) {
+          plaidConnections.push({
+            account_id: `plaid-${item.item_id}`, // Synthetic account_id for Plaid
+            brokerage_name: item.institution_name || "Plaid Institution",
+            account_name: `${item.institution_name || "Investment"} Account`,
+            last_synced_at: item.last_synced_at,
+            connection_status: "active",
+            is_active: true,
+            provider: "plaid",
+            item_id: item.item_id,
+          });
         }
       }
     }
@@ -1088,10 +1013,18 @@ export const populateInvestmentAccountsInDB = async () => {
       }),
     });
 
-    const data = await res.json();
+    const { data, rawText } = await parseApiResponse(
+      res,
+      "Populate investment accounts",
+    );
     
     if (!res.ok) {
-      throw new Error(data.error || "Failed to populate investment accounts");
+      throw buildApiError(
+        res,
+        data,
+        rawText,
+        "Failed to populate investment accounts",
+      );
     }
 
     logger.debug(`✅ Investment accounts population completed: ${data.populated} accounts processed`);
@@ -1101,58 +1034,3 @@ export const populateInvestmentAccountsInDB = async () => {
     throw error;
   }
 };
-
-// Export all functions
-const snaptradeUtils = {
-  // Core API functions
-  callSnapTradeAPI,
-  handleSnapTradeRegister,
-  handleSnapTradeLogin,
-  
-  // Registration and connection management
-  registerSnaptradeUser,
-  storeSnaptradeCredentials,
-  hasSnaptradeConnection,
-  getSnaptradeConnectionStatus,
-  clearSnaptradeConnection,
-  reconnectSnaptradeConnection,
-  getStoredSnaptradeCredentials,
-  getSnaptradeCredentialsWithFallback,
-  refreshExpiredCredentials,
-  getSnaptradeUserSecretFromDB,
-  checkSnaptradeConnectionStatus,
-  getSnaptradeConnectionDetails,
-  
-  // Account operations
-  fetchSnaptradeAccounts,
-  fetchSnaptradeAccountsFromStorage,
-  
-  // Holdings operations
-  fetchSnaptradeHoldings,
-  fetchSnaptradeHoldingsFromStorage,
-  beautifyHoldingsResponse,
-  
-  // Options operations
-  fetchSnaptradeOptions,
-  fetchSnaptradeOptionsFromStorage,
-  
-  // Balances operations
-  fetchSnaptradeBalances,
-  
-  // Sync operations
-  syncSnaptradeInvestments,
-  refreshSnaptradeInvestments,
-  
-  // Account management
-  removeSnaptradeBrokerage,
-  
-  // Database operations
-  getSnaptradeHoldingsFromDB,
-  getSnaptradeOptionsFromDB,
-  getSnaptradeBalancesFromDB,
-  getSnaptradeConnectionsFromDB,
-  getAllInvestmentConnectionsFromDB,
-  populateInvestmentAccountsInDB,
-};
-
-export default snaptradeUtils;

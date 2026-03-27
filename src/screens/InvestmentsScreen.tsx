@@ -34,7 +34,6 @@ import {
   refreshSnaptradeInvestments,
   populateInvestmentAccountsInDB,
   checkSnaptradeConnectionStatus,
-  getSnaptradeConnectionDetails,
   recalculateInvestmentBalances,
 } from "@/src/utils/integrations/snaptrade";
 import {

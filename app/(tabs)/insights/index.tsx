@@ -1657,44 +1657,63 @@ export default function InsightsScreen() {
 
       // Exclude INTERNAL_TRANSFER everywhere (spending + detail views)
       const nonTransferTransactions = transactionsData.filter(
-        (tx) => tx.new_category !== "INTERNAL_TRANSFER",
+        (tx) =>
+          tx.new_category !== "INTERNAL_TRANSFER" &&
+          tx.transaction_type !== "transfer",
       );
 
-      // Spending breakdown is still expenses-only
-      const expenses = nonTransferTransactions.filter((tx) => tx.amount > 0);
+      const buildNetCategoryData = (transactionsForWindow: Transaction[]) => {
+        const signedByCategory = new Map<
+          string,
+          {
+            amount: number;
+            hasRecurringTransactions: boolean;
+            color: string;
+          }
+        >();
+        const spendingTransactions: Transaction[] = [];
 
-      const buildMonthData = (month: number, year: number) => {
-        const monthExpenses = filterTransactionsByMonth(expenses, month, year);
-        const monthAllTransactions = filterTransactionsByMonth(
-          nonTransferTransactions,
-          month,
-          year,
-        );
+        for (const tx of transactionsForWindow) {
+          const amount = Number(tx.amount);
+          if (!Number.isFinite(amount) || amount === 0) continue;
 
-        const monthTotalSpent = monthExpenses.reduce(
-          (acc, tx) => acc + tx.amount,
-          0,
-        );
+          const category = getDisplayCategory(tx);
+          if (!category || category === "INTERNAL_TRANSFER") continue;
+          if (amount < 0 && category === "Income") continue;
+
+          spendingTransactions.push(tx);
+
+          const existing = signedByCategory.get(category) || {
+            amount: 0,
+            hasRecurringTransactions: false,
+            color: getCategoryColor(category),
+          };
+
+          existing.amount += amount;
+
+          if (amount > 0 && shouldShowRecurringChip(tx)) {
+            existing.hasRecurringTransactions = true;
+          }
+
+          signedByCategory.set(category, existing);
+        }
 
         const monthCategories: CategoryBreakdown = {};
-        for (const tx of monthExpenses) {
-          const category = getDisplayCategory(tx);
+        let monthTotalSpent = 0;
 
-          if (!monthCategories[category]) {
-            monthCategories[category] = {
-              amount: 0,
-              percentage: 0,
-              color: getCategoryColor(category),
-              hasRecurringTransactions: false,
-            };
-          }
+        signedByCategory.forEach((data, category) => {
+          const netAmount = Math.max(0, data.amount);
+          if (netAmount <= 0) return;
 
-          monthCategories[category].amount += tx.amount;
+          monthCategories[category] = {
+            amount: netAmount,
+            percentage: 0,
+            color: data.color,
+            hasRecurringTransactions: data.hasRecurringTransactions,
+          };
 
-          if (shouldShowRecurringChip(tx)) {
-            monthCategories[category].hasRecurringTransactions = true;
-          }
-        }
+          monthTotalSpent += netAmount;
+        });
 
         Object.keys(monthCategories).forEach((category) => {
           monthCategories[category].percentage =
@@ -1703,38 +1722,59 @@ export default function InsightsScreen() {
               : 0;
         });
 
+        return {
+          monthCategories,
+          monthTotalSpent,
+          spendingTransactions,
+        };
+      };
+
+      const buildMonthData = (month: number, year: number) => {
+        const monthAllTransactions = filterTransactionsByMonth(
+          nonTransferTransactions,
+          month,
+          year,
+        );
+        const {
+          monthCategories,
+          monthTotalSpent,
+          spendingTransactions: monthSpendingTransactions,
+        } = buildNetCategoryData(monthAllTransactions);
+
         const sortedCategories = Object.entries(monthCategories).sort(
           (a, b) => b[1].amount - a[1].amount,
         );
 
-        const filteredCategories = sortedCategories.filter(
-          ([category]) => category !== "INTERNAL_TRANSFER",
-        );
-
         return {
-          monthExpenses,
           monthAllTransactions,
+          monthSpendingTransactions,
           monthTotalSpent,
           sortedCategories,
-          filteredCategories,
+          filteredCategories: sortedCategories,
         };
       };
+
+      const { monthTotalSpent: overallTotalSpent, spendingTransactions } =
+        buildNetCategoryData(nonTransferTransactions);
 
       let effectiveMonth = monthToUse;
       let effectiveYear = yearToUse;
       let spendingMonthData = buildMonthData(effectiveMonth, effectiveYear);
 
       // If no data for selected month, try to find the most recent month with data
-      if (spendingMonthData.monthExpenses.length === 0 && expenses.length > 0) {
-        // Sort expenses by date (most recent first) - compare date strings directly
-        const sortedExpenses = [...expenses].sort((a, b) => {
+      if (
+        spendingMonthData.monthAllTransactions.length === 0 &&
+        spendingTransactions.length > 0
+      ) {
+        // Sort eligible transactions by date (most recent first) - compare date strings directly
+        const sortedTransactions = [...spendingTransactions].sort((a, b) => {
           // YYYY-MM-DD format sorts correctly as strings
           return b.date.localeCompare(a.date);
         });
 
         // Find the most recent month with data using transaction date parsing
         const { year: mostRecentYear, month: mostRecentMonth } =
-          parseTransactionDate(sortedExpenses[0]);
+          parseTransactionDate(sortedTransactions[0]);
 
         effectiveMonth = mostRecentMonth;
         effectiveYear = mostRecentYear;
@@ -1758,9 +1798,7 @@ export default function InsightsScreen() {
 
       const uniqueCategories = [
         "All Categories",
-        ...new Set(
-          spendingMonthData.monthExpenses.map((tx) => getDisplayCategory(tx)),
-        ),
+        ...spendingMonthData.filteredCategories.map(([category]) => category),
       ].map((cat) =>
         cat === "All Categories" ? cat : formatCategoryFromHook(cat),
       );
@@ -1771,7 +1809,7 @@ export default function InsightsScreen() {
       const displayTotal =
         spendingMonthData.monthTotalSpent > 0
           ? spendingMonthData.monthTotalSpent
-          : expenses.reduce((acc, tx) => acc + tx.amount, 0);
+          : overallTotalSpent;
       const displayPeriod =
         spendingMonthData.monthTotalSpent > 0 ? "this month" : "recently";
 
@@ -1802,7 +1840,7 @@ export default function InsightsScreen() {
       if (userId) {
         const spendingCacheData = {
           categoryBreakdown: spendingMonthData.filteredCategories,
-          currentMonthTransactions: spendingMonthData.monthExpenses,
+          currentMonthTransactions: spendingMonthData.monthSpendingTransactions,
           totalSpent: spendingMonthData.monthTotalSpent,
           displayPeriod,
         };

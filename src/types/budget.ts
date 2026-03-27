@@ -1827,7 +1827,6 @@ export async function getActualsForBudgetPeriod(
       .eq("user_id", userId)
       .gte("date", extendedStartStr) // Wide range on date field
       .lte("date", extendedEndStr)
-      .gt("amount", 0) // Only expenses
       .neq("transaction_type", "transfer"); // Exclude transfers at source
     
     // Also query by authorized_date to catch transactions where date is outside range but authorized_date is in range
@@ -1861,7 +1860,6 @@ export async function getActualsForBudgetPeriod(
       .not("authorized_date", "is", null) // Only where authorized_date exists
       .gte("authorized_date", extendedStartStr)
       .lte("authorized_date", extendedEndStr)
-      .gt("amount", 0)
       .neq("transaction_type", "transfer");
     
     // Combine and deduplicate transactions (by plaid_transaction_id if available, or by all fields)
@@ -1895,15 +1893,16 @@ export async function getActualsForBudgetPeriod(
       });
     
 
-    let overall = 0;
-    const byCategory = new Map<string, number>();
+    const byCategoryNet = new Map<string, number>();
 
     // Now process current period transactions (already filtered by effective date)
     // CRITICAL: Use EXACT same logic as getDisplayCategory() to ensure consistency
     // Priority: 1. category_id -> categories.name, 2. new_category, 3. recurring_stream, 4. top_category
     filteredTransactions.forEach((tx: any) => {
-      const amount = Math.abs(parseFloat(tx.amount.toString()));
-      overall += amount;
+      const amount = Number(tx.amount);
+      if (!Number.isFinite(amount) || amount === 0) {
+        return;
+      }
 
       // Get category using EXACT same logic as getDisplayCategory() in spending breakdown
       // This ensures categories match perfectly between spending breakdown and budget view
@@ -1952,9 +1951,27 @@ export async function getActualsForBudgetPeriod(
       }
       
       const resolved = resolveCategoryLabel(displayCategory, categoryIndex);
-      const current = byCategory.get(resolved.label) || 0;
-      byCategory.set(resolved.label, current + amount);
+      // Negative amounts are inflows (refunds/credits). They should reduce spending
+      // only when they belong to spending categories (not Income).
+      if (amount < 0 && resolved.label === "Income") {
+        return;
+      }
+
+      const current = byCategoryNet.get(resolved.label) || 0;
+      byCategoryNet.set(resolved.label, current + amount);
       
+    });
+
+    // Floor each category to zero so refunds never produce negative spend.
+    const byCategory = new Map<string, number>();
+    let overall = 0;
+    byCategoryNet.forEach((amount, label) => {
+      const floored = Math.max(0, amount);
+      if (floored <= 0) {
+        return;
+      }
+      byCategory.set(label, floored);
+      overall += floored;
     });
 
     return { overall, byCategory };

@@ -1657,11 +1657,13 @@ export const useChat = (userName?: string | null) => {
             return;
           }
           
-          const clearRes = await authenticatedFetch(`${BASE_URL}/api/store_accounts`, {
+          const clearRes = await authenticatedFetch(`${BASE_URL}/api/finny`, {
             method: "POST",
             body: JSON.stringify({
-              mode: "clear_cache",
-              user_id: userId,
+              action: "refresh_user_cache",
+              message: "refresh cache",
+              context: {},
+              stream: false,
             }),
           });
 

@@ -12,11 +12,9 @@ import { getDisplayCategory } from "@/src/utils/categories/transactionCategory";
 import { Transaction } from "@/src/types/plaid";
 import logger from "@/src/utils/core/logger";
 import AppStorage from "@/src/utils/storage/storage";
-import { CACHE_CONFIG } from "@/src/shared/constants/cacheConfig";
 import {
   updateBudgetProgressInCache,
   loadBudgetProgressFromCache,
-  BudgetProgressData,
 } from "@/src/shared/utils/homeScreenCache";
 import { getUserIdSync } from "@/src/utils/insights/cacheUtils";
 import { useDemoMode } from "@/src/contexts/DemoContext";
@@ -25,10 +23,6 @@ import { useDemoMode } from "@/src/contexts/DemoContext";
 const INSIGHTS_CACHE_KEY = "home_insights";
 const getInsightsCacheKey = (userId: string) => `${INSIGHTS_CACHE_KEY}_${userId}`;
 const getInsightsTimestampKey = (userId: string) => `${INSIGHTS_CACHE_KEY}_timestamp_${userId}`;
-
-// CHANGED: Use VERY_LONG (7 days) with event-based invalidation
-// Budget changes when: transactions sync (every 2h) or budget is edited
-const CACHE_DURATION = CACHE_CONFIG.DURATIONS.VERY_LONG;
 
 // Helper to get category color (fallback mapping)
 const getCategoryColor = (categoryName: string): string => {
@@ -118,7 +112,7 @@ const loadCachedInsight = (userId: string | null): HomeInsight | null => {
     // If no userId yet, we can't load user-specific cache
     // The parent component should pass initialBudgetProgress prop instead
     return null;
-  } catch (error) {
+  } catch {
     return null;
   }
 };
@@ -161,15 +155,6 @@ export function useHomeInsights(): HomeInsightsData {
     return tx.authorized_date || tx.date;
   };
 
-  // Helper to check if transaction is an expense
-  const isExpense = (tx: Transaction & { transaction_type?: string }): boolean => {
-    return (
-      tx.amount > 0 &&
-      tx.transaction_type !== "transfer" &&
-      tx.new_category !== "INTERNAL_TRANSFER"
-    );
-  };
-
   // Get current month category breakdown
   const getCurrentMonthCategoryBreakdown = useCallback(
     async (userId: string) => {
@@ -188,7 +173,6 @@ export function useHomeInsights(): HomeInsightsData {
           .eq("user_id", userId)
           .gte("date", monthStartStr)
           .lte("date", todayStr)
-          .gt("amount", 0)
           .neq("transaction_type", "transfer");
 
         if (error) {
@@ -198,38 +182,42 @@ export function useHomeInsights(): HomeInsightsData {
 
         const txList = (transactions || []) as (Transaction & { transaction_type?: string })[];
 
-        // Filter by effective date and calculate breakdown
-        const categoryMap = new Map<string, { amount: number; count: number }>();
-        let totalSpent = 0;
+        // Filter by effective date and calculate signed net totals by category.
+        const categoryMap = new Map<string, number>();
 
         txList.forEach((tx) => {
-          if (!isExpense(tx)) return;
-
           const effectiveDate = getEffectiveDate(tx);
           if (effectiveDate < monthStartStr || effectiveDate > todayStr) return;
+          if (tx.transaction_type === "transfer") return;
+          if (tx.new_category === "INTERNAL_TRANSFER") return;
+
+          const amount = Number(tx.amount);
+          if (!Number.isFinite(amount) || amount === 0) return;
 
           const category = getDisplayCategory(tx);
-          const amount = tx.amount;
+          if (!category || category === "INTERNAL_TRANSFER") return;
+          if (amount < 0 && category === "Income") return;
 
-          totalSpent += amount;
-
-          if (!categoryMap.has(category)) {
-            categoryMap.set(category, { amount: 0, count: 0 });
-          }
-
-          const existing = categoryMap.get(category)!;
-          existing.amount += amount;
-          existing.count += 1;
+          const existing = categoryMap.get(category) || 0;
+          categoryMap.set(category, existing + amount);
         });
 
-        // Convert to array and calculate percentages
-        const categoryBreakdown = Array.from(categoryMap.entries())
+        // Floor each category to zero so refunds don't create negative spending.
+        const netCategories = Array.from(categoryMap.entries())
           .map(([category, data]) => ({
             category,
-            amount: data.amount,
-            percentage: totalSpent > 0 ? (data.amount / totalSpent) * 100 : 0,
+            amount: Math.max(0, data),
           }))
+          .filter((item) => item.amount > 0)
           .sort((a, b) => b.amount - a.amount);
+
+        const totalSpent = netCategories.reduce((sum, item) => sum + item.amount, 0);
+
+        const categoryBreakdown = netCategories.map((item) => ({
+          category: item.category,
+          amount: item.amount,
+          percentage: totalSpent > 0 ? (item.amount / totalSpent) * 100 : 0,
+        }));
 
         return { totalSpent, categoryBreakdown };
       } catch (error) {

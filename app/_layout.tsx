@@ -3,10 +3,11 @@
 // Polyfill for crypto.getRandomValues (required for uuid package in React Native)
 import "react-native-get-random-values";
 
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import "react-native-reanimated";
 import { Stack } from "expo-router";
 import * as Linking from "expo-linking";
+import { AccessibilityInfo } from "react-native";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 
 import * as SplashScreen from "expo-splash-screen";
@@ -24,9 +25,18 @@ import logger from "@/src/utils/core/logger";
 import { ActionSheetProvider } from "@expo/react-native-action-sheet";
 import { SafePostHogProvider } from "@/src/components/analytics/SafePostHogProvider";
 import PostHogScreenTracker from "@/src/components/analytics/PostHogScreenTracker";
+import LaunchEventTracker from "@/src/components/analytics/LaunchEventTracker";
 import { setupGlobalErrorHandling } from "@/src/utils/core/errorBoundary";
 import { setLastDeepLink } from "@/src/utils/linking/linkingStore";
 import { migrateAsyncStorageToMMKV } from "@/src/utils/storage/storage";
+import BrandFlashOverlay from "@/src/components/launch/BrandFlashOverlay";
+import { markLaunchEvent } from "@/src/utils/analytics/launchMetrics";
+
+type LaunchPhase = "booting" | "brandFlash" | "ready";
+
+const BRAND_FLASH_ROTATE_MS = 450;
+const BRAND_FLASH_FADE_MS = 120;
+const BRAND_FLASH_MAX_MS = 700;
 
 // Component to track when navigation is ready
 function NavigationReadyTracker({ onReady }: { onReady: () => void }) {
@@ -95,6 +105,52 @@ export default function RootLayout() {
   });
   const [postHogReady, setPostHogReady] = useState(false);
   const [navigationReady, setNavigationReady] = useState(false);
+  const [launchPhase, setLaunchPhase] = useState<LaunchPhase>("booting");
+  const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
+  const hasHiddenNativeSplashRef = useRef(false);
+  const hasCompletedBrandFlashRef = useRef(false);
+  const brandFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const completeBrandFlash = useCallback(
+    (reason: "animation_complete" | "timeout_fallback") => {
+      if (hasCompletedBrandFlashRef.current) return;
+
+      hasCompletedBrandFlashRef.current = true;
+      if (brandFlashTimeoutRef.current) {
+        clearTimeout(brandFlashTimeoutRef.current);
+        brandFlashTimeoutRef.current = null;
+      }
+
+      markLaunchEvent("brand_flash_end", { reason });
+      setLaunchPhase("ready");
+    },
+    [],
+  );
+
+  useEffect(() => {
+    markLaunchEvent("launch_open");
+
+    AccessibilityInfo.isReduceMotionEnabled()
+      .then((enabled) => setReduceMotionEnabled(enabled))
+      .catch(() => {
+        setReduceMotionEnabled(false);
+      });
+
+    const subscription = AccessibilityInfo.addEventListener(
+      "reduceMotionChanged",
+      setReduceMotionEnabled,
+    );
+
+    return () => {
+      subscription.remove();
+      if (brandFlashTimeoutRef.current) {
+        clearTimeout(brandFlashTimeoutRef.current);
+        brandFlashTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const subscription = Linking.addEventListener("url", ({ url }) => {
@@ -132,12 +188,35 @@ export default function RootLayout() {
 
   // Wait for navigation to be ready before hiding splash
   useEffect(() => {
-    if (loaded && navigationReady && postHogReady) {
-      // Hide splash immediately - home screen is already rendered behind it
-      // No delay needed since we're using cached data and dark background
-      SplashScreen.hideAsync();
+    if (
+      !loaded ||
+      !navigationReady ||
+      !postHogReady ||
+      hasHiddenNativeSplashRef.current
+    ) {
+      return;
     }
-  }, [loaded, navigationReady, postHogReady]);
+
+    hasHiddenNativeSplashRef.current = true;
+
+    const transitionFromNativeSplash = async () => {
+      try {
+        // Hide splash immediately - home screen is already rendered behind it
+        await SplashScreen.hideAsync();
+      } catch (error) {
+        logger.error("Failed to hide native splash screen:", error);
+      } finally {
+        markLaunchEvent("native_splash_hidden");
+        markLaunchEvent("brand_flash_start");
+        setLaunchPhase("brandFlash");
+        brandFlashTimeoutRef.current = setTimeout(() => {
+          completeBrandFlash("timeout_fallback");
+        }, BRAND_FLASH_MAX_MS);
+      }
+    };
+
+    transitionFromNativeSplash();
+  }, [completeBrandFlash, loaded, navigationReady, postHogReady]);
 
   if (!loaded) return null;
 
@@ -158,6 +237,7 @@ export default function RootLayout() {
         <DemoProvider>
           <SubscriptionProvider>
             {postHogReady && <PostHogScreenTracker />}
+            {postHogReady && <LaunchEventTracker />}
             <NavigationReadyTracker onReady={() => setNavigationReady(true)} />
             <ActionSheetProvider>
               <>
@@ -168,6 +248,14 @@ export default function RootLayout() {
                   backgroundColor="transparent"
                   translucent
                 />
+                {launchPhase === "brandFlash" && (
+                  <BrandFlashOverlay
+                    onComplete={() => completeBrandFlash("animation_complete")}
+                    reduceMotionEnabled={reduceMotionEnabled}
+                    rotateMs={BRAND_FLASH_ROTATE_MS}
+                    fadeMs={BRAND_FLASH_FADE_MS}
+                  />
+                )}
               </>
             </ActionSheetProvider>
           </SubscriptionProvider>

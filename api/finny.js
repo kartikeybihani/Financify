@@ -1112,6 +1112,18 @@ export default async function handler(req, res) {
     return res.status(200).json({ success: true });
   }
 
+  if (action === "refresh_user_cache") {
+    const refreshed = await forceRefreshUserData(finalUserId);
+    if (!refreshed) {
+      return res.status(500).json({
+        success: false,
+        error: "Failed to refresh user cache",
+      });
+    }
+    console.log(`✅ [CACHE] User cache force refreshed for user: ${finalUserId}`);
+    return res.status(200).json({ success: true });
+  }
+
   // === CHAT SESSION CHECK: Clear session state if new chat session ===
   const lastChatId = sessionState?.last_chat_id;
   const shouldPrePopulateCache =
@@ -4054,38 +4066,41 @@ function generateTrainingDataStockAnalysis(ticker, userMessage) {
 // Cache clearing functions
 
 async function forceRefreshUserData(userId) {
-  try {
-    // Clear relevant rows in Postgres web_scrape_cache for this user (prefix match)
-    try {
-      const prefixes = [
-        "user_summary",
-        "enhanced_merchant",
-        "web_research",
-        "stock_snapshot",
-        "brave_search",
-      ];
-      for (const prefix of prefixes) {
-        const { error } = await supabase
-          .from("web_scrape_cache")
-          .delete()
-          .like("cache_key", `${prefix}_${userId}%`);
-        if (error) {
-          // Failed to clear cache prefix
-        }
-      }
-    } catch (e) {
-      // Postgres cache purge skipped
-    }
+  const prefixes = [
+    "user_summary",
+    "enhanced_merchant",
+    "web_research",
+    "stock_snapshot",
+    "brave_search",
+  ];
 
-    // Use our new smart cache invalidation
+  // Best-effort cleanup for auxiliary cache tables.
+  for (const prefix of prefixes) {
     try {
-      await invalidateUserCache(userId);
-    } catch (e) {
-      // Smart cache invalidation skipped
+      const { error } = await supabase
+        .from("web_scrape_cache")
+        .delete()
+        .like("cache_key", `${prefix}_${userId}%`);
+      if (error) {
+        console.warn(
+          `⚠️ [CACHE] Failed clearing web_scrape_cache for prefix ${prefix}:`,
+          error,
+        );
+      }
+    } catch (error) {
+      console.warn(
+        `⚠️ [CACHE] Exception clearing web_scrape_cache for prefix ${prefix}:`,
+        error,
+      );
     }
+  }
+
+  // Core requirement: invalidate Finny context cache.
+  try {
+    await invalidateUserCache(userId);
     return true;
   } catch (error) {
-    console.error("❌ [CACHE] Error in forceRefreshUserData:", error);
+    console.error("❌ [CACHE] Error invalidating Finny user cache:", error);
     return false;
   }
 }

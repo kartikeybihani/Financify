@@ -90,6 +90,7 @@ import {
   BudgetProgressData,
 } from "@/src/shared/utils/homeScreenCache";
 import { demoBudgetProgress } from "@/src/data/demo/demoData";
+import { markLaunchEvent } from "@/src/utils/analytics/launchMetrics";
 
 if (Platform.OS === "android") {
   UIManager.setLayoutAnimationEnabledExperimental?.(true);
@@ -317,6 +318,18 @@ export default function HomeScreen() {
   const [recurringBannerUserId, setRecurringBannerUserId] = useState<
     string | null
   >(null);
+  const hasTrackedHomeInteractionRef = useRef(false);
+
+  const trackHomeFirstInteraction = () => {
+    if (hasTrackedHomeInteractionRef.current) return;
+    hasTrackedHomeInteractionRef.current = true;
+    markLaunchEvent("home_first_interaction");
+  };
+
+  const captureFirstInteractionOnRootTouch = () => {
+    trackHomeFirstInteraction();
+    return false;
+  };
 
   const [userData, setUserData] = useState<any>(null);
   // OPTIMIZED: Initialize firstName from cache for instant UI
@@ -977,7 +990,11 @@ export default function HomeScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.safeArea} edges={["left", "right", "bottom"]}>
+    <SafeAreaView
+      style={styles.safeArea}
+      edges={["left", "right", "bottom"]}
+      onStartShouldSetResponderCapture={captureFirstInteractionOnRootTouch}
+    >
       {isDemoMode && (
         <View style={{ paddingTop: insets.top }}>
           <DemoBanner />
@@ -1004,6 +1021,7 @@ export default function HomeScreen() {
 
         <ScrollView
           style={styles.container}
+          onTouchStart={trackHomeFirstInteraction}
           contentContainerStyle={{ paddingBottom: 100 }}
           refreshControl={
             <RefreshControl
