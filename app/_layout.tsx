@@ -37,9 +37,9 @@ import { markLaunchEvent } from "@/src/utils/analytics/launchMetrics";
 
 type LaunchPhase = "booting" | "brandFlash" | "ready";
 
-const BRAND_FLASH_ROTATE_MS = 1180;
+const BRAND_FLASH_ROTATE_MS = 3360;
 const BRAND_FLASH_FADE_MS = 120;
-const BRAND_FLASH_MAX_MS = 1650;
+const BRAND_FLASH_MAX_MS = 4300;
 
 // Component to track when navigation is ready
 function NavigationReadyTracker({ onReady }: { onReady: () => void }) {
