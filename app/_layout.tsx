@@ -17,7 +17,10 @@ import AuthNavigationProvider, {
   useAuthNavigation,
 } from "@/src/contexts/AuthNavigationContext";
 import { DemoProvider } from "@/src/contexts/DemoContext";
-import { SubscriptionProvider, useSubscription } from "@/src/contexts/SubscriptionContext";
+import {
+  SubscriptionProvider,
+  useSubscription,
+} from "@/src/contexts/SubscriptionContext";
 import PaywallModal from "./(auth)/paywall";
 import { runStorageMigrationV2 } from "@/src/utils/core/migrate";
 import { runCacheMigration } from "@/src/shared/utils/cacheMigration";
@@ -34,9 +37,9 @@ import { markLaunchEvent } from "@/src/utils/analytics/launchMetrics";
 
 type LaunchPhase = "booting" | "brandFlash" | "ready";
 
-const BRAND_FLASH_ROTATE_MS = 450;
+const BRAND_FLASH_ROTATE_MS = 1180;
 const BRAND_FLASH_FADE_MS = 120;
-const BRAND_FLASH_MAX_MS = 700;
+const BRAND_FLASH_MAX_MS = 1650;
 
 // Component to track when navigation is ready
 function NavigationReadyTracker({ onReady }: { onReady: () => void }) {

@@ -40,7 +40,7 @@ export default function BrandFlashOverlay({
         Animated.timing(rotation, {
           toValue: 1,
           duration: rotateMs,
-          easing: Easing.out(Easing.cubic),
+          easing: Easing.inOut(Easing.cubic),
           useNativeDriver: true,
         }),
         Animated.timing(opacity, {
