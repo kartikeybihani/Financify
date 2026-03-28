@@ -854,10 +854,16 @@ async function localValidateMemoriesWithSmallModel(
     console.log("\n===== END PROMPT =====\n");
   }
 
+  const openRouterKey = process.env.OPENROUTER_API_KEY?.trim();
+  if (!openRouterKey) {
+    console.error("OPENROUTER_API_KEY is required for this validator");
+    return [];
+  }
+
   const r = await fetch("https://openrouter.ai/api/v1/chat/completions", {
     method: "POST",
     headers: {
-      Authorization: `Bearer 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`,
+      Authorization: `Bearer ${openRouterKey}`,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({

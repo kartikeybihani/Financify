@@ -272,9 +272,15 @@ export default function RootLayout() {
     return appContent;
   }
 
+  const posthogApiKey = process.env.EXPO_PUBLIC_POSTHOG_KEY?.trim() ?? "";
+  if (!posthogApiKey) {
+    logger.warn("[PostHog] EXPO_PUBLIC_POSTHOG_KEY not set; analytics disabled");
+    return appContent;
+  }
+
   return (
     <SafePostHogProvider
-      apiKey="phc_Tt3F486mn1ltHuaKW3csphOfXNAFQZ3oI69ZuPzedIT"
+      apiKey={posthogApiKey}
       options={{
         host: "https://us.i.posthog.com",
         enableSessionReplay: false,

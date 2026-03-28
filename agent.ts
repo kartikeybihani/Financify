@@ -7,9 +7,10 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 const MAX_MESSAGE_SIZE = 5000;
 
 // Initialize the model via OpenRouter
+const openRouterApiKey = process.env.OPENROUTER_API_KEY?.trim() ?? "";
 const llm = new ChatOpenAI({
   modelName: "meta-llama/llama-4-scout",
-  apiKey: "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",
+  apiKey: openRouterApiKey,
   maxTokens: 1500, // Reduced for SMS/iMessage - roughly ~1000-1200 chars
   configuration: {
     baseURL: "https://openrouter.ai/api/v1",
