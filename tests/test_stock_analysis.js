@@ -555,11 +555,12 @@ async function testFinnhubConnectivity() {
   console.log("\n🌐 Testing Finnhub API Connectivity");
   console.log("─".repeat(80));
 
-  const apiKey =
+  const apiKey = (
     process.env.FINHUB_API_KEY ||
     process.env.FINNHUB_API_KEY ||
     process.env.EXPO_PUBLIC_FINNHUB_API_KEY ||
-    "d38i461r01qlbdj5kqe0d38i461r01qlbdj5kqeg";
+    ""
+  ).trim();
 
   if (!apiKey) {
     console.error("❌ No Finnhub API key found in environment variables");

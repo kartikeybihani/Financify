@@ -15,8 +15,11 @@
  *   node test_memory_search.js --base
  */
 
-const SUPERMEMORY_API_KEY =
-  "sm_qCVxTPU3rydaSushnrMase_LNJzFEYUWVctsameqfqSaSfMAZzRdhubMrLqudWogbBQuYBPudcxAJOtgCxQcMGw";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+const SUPERMEMORY_API_KEY = process.env.SUPERMEMORY_API_KEY?.trim() ?? "";
 const SUPERMEMORY_BASE_URL = "https://api.supermemory.ai";
 const SUPERMEMORY_FETCH_TIMEOUT_MS = 15000;
 

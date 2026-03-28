@@ -10,7 +10,7 @@ import dotenv from "dotenv";
 // Load environment variables
 dotenv.config();
 
-const BRAVE_API_KEY = "BSAIFTfEWb7F0nzexqfYxZalhE9UDuB";
+const BRAVE_API_KEY = process.env.BRAVE_API_KEY?.trim() ?? "";
 
 async function braveSearchDirect(query) {
   try {

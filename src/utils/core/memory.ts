@@ -33,7 +33,7 @@ export async function queryUserMemory(
       },
     ],
     tools: {
-      ...supermemoryTools("sm_qCVxTPU3rydaSushnrMase_FntVFeCDBNjZgZbIiFdpByXYFthaMEgNfFFeUjZNkbYgmzwCKxNmJxemIyChZGWI", {
+      ...supermemoryTools(config.supermemoryApiKey, {
         containerTags: [`user_${config.userId}`],
       }),
     },
