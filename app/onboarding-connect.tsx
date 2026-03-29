@@ -212,7 +212,9 @@ export default function AccountConnectionScreen() {
     );
   };
 
-  const triggerOnboardingEarlyInsightsAfterContinue = async (userId: string) => {
+  const triggerOnboardingEarlyInsightsAfterContinue = async (
+    userId: string,
+  ) => {
     const key = getOnboardingEarlyInsightsTriggerKey(userId);
     const requestId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
     const now = Date.now();
@@ -272,7 +274,11 @@ export default function AccountConnectionScreen() {
 
     const itemId = latestItemRow.item_id;
 
-    for (let attempt = 1; attempt <= ONBOARDING_EARLY_INSIGHTS_MAX_ATTEMPTS; attempt++) {
+    for (
+      let attempt = 1;
+      attempt <= ONBOARDING_EARLY_INSIGHTS_MAX_ATTEMPTS;
+      attempt++
+    ) {
       writeEarlyInsightsTriggerState(userId, {
         status: "in_progress",
         updatedAt: Date.now(),
@@ -462,7 +468,9 @@ export default function AccountConnectionScreen() {
       const profileDataStr = AppStorage.getItemSync("pending_profile_data");
       const profileData = profileDataStr ? JSON.parse(profileDataStr) : null;
       const intentAnswersStr = AppStorage.getItemSync("pending_intent_answers");
-      const intentAnswers = intentAnswersStr ? JSON.parse(intentAnswersStr) : null;
+      const intentAnswers = intentAnswersStr
+        ? JSON.parse(intentAnswersStr)
+        : null;
 
       if (!profileData && !intentAnswers) {
         return;
@@ -952,12 +960,14 @@ export default function AccountConnectionScreen() {
       // Trigger onboarding early insights after user explicitly continues.
       // Runs in the background while final screen shows loading state.
       if (currentUserId) {
-        triggerOnboardingEarlyInsightsAfterContinue(currentUserId).catch((e) => {
-          logger.warn(
-            "⚠️ AccountConnectionScreen: Early insights trigger crashed",
-            e,
-          );
-        });
+        triggerOnboardingEarlyInsightsAfterContinue(currentUserId).catch(
+          (e) => {
+            logger.warn(
+              "⚠️ AccountConnectionScreen: Early insights trigger crashed",
+              e,
+            );
+          },
+        );
       }
 
       // Navigate immediately to final screen to avoid waiting for gate refresh
@@ -1233,17 +1243,14 @@ export default function AccountConnectionScreen() {
                       }}
                     >
                       <Text style={styles.aiDisclosureText}>
-                        To personalize your financial guidance, Finny shares
-                        transaction details such as account balances,
-                        transaction amounts, merchant names, spending
-                        categories, and transaction dates with Supermemory,
-                        OpenRouter, and the AI model provider used to
-                        personalize your experience and generate your insights.
-                        If you later chat with Finny or create goals, those
-                        messages and goal details may also be shared for the
-                        same purpose. This data is used only to generate your
-                        insights and is never sold or used for advertising or
-                        training.
+                        To personalize your financial guidance, Finny sends
+                        transaction details (account balances, transaction
+                        amounts/dates/names, spending categories) to OpenRouter
+                        and model providers routed through OpenRouter.
+                        Supermemory stores only memory from your Finny
+                        interactions (such as chat and goal context). This data
+                        is used only to provide your in-app insights and is
+                        never sold or used for advertising or model training.
                       </Text>
                       <Text style={styles.aiDisclosureText}>
                         <Text
