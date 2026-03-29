@@ -3,6 +3,7 @@ import { Animated, Easing, Image, StyleSheet, View } from "react-native";
 
 interface BrandFlashOverlayProps {
   onComplete: () => void;
+  animate?: boolean;
   reduceMotionEnabled?: boolean;
   rotateMs?: number;
   fadeMs?: number;
@@ -13,6 +14,7 @@ const REDUCED_MOTION_START_DELAY_MS = 20;
 
 export default function BrandFlashOverlay({
   onComplete,
+  animate = true,
   reduceMotionEnabled = false,
   rotateMs = 450,
   fadeMs = 120,
@@ -21,6 +23,12 @@ export default function BrandFlashOverlay({
   const opacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    if (!animate) {
+      rotation.setValue(0);
+      opacity.setValue(1);
+      return;
+    }
+
     let reducedMotionTimer: ReturnType<typeof setTimeout> | null = null;
 
     if (reduceMotionEnabled) {
@@ -62,7 +70,7 @@ export default function BrandFlashOverlay({
       rotation.stopAnimation();
       opacity.stopAnimation();
     };
-  }, [fadeMs, onComplete, opacity, reduceMotionEnabled, rotateMs, rotation]);
+  }, [animate, fadeMs, onComplete, opacity, reduceMotionEnabled, rotateMs, rotation]);
 
   const rotate = rotation.interpolate({
     inputRange: [0, 1],

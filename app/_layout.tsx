@@ -35,7 +35,11 @@ import { migrateAsyncStorageToMMKV } from "@/src/utils/storage/storage";
 import BrandFlashOverlay from "@/src/components/launch/BrandFlashOverlay";
 import { markLaunchEvent } from "@/src/utils/analytics/launchMetrics";
 
-type LaunchPhase = "booting" | "brandFlash" | "ready";
+type LaunchPhase =
+  | "bootingNative"
+  | "jsCover"
+  | "brandFlashAnimating"
+  | "ready";
 
 const BRAND_FLASH_ROTATE_MS = 3360;
 const BRAND_FLASH_FADE_MS = 120;
@@ -108,7 +112,7 @@ export default function RootLayout() {
   });
   const [postHogReady, setPostHogReady] = useState(false);
   const [navigationReady, setNavigationReady] = useState(false);
-  const [launchPhase, setLaunchPhase] = useState<LaunchPhase>("booting");
+  const [launchPhase, setLaunchPhase] = useState<LaunchPhase>("bootingNative");
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const hasHiddenNativeSplashRef = useRef(false);
   const hasCompletedBrandFlashRef = useRef(false);
@@ -194,7 +198,6 @@ export default function RootLayout() {
     if (
       !loaded ||
       !navigationReady ||
-      !postHogReady ||
       hasHiddenNativeSplashRef.current
     ) {
       return;
@@ -203,23 +206,37 @@ export default function RootLayout() {
     hasHiddenNativeSplashRef.current = true;
 
     const transitionFromNativeSplash = async () => {
+      const waitForCoverPaint = async () => {
+        await new Promise<void>((resolve) => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => resolve());
+          });
+        });
+      };
+
+      // Phase 1: mount a static JS cover before hiding native splash
+      setLaunchPhase("jsCover");
+      await waitForCoverPaint();
+
       try {
-        // Hide splash immediately - home screen is already rendered behind it
+        // Hide native splash only after JS cover is painted
         await SplashScreen.hideAsync();
       } catch (error) {
         logger.error("Failed to hide native splash screen:", error);
-      } finally {
-        markLaunchEvent("native_splash_hidden");
-        markLaunchEvent("brand_flash_start");
-        setLaunchPhase("brandFlash");
-        brandFlashTimeoutRef.current = setTimeout(() => {
-          completeBrandFlash("timeout_fallback");
-        }, BRAND_FLASH_MAX_MS);
       }
+
+      markLaunchEvent("native_splash_hidden");
+
+      // Phase 2: run brand animation while cover remains on screen
+      markLaunchEvent("brand_flash_start");
+      setLaunchPhase("brandFlashAnimating");
+      brandFlashTimeoutRef.current = setTimeout(() => {
+        completeBrandFlash("timeout_fallback");
+      }, BRAND_FLASH_MAX_MS);
     };
 
     transitionFromNativeSplash();
-  }, [completeBrandFlash, loaded, navigationReady, postHogReady]);
+  }, [completeBrandFlash, loaded, navigationReady]);
 
   if (!loaded) return null;
 
@@ -251,9 +268,11 @@ export default function RootLayout() {
                   backgroundColor="transparent"
                   translucent
                 />
-                {launchPhase === "brandFlash" && (
+                {(launchPhase === "jsCover" ||
+                  launchPhase === "brandFlashAnimating") && (
                   <BrandFlashOverlay
                     onComplete={() => completeBrandFlash("animation_complete")}
+                    animate={launchPhase === "brandFlashAnimating"}
                     reduceMotionEnabled={reduceMotionEnabled}
                     rotateMs={BRAND_FLASH_ROTATE_MS}
                     fadeMs={BRAND_FLASH_FADE_MS}
