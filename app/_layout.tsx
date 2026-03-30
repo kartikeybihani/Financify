@@ -37,13 +37,15 @@ import { markLaunchEvent } from "@/src/utils/analytics/launchMetrics";
 
 type LaunchPhase =
   | "bootingNative"
-  | "jsCover"
+  | "jsCoverStatic"
   | "brandFlashAnimating"
+  | "jsCoverWaitingReady"
+  | "jsCoverFadingOut"
   | "ready";
 
-const BRAND_FLASH_ROTATE_MS = 3360;
+const BRAND_FLASH_ROTATE_MS = 1680;
 const BRAND_FLASH_FADE_MS = 120;
-const BRAND_FLASH_MAX_MS = 4300;
+const BRAND_FLASH_MAX_MS = 2400;
 
 // Component to track when navigation is ready
 function NavigationReadyTracker({ onReady }: { onReady: () => void }) {
@@ -112,10 +114,15 @@ export default function RootLayout() {
   });
   const [postHogReady, setPostHogReady] = useState(false);
   const [navigationReady, setNavigationReady] = useState(false);
+  const [jsRuntimeReady, setJsRuntimeReady] = useState(false);
   const [launchPhase, setLaunchPhase] = useState<LaunchPhase>("bootingNative");
   const [reduceMotionEnabled, setReduceMotionEnabled] = useState(false);
   const hasHiddenNativeSplashRef = useRef(false);
   const hasCompletedBrandFlashRef = useRef(false);
+  const launchAnimationDoneRef = useRef(false);
+  const launchFinishReasonRef = useRef<
+    "animation_complete" | "timeout_fallback"
+  >("animation_complete");
   const brandFlashTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(
     null,
   );
@@ -134,6 +141,27 @@ export default function RootLayout() {
       setLaunchPhase("ready");
     },
     [],
+  );
+
+  const handleLaunchAnimationDone = useCallback(
+    (reason: "animation_complete" | "timeout_fallback") => {
+      if (launchAnimationDoneRef.current) return;
+
+      launchAnimationDoneRef.current = true;
+      launchFinishReasonRef.current = reason;
+
+      if (brandFlashTimeoutRef.current) {
+        clearTimeout(brandFlashTimeoutRef.current);
+        brandFlashTimeoutRef.current = null;
+      }
+
+      if (loaded && navigationReady) {
+        setLaunchPhase("jsCoverFadingOut");
+      } else {
+        setLaunchPhase("jsCoverWaitingReady");
+      }
+    },
+    [loaded, navigationReady],
   );
 
   useEffect(() => {
@@ -157,6 +185,10 @@ export default function RootLayout() {
         brandFlashTimeoutRef.current = null;
       }
     };
+  }, []);
+
+  useEffect(() => {
+    setJsRuntimeReady(true);
   }, []);
 
   useEffect(() => {
@@ -195,11 +227,7 @@ export default function RootLayout() {
 
   // Wait for navigation to be ready before hiding splash
   useEffect(() => {
-    if (
-      !loaded ||
-      !navigationReady ||
-      hasHiddenNativeSplashRef.current
-    ) {
+    if (!jsRuntimeReady || hasHiddenNativeSplashRef.current) {
       return;
     }
 
@@ -215,7 +243,7 @@ export default function RootLayout() {
       };
 
       // Phase 1: mount a static JS cover before hiding native splash
-      setLaunchPhase("jsCover");
+      setLaunchPhase("jsCoverStatic");
       await waitForCoverPaint();
 
       try {
@@ -231,14 +259,53 @@ export default function RootLayout() {
       markLaunchEvent("brand_flash_start");
       setLaunchPhase("brandFlashAnimating");
       brandFlashTimeoutRef.current = setTimeout(() => {
-        completeBrandFlash("timeout_fallback");
+        handleLaunchAnimationDone("timeout_fallback");
       }, BRAND_FLASH_MAX_MS);
     };
 
     transitionFromNativeSplash();
-  }, [completeBrandFlash, loaded, navigationReady]);
+  }, [handleLaunchAnimationDone, jsRuntimeReady]);
 
-  if (!loaded) return null;
+  useEffect(() => {
+    if (
+      loaded &&
+      navigationReady &&
+      launchAnimationDoneRef.current &&
+      launchPhase === "jsCoverWaitingReady"
+    ) {
+      setLaunchPhase("jsCoverFadingOut");
+    }
+  }, [launchPhase, loaded, navigationReady]);
+
+  const overlayActive =
+    launchPhase !== "bootingNative" && launchPhase !== "ready";
+  const overlayMode: "static" | "animate" | "fadeOut" =
+    launchPhase === "brandFlashAnimating"
+      ? "animate"
+      : launchPhase === "jsCoverFadingOut"
+        ? "fadeOut"
+        : "static";
+
+  if (!loaded) {
+    return (
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        {overlayActive && (
+          <BrandFlashOverlay
+            mode={overlayMode}
+            onAnimationComplete={() =>
+              handleLaunchAnimationDone("animation_complete")
+            }
+            onFadeOutComplete={() =>
+              completeBrandFlash(launchFinishReasonRef.current)
+            }
+            reduceMotionEnabled={reduceMotionEnabled}
+            rotateMs={BRAND_FLASH_ROTATE_MS}
+            fadeMs={BRAND_FLASH_FADE_MS}
+          />
+        )}
+      </GestureHandlerRootView>
+    );
+  }
 
   function PaywallGate() {
     const { paywallVisible, hidePaywall } = useSubscription();
@@ -268,11 +335,15 @@ export default function RootLayout() {
                   backgroundColor="transparent"
                   translucent
                 />
-                {(launchPhase === "jsCover" ||
-                  launchPhase === "brandFlashAnimating") && (
+                {overlayActive && (
                   <BrandFlashOverlay
-                    onComplete={() => completeBrandFlash("animation_complete")}
-                    animate={launchPhase === "brandFlashAnimating"}
+                    mode={overlayMode}
+                    onAnimationComplete={() =>
+                      handleLaunchAnimationDone("animation_complete")
+                    }
+                    onFadeOutComplete={() =>
+                      completeBrandFlash(launchFinishReasonRef.current)
+                    }
                     reduceMotionEnabled={reduceMotionEnabled}
                     rotateMs={BRAND_FLASH_ROTATE_MS}
                     fadeMs={BRAND_FLASH_FADE_MS}
@@ -292,8 +363,12 @@ export default function RootLayout() {
   }
 
   const posthogApiKey = process.env.EXPO_PUBLIC_POSTHOG_KEY?.trim() ?? "";
+  const posthogHost =
+    process.env.EXPO_PUBLIC_POSTHOG_HOST?.trim() || "https://us.i.posthog.com";
   if (!posthogApiKey) {
-    logger.warn("[PostHog] EXPO_PUBLIC_POSTHOG_KEY not set; analytics disabled");
+    logger.warn(
+      "[PostHog] EXPO_PUBLIC_POSTHOG_KEY not set; analytics disabled (set in .env/.env.local or EAS environment)",
+    );
     return appContent;
   }
 
@@ -301,7 +376,7 @@ export default function RootLayout() {
     <SafePostHogProvider
       apiKey={posthogApiKey}
       options={{
-        host: "https://us.i.posthog.com",
+        host: posthogHost,
         enableSessionReplay: false,
       }}
       autocapture

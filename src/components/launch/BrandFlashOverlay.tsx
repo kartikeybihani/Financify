@@ -1,9 +1,10 @@
-import React, { useEffect, useRef } from "react";
+import React, { useCallback, useEffect, useRef } from "react";
 import { Animated, Easing, Image, StyleSheet, View } from "react-native";
 
 interface BrandFlashOverlayProps {
-  onComplete: () => void;
-  animate?: boolean;
+  mode: "static" | "animate" | "fadeOut";
+  onAnimationComplete?: () => void;
+  onFadeOutComplete?: () => void;
   reduceMotionEnabled?: boolean;
   rotateMs?: number;
   fadeMs?: number;
@@ -13,64 +14,95 @@ const REDUCED_MOTION_FADE_MS = 220;
 const REDUCED_MOTION_START_DELAY_MS = 20;
 
 export default function BrandFlashOverlay({
-  onComplete,
-  animate = true,
+  mode,
+  onAnimationComplete,
+  onFadeOutComplete,
   reduceMotionEnabled = false,
   rotateMs = 450,
   fadeMs = 120,
 }: BrandFlashOverlayProps) {
   const rotation = useRef(new Animated.Value(0)).current;
   const opacity = useRef(new Animated.Value(1)).current;
+  const handledModeRef = useRef<string>("");
+  const reducedMotionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(
+    null,
+  );
+
+  const stopAllAnimations = useCallback(() => {
+    if (reducedMotionTimerRef.current) {
+      clearTimeout(reducedMotionTimerRef.current);
+      reducedMotionTimerRef.current = null;
+    }
+    rotation.stopAnimation();
+    opacity.stopAnimation();
+  }, [opacity, rotation]);
 
   useEffect(() => {
-    if (!animate) {
+    if (handledModeRef.current === mode) return;
+    handledModeRef.current = mode;
+
+    if (mode === "static") {
+      stopAllAnimations();
       rotation.setValue(0);
       opacity.setValue(1);
       return;
     }
 
-    let reducedMotionTimer: ReturnType<typeof setTimeout> | null = null;
+    if (mode === "animate") {
+      stopAllAnimations();
+      rotation.setValue(0);
+      opacity.setValue(1);
 
-    if (reduceMotionEnabled) {
-      reducedMotionTimer = setTimeout(() => {
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: REDUCED_MOTION_FADE_MS,
-          useNativeDriver: true,
-        }).start(({ finished }) => {
-          if (finished) {
-            onComplete();
-          }
-        });
-      }, REDUCED_MOTION_START_DELAY_MS);
-    } else {
-      Animated.sequence([
-        Animated.timing(rotation, {
-          toValue: 1,
-          duration: rotateMs,
-          easing: Easing.inOut(Easing.cubic),
-          useNativeDriver: true,
-        }),
-        Animated.timing(opacity, {
-          toValue: 0,
-          duration: fadeMs,
-          useNativeDriver: true,
-        }),
-      ]).start(({ finished }) => {
+      if (reduceMotionEnabled) {
+        reducedMotionTimerRef.current = setTimeout(() => {
+          onAnimationComplete?.();
+        }, REDUCED_MOTION_START_DELAY_MS + REDUCED_MOTION_FADE_MS);
+        return;
+      }
+
+      Animated.timing(rotation, {
+        toValue: 1,
+        duration: rotateMs,
+        easing: Easing.inOut(Easing.cubic),
+        useNativeDriver: true,
+      }).start(({ finished }) => {
         if (finished) {
-          onComplete();
+          onAnimationComplete?.();
         }
       });
+      return;
     }
 
+    if (mode === "fadeOut") {
+      stopAllAnimations();
+      Animated.timing(opacity, {
+        toValue: 0,
+        duration: reduceMotionEnabled ? REDUCED_MOTION_FADE_MS : fadeMs,
+        useNativeDriver: true,
+      }).start(({ finished }) => {
+        if (finished) {
+          onFadeOutComplete?.();
+        }
+      });
+      return;
+    }
+  }, [
+    fadeMs,
+    mode,
+    onAnimationComplete,
+    onFadeOutComplete,
+    opacity,
+    reduceMotionEnabled,
+    rotateMs,
+    rotation,
+    stopAllAnimations,
+  ]);
+
+  useEffect(() => {
     return () => {
-      if (reducedMotionTimer) {
-        clearTimeout(reducedMotionTimer);
-      }
-      rotation.stopAnimation();
-      opacity.stopAnimation();
+      stopAllAnimations();
     };
-  }, [animate, fadeMs, onComplete, opacity, reduceMotionEnabled, rotateMs, rotation]);
+  }, [stopAllAnimations]);
 
   const rotate = rotation.interpolate({
     inputRange: [0, 1],

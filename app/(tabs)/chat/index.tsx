@@ -1278,10 +1278,10 @@ function ChatScreenContent() {
                       <Text style={memoryConsentStyles.disclosureText}>
                         To personalize future responses, Finny may store and
                         use your chat messages in Supermemory and share
-                        relevant context with the AI provider used to generate
-                        responses. This data is used only to provide and
-                        improve your experience with Finny and is never sold or
-                        used for advertising or training.
+                        relevant context with OpenRouter to generate responses.
+                        This data is used only to provide and improve your
+                        experience with Finny and is never sold or used for
+                        advertising or training.
                       </Text>
                       <Text style={memoryConsentStyles.disclosureText}>
                         You can edit or delete memories anytime in Settings.{" "}

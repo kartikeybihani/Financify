@@ -5,6 +5,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   Modal,
+  Alert,
   TouchableWithoutFeedback,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -56,7 +57,21 @@ export default function DeleteAccountModal({
       return;
     }
 
-    onDelete();
+    Alert.alert(
+      "Delete account permanently?",
+      "This will permanently remove your account and financial data. This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: onDelete,
+        },
+      ],
+    );
   };
 
   const handleCancel = () => {

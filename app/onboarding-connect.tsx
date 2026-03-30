@@ -1246,8 +1246,7 @@ export default function AccountConnectionScreen() {
                         To personalize your financial guidance, Finny sends
                         transaction details (account balances, transaction
                         amounts/dates/names, spending categories) to OpenRouter
-                        and model providers routed through OpenRouter.
-                        Supermemory stores only memory from your Finny
+                        (AI). Supermemory stores only memory from your Finny
                         interactions (such as chat and goal context). This data
                         is used only to provide your in-app insights and is
                         never sold or used for advertising or model training.
