@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Platform } from "react-native";
+import { Platform, StyleSheet } from "react-native";
 import { Tabs } from "expo-router";
 import {
   NativeTabs,
@@ -7,6 +7,7 @@ import {
   Icon,
   VectorIcon,
 } from "expo-router/unstable-native-tabs";
+import { BlurView } from "expo-blur";
 import {
   Ionicons,
   MaterialCommunityIcons,
@@ -220,7 +221,26 @@ export default function TabLayout() {
         screenOptions={{
           headerShown: false,
           tabBarActiveTintColor: "#4A90E2",
+          tabBarInactiveTintColor: "#AEB6C6",
           tabBarLabelStyle: { fontSize: 13 },
+          tabBarStyle:
+            Platform.OS === "ios"
+              ? {
+                  borderTopWidth: StyleSheet.hairlineWidth,
+                  borderTopColor: "rgba(255, 255, 255, 0.18)",
+                  backgroundColor: "rgba(20, 20, 25, 0.62)",
+                }
+              : undefined,
+          tabBarBackground:
+            Platform.OS === "ios"
+              ? () => (
+                  <BlurView
+                    intensity={48}
+                    tint="dark"
+                    style={StyleSheet.absoluteFill}
+                  />
+                )
+              : undefined,
         }}
       >
         {tabs.map((tab) => (
@@ -229,7 +249,7 @@ export default function TabLayout() {
             name={tab.name}
             options={{
               title: tab.label,
-              tabBarIcon: ({ focused, color }) => {
+              tabBarIcon: ({ color }) => {
                 const IconComponent =
                   tab.iconCategory === "Ionicons"
                     ? Ionicons
@@ -242,7 +262,7 @@ export default function TabLayout() {
                   <IconComponent
                     name={tab.icon as any}
                     size={21}
-                    color={focused ? "#4A90E2" : "#C7C7CC"}
+                    color={color}
                   />
                 );
               },

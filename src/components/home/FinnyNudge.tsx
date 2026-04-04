@@ -101,7 +101,9 @@ const styles = StyleSheet.create({
     width: "100%",
   },
   glassChipFallback: {
-    backgroundColor: "rgba(30, 30, 35, 0.9)",
+    backgroundColor: "rgba(20, 20, 25, 0.82)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.14)",
   },
   text: {
     fontSize: 13,

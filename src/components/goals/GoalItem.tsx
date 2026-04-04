@@ -79,9 +79,12 @@ const GoalItem: React.FC<GoalItemProps> = ({
                   <Text style={styles.achievedChipText}>Achieved</Text>
                 </GlassView>
               ) : (
-                <View style={styles.achievedChip}>
+                <View style={[styles.achievedChip, styles.achievedChipFallback]}>
                   <LinearGradient
-                    colors={["rgba(16, 185, 129, 0.25)", "rgba(5, 150, 105, 0.3)"]}
+                    colors={[
+                      "rgba(16, 185, 129, 0.34)",
+                      "rgba(16, 185, 129, 0.22)",
+                    ]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.achievedChipGradient}

@@ -85,7 +85,11 @@ export const GoalsSection: React.FC<GoalsSectionProps> = React.memo(
                         </ButtonShell>
                       ) : (
                         <LinearGradient
-                          colors={["#4A90E2", "#357ABD", "#2E6BA8"]}
+                          colors={[
+                            "rgba(122, 176, 238, 0.88)",
+                            "rgba(92, 151, 224, 0.82)",
+                            "rgba(63, 124, 198, 0.8)",
+                          ]}
                           start={{ x: 0, y: 0 }}
                           end={{ x: 1, y: 1 }}
                           style={styles.addFirstGoalGradientContainer}

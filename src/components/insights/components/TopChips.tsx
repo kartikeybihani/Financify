@@ -77,6 +77,14 @@ export default function TopChips({
     const CardShell = shouldUseLiquidGlass ? GlassView : View;
     const isActive = activeIndex === index;
 
+    const activeGradientColors = shouldUseLiquidGlass
+      ? ["#022c59", "#1d61ab", "#4088d6", "#022c59"]
+      : [
+          "rgba(122, 176, 238, 0.7)",
+          "rgba(92, 151, 224, 0.78)",
+          "rgba(63, 124, 198, 0.76)",
+        ];
+
     return (
       <TouchableOpacity
         key={section.key}
@@ -92,10 +100,13 @@ export default function TopChips({
       >
         {isActive ? (
           <LinearGradient
-            colors={["#022c59", "#1d61ab", "#4088d6", "#022c59"]}
+            colors={activeGradientColors}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
-            style={styles.gradientChip}
+            style={[
+              styles.gradientChip,
+              !shouldUseLiquidGlass && styles.gradientChipFallback,
+            ]}
           >
             <Text style={[styles.chipText, styles.chipTextActive]}>
               {section.label}
@@ -109,7 +120,10 @@ export default function TopChips({
                   tintColor: "rgba(20, 20, 25, 0.9)",
                 }
               : {})}
-            style={styles.glassChip}
+            style={[
+              styles.glassChip,
+              !shouldUseLiquidGlass && styles.glassChipFallback,
+            ]}
           >
             <Text style={styles.chipText}>{section.label}</Text>
           </CardShell>
@@ -154,11 +168,20 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: "hidden",
   },
+  glassChipFallback: {
+    backgroundColor: "rgba(20, 20, 25, 0.78)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.14)",
+  },
   gradientChip: {
     paddingVertical: 8,
     paddingHorizontal: 14,
     borderRadius: 16,
     overflow: "hidden",
+  },
+  gradientChipFallback: {
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
   chipText: {
     fontSize: 13,

@@ -590,6 +590,7 @@ export default function RecurringSection({
             : {})}
           style={[
             styles.transactionBox,
+            !shouldUseLiquidGlass && styles.transactionBoxFallback,
             {
               width: cardWidth,
               height: 94,
@@ -599,9 +600,9 @@ export default function RecurringSection({
           {!shouldUseLiquidGlass && (
             <LinearGradient
               colors={[
-                "rgba(255, 255, 255, 0.06)",
-                "rgba(255, 255, 255, 0.02)",
-                "rgba(0, 0, 0, 0.05)",
+                "rgba(255, 255, 255, 0.16)",
+                "rgba(186, 209, 236, 0.06)",
+                "rgba(10, 16, 28, 0.18)",
               ]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
@@ -1054,6 +1055,11 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
     elevation: 5,
     overflow: "hidden",
+  },
+  transactionBoxFallback: {
+    backgroundColor: "rgba(20, 20, 25, 0.86)",
+    borderColor: "rgba(255, 255, 255, 0.14)",
+    shadowOpacity: 0.18,
   },
   gradientOverlay: {
     position: "absolute",

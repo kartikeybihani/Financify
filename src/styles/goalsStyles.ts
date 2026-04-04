@@ -526,6 +526,10 @@ const styles = StyleSheet.create({
       bottom: 0,
       borderRadius: 12,
     },
+    achievedChipFallback: {
+      borderColor: "rgba(167, 247, 218, 0.45)",
+      backgroundColor: "rgba(16, 185, 129, 0.12)",
+    },
     achievedChipContent: {
       flexDirection: "row",
       alignItems: "center",
