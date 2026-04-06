@@ -39,9 +39,144 @@ import {
   TERTIARY_MODEL,
   getOpenRouterKey,
 } from "../core/finny/utils/constants/modelConfig.js";
+import {
+  applyAiSummary,
+  buildStructuredLlmFailureMarker,
+  classifyOnboardingAiFailure,
+  createAiEnrichmentSummary,
+  getConsentStateForRun,
+  shouldRetryOnboardingFailure,
+} from "../lib/onboarding_ai_reliability.js";
 
 function generateUUID() {
   return crypto.randomUUID();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => globalThis.setTimeout(resolve, ms));
+}
+
+function toSafeJsonb(value) {
+  return value === undefined ? null : value;
+}
+
+function trimFailureMessage(value, max = 4000) {
+  const text = String(value || "").trim();
+  if (!text) return null;
+  return text.length > max ? `${text.slice(0, max)}...` : text;
+}
+
+function buildOnboardingRunPayload({
+  userId,
+  itemId,
+  requestId,
+  apiBuild,
+  runType,
+  status = "running",
+  attemptNo = 1,
+  maxAttempts = 1,
+  model = null,
+  enrichmentMode = null,
+  consentState = "none",
+  txRows = null,
+  filteredRows = null,
+  patternCount = null,
+  httpStatus = null,
+  latencyMs = null,
+  failureStage = null,
+  failureReasonCode = null,
+  failureMessage = null,
+  retryable = null,
+  outputValid = null,
+  profileWriteOk = null,
+  llmRequestPayload = null,
+  llmResponsePayload = null,
+  llmResponseText = null,
+  resultPayload = null,
+}) {
+  const now = new Date().toISOString();
+  return {
+    user_id: userId,
+    item_id: itemId || null,
+    request_id: requestId,
+    api_build: apiBuild,
+    run_type: runType,
+    status,
+    attempt_no: Number(attemptNo || 1),
+    max_attempts: Number(maxAttempts || 1),
+    model: model || null,
+    enrichment_mode: enrichmentMode || null,
+    consent_state: consentState || "none",
+    started_at: now,
+    completed_at: status === "running" ? null : now,
+    tx_rows: Number.isFinite(txRows) ? Number(txRows) : null,
+    filtered_rows: Number.isFinite(filteredRows) ? Number(filteredRows) : null,
+    pattern_count: Number.isFinite(patternCount) ? Number(patternCount) : null,
+    http_status: Number.isFinite(httpStatus) ? Number(httpStatus) : null,
+    latency_ms: Number.isFinite(latencyMs) ? Number(latencyMs) : null,
+    failure_stage: failureStage || null,
+    failure_reason_code: failureReasonCode || null,
+    failure_message: trimFailureMessage(failureMessage),
+    retryable:
+      retryable === null || retryable === undefined ? null : retryable === true,
+    output_valid:
+      outputValid === null || outputValid === undefined
+        ? null
+        : outputValid === true,
+    profile_write_ok:
+      profileWriteOk === null || profileWriteOk === undefined
+        ? null
+        : profileWriteOk === true,
+    llm_request_payload: toSafeJsonb(llmRequestPayload),
+    llm_response_payload: toSafeJsonb(llmResponsePayload),
+    llm_response_text:
+      llmResponseText == null ? null : String(llmResponseText).slice(0, 120000),
+    result_payload: toSafeJsonb(resultPayload),
+    updated_at: now,
+  };
+}
+
+async function insertOnboardingRun(payload) {
+  try {
+    const { data, error } = await supabase
+      .from("onboarding_ai_runs")
+      .insert(payload)
+      .select("id")
+      .maybeSingle();
+    if (error) {
+      console.error("[TRANSACTIONS_SYNC] onboarding_ai_runs insert failed", error);
+      return null;
+    }
+    return data?.id || null;
+  } catch (error) {
+    console.error(
+      "[TRANSACTIONS_SYNC] onboarding_ai_runs insert exception",
+      error,
+    );
+    return null;
+  }
+}
+
+async function updateOnboardingRun(runId, patch) {
+  if (!runId) return;
+  const now = new Date().toISOString();
+  try {
+    const { error } = await supabase
+      .from("onboarding_ai_runs")
+      .update({
+        ...patch,
+        updated_at: now,
+      })
+      .eq("id", runId);
+    if (error) {
+      console.error("[TRANSACTIONS_SYNC] onboarding_ai_runs update failed", error);
+    }
+  } catch (error) {
+    console.error(
+      "[TRANSACTIONS_SYNC] onboarding_ai_runs update exception",
+      error,
+    );
+  }
 }
 
 function formatLocalDate(date) {
@@ -1421,9 +1556,19 @@ export default async function handler(req, res) {
   }
 
   // Original transactions sync logic
-  const { item_id, user_id, skip_enrichment, enrichment_mode } = req.body;
+  const {
+    item_id,
+    user_id,
+    skip_enrichment,
+    enrichment_mode,
+    request_id,
+  } = req.body;
   if (!item_id) return res.status(400).json({ error: "Missing item_id" });
   const skipEnrichment = skip_enrichment === true;
+  const requestId =
+    typeof request_id === "string" && request_id.trim().length > 0
+      ? request_id.trim().slice(0, 120)
+      : crypto.randomUUID();
   const normalizedEnrichmentMode =
     typeof enrichment_mode === "string"
       ? enrichment_mode.trim().toLowerCase()
@@ -1445,6 +1590,7 @@ export default async function handler(req, res) {
 
   console.log("[TRANSACTIONS_SYNC] build", {
     API_BUILD,
+    request_id: requestId,
     item_id,
     skip_enrichment: skipEnrichment,
     requested_enrichment_mode: requestedEnrichmentMode,
@@ -1495,6 +1641,29 @@ export default async function handler(req, res) {
     );
     const hasAiEnrichmentConsent =
       hasOnboardingAiConsent || hasChatMemoryConsent;
+    const aiEnrichment = createAiEnrichmentSummary();
+    const consentState = getConsentStateForRun({
+      hasOnboardingAiConsent,
+      hasChatMemoryConsent,
+    });
+    const earlyRetryEnabled =
+      String(process.env.ONBOARDING_EARLY_RETRY_ENABLED || "1")
+        .trim()
+        .toLowerCase() !== "0";
+    const earlyMaxAttempts = Math.max(
+      1,
+      Number(process.env.ONBOARDING_EARLY_MAX_ATTEMPTS || 3),
+    );
+    const earlyRetryBaseDelayMs = Math.max(
+      100,
+      Number(process.env.ONBOARDING_EARLY_RETRY_BASE_DELAY_MS || 800),
+    );
+    const earlyPrimaryModel = "meta-llama/llama-4-scout";
+    const fallbackRaw = String(
+      process.env.ONBOARDING_EARLY_FALLBACK_MODEL || TERTIARY_MODEL,
+    ).trim();
+    const earlyFallbackModel =
+      fallbackRaw.toLowerCase() === "none" ? null : fallbackRaw || null;
     const shouldRunRecurringAnalysis = effectiveEnrichmentMode === "full";
     const shouldRunEarlyInsights =
       effectiveEnrichmentMode === "full" ||
@@ -1518,6 +1687,11 @@ export default async function handler(req, res) {
       run_early_insights: shouldRunEarlyInsights,
       run_base_analysis: shouldRunBaseAnalysis,
       run_notification_patterns: shouldRunNotificationPatterns,
+      consent_state: consentState,
+      early_retry_enabled: earlyRetryEnabled,
+      early_max_attempts: earlyMaxAttempts,
+      early_retry_base_delay_ms: earlyRetryBaseDelayMs,
+      early_fallback_model: earlyFallbackModel,
     });
 
     // Fetch user_id and transactions_cursor together in one query for efficiency
@@ -2513,24 +2687,52 @@ export default async function handler(req, res) {
     // 7.5) Generate onboarding early_insights (best-effort, does not block sync)
     // Runs after transactions have been written, so it can read from DB.
     // Stores raw JSON in `profiles.early_insights`.
-    if (!shouldRunEarlyInsights) {
-      console.log(
-        "[TRANSACTIONS_SYNC] early_insights: skipped (mode)",
-        { userId, effective_enrichment_mode: effectiveEnrichmentMode },
-      );
-    } else if (!hasAiEnrichmentConsent) {
-      console.log("[TRANSACTIONS_SYNC] early_insights: skipped (no consent)", {
-        userId,
-      });
-    } else {
-      try {
-        console.log("[TRANSACTIONS_SYNC] early_insights: start", {
+    if (!shouldRunEarlyInsights || !hasAiEnrichmentConsent) {
+      const reasonCode = !shouldRunEarlyInsights
+        ? "SKIP_MODE_DISABLED"
+        : "SKIP_NO_CONSENT";
+      const runId = await insertOnboardingRun(
+        buildOnboardingRunPayload({
           userId,
-          item_id,
-          added: added.length,
-          modified: modified.length,
-          removed: removed.length,
-        });
+          itemId: item_id,
+          requestId,
+          apiBuild: API_BUILD,
+          runType: "early_insights",
+          status: "running",
+          attemptNo: 1,
+          maxAttempts: 1,
+          enrichmentMode: effectiveEnrichmentMode,
+          consentState,
+          failureReasonCode: reasonCode,
+          failureStage: "precheck",
+        }),
+      );
+      await updateOnboardingRun(runId, {
+        status: "skipped",
+        completed_at: new Date().toISOString(),
+        failure_reason_code: reasonCode,
+        failure_stage: "precheck",
+      });
+      aiEnrichment.early_insights = applyAiSummary(aiEnrichment.early_insights, {
+        status: "skipped",
+        reason_code: reasonCode,
+        attempts: 1,
+        retryable: false,
+        run_id: runId,
+      });
+      console.log(
+        "[TRANSACTIONS_SYNC] early_insights: skipped",
+        { userId, reasonCode, effective_enrichment_mode: effectiveEnrichmentMode },
+      );
+    } else {
+      console.log("[TRANSACTIONS_SYNC] early_insights: start", {
+        userId,
+        item_id,
+        requestId,
+        added: added.length,
+        modified: modified.length,
+        removed: removed.length,
+      });
 
       const { data: profile, error: profileErr } = await supabase
         .from("profiles")
@@ -2541,262 +2743,739 @@ export default async function handler(req, res) {
         .maybeSingle();
 
       if (profileErr) {
-        console.error(
-          "[TRANSACTIONS_SYNC] early_insights: profile fetch failed",
-          profileErr,
-        );
-      }
-
-      const existing = profile?.early_insights;
-      const hasExistingInsights =
-        !!existing &&
-        typeof existing === "object" &&
-        !Array.isArray(existing) &&
-        typeof existing.intro_line === "string" &&
-        typeof existing.mirror === "string" &&
-        typeof existing.plan === "string" &&
-        typeof existing.hook === "string" &&
-        existing.intro_line.trim().length > 0;
-
-      if (hasExistingInsights) {
-        console.log("[TRANSACTIONS_SYNC] early_insights: already present", {
-          userId,
+        const classified = classifyOnboardingAiFailure({
+          error: profileErr,
+          stage: "profile_fetch",
         });
-      } else {
-        const openRouterApiKeyRaw =
-          process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_GROK_KEY;
-        const openRouterApiKey = String(openRouterApiKeyRaw || "").trim();
-        const keySource = process.env.OPENROUTER_API_KEY
-          ? "OPENROUTER_API_KEY"
-          : process.env.OPENROUTER_GROK_KEY
-            ? "OPENROUTER_GROK_KEY"
-            : null;
-
-        console.log("[TRANSACTIONS_SYNC] early_insights: compute", {
-          userId,
-          keyPresent: !!openRouterApiKey,
-          keySource,
-          keyLen: openRouterApiKey ? openRouterApiKey.length : 0,
-          keyLast4: openRouterApiKey ? openRouterApiKey.slice(-4) : null,
+        const failureMarker = buildStructuredLlmFailureMarker({
+          reasonCode: classified.reasonCode,
+          stage: classified.stage,
+          httpStatus: classified.httpStatus,
+          retryable: classified.retryable,
+          attempts: 1,
+          model: earlyPrimaryModel,
+          requestId,
+          apiBuild: API_BUILD,
+          failureMessage: classified.failureMessage,
         });
-
-        if (!openRouterApiKey) {
-          console.warn(
-            "[TRANSACTIONS_SYNC] early_insights: missing OPENROUTER_API_KEY (skipping)",
-          );
-        } else {
-          const { startDate, endDate } = getDateRangeLast6Months();
-          const pageSize = 1000;
-          const maxRows = 5000;
-          let offset = 0;
-          const rows = [];
-
-          console.log("[TRANSACTIONS_SYNC] early_insights: tx window", {
-            userId,
-            startDate,
-            endDate,
-          });
-
-          while (offset < maxRows) {
-            const { data, error } = await supabase
-              .from("transactions")
-              .select(
-                [
-                  "date",
-                  "authorized_date",
-                  "amount",
-                  "name",
-                  "merchant_name",
-                  "category",
-                  "top_category",
-                  "sub_category",
-                  "new_category",
-                  "transaction_type",
-                  "pending",
-                  "account_id",
-                  "plaid_transaction_id",
-                  "if_recurring",
-                  "recurring_stream_id",
-                ].join(","),
-              )
-              .eq("user_id", userId)
-              .gte("date", startDate)
-              .lte("date", endDate)
-              .order("date", { ascending: false })
-              .range(offset, offset + pageSize - 1);
-
-            if (error) throw error;
-            if (!data || data.length === 0) break;
-            rows.push(...data);
-            offset += pageSize;
-          }
-
-          console.log("[TRANSACTIONS_SYNC] early_insights: tx fetched", {
-            userId,
-            rows: rows.length,
-          });
-
-          if (rows.length === 0) {
-            console.log(
-              "[TRANSACTIONS_SYNC] early_insights: no tx rows (skipping)",
-              { userId },
-            );
-          } else {
-            const months = getLast6MonthKeys();
-            const filtered = rows.filter(
-              (tx) => !isLikelyInternalOrPayment(tx),
-            );
-            const patternPayload = computePatterns({
-              transactions: filtered,
-              months,
-            });
-            const topPatterns = selectTopPatternsForLLM(patternPayload, 5);
-
-            console.log("[TRANSACTIONS_SYNC] early_insights: patterns", {
-              userId,
-              fetched: rows.length,
-              afterFiltering: filtered.length,
-              patternsGenerated: patternPayload?.meta?.patternsGenerated,
-              patternsReturned: patternPayload?.meta?.patternsReturned,
-              selectedForLlm: topPatterns.length,
-              topType: topPatterns[0]?.type,
-              topKey: topPatterns[0]?.key,
-            });
-            console.log(
-              "[TRANSACTIONS_SYNC] early_insights: top_patterns_for_llm",
-              JSON.stringify(
-                topPatterns.map((pattern, index) => ({
-                  rank: index + 1,
-                  type: pattern?.type || null,
-                  key: pattern?.key || null,
-                  title: pattern?.title || null,
-                  description: pattern?.description || null,
-                  confidence: pattern?.confidence ?? null,
-                  evidence: pattern?.evidence || null,
-                })),
-                null,
-                2,
-              ),
-            );
-
-            if (topPatterns.length === 0) {
-              console.log(
-                "[TRANSACTIONS_SYNC] early_insights: no patterns (skipping)",
-                { userId },
-              );
-            } else {
-              console.log(
-                "[TRANSACTIONS_SYNC] early_insights: calling OpenRouter",
-                { userId },
-              );
-
-              // Extract last 60 days of raw transactions for the LLM to
-              // cross-reference pattern categories and short-term rhythms.
-              const sixtyDaysAgo = new Date();
-              sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
-              const sixtyDayCutoff = sixtyDaysAgo.toISOString().slice(0, 10);
-              const recentTransactions = filtered.filter(
-                (tx) => tx.date >= sixtyDayCutoff,
-              );
-
-              const llmResult = await callOnboardingLLM({
-                openRouterApiKey,
-                fetchFn: fetch,
-                patterns: topPatterns,
-                analysisWindow: "last 6 months",
-                userProfile: profile || null,
-                recentTransactions,
-              });
-
-              const insightsJson =
-                llmResult?.ok && llmResult?.json
-                  ? llmResult.json
-                  : extractFirstJsonObjectFromText(llmResult?.raw);
-
-              if (!insightsJson) {
-                console.warn(
-                  "[TRANSACTIONS_SYNC] early_insights: LLM returned no JSON",
-                  {
-                    userId,
-                    ok: !!llmResult?.ok,
-                    rawPreview: String(
-                      llmResult?.rawStripped || llmResult?.raw || "",
-                    )
-                      .slice(0, 160)
-                      .trim(),
-                  },
-                );
-                // Store error marker so frontend knows LLM failed
-                const { error: upsertErr } = await supabase
-                  .from("profiles")
-                  .upsert(
-                    {
-                      id: userId,
-                      early_insights: { error: "LLM_FAILED" },
-                      updated_at: new Date().toISOString(),
-                    },
-                    { onConflict: "id" },
-                  );
-                if (upsertErr) {
-                  console.error(
-                    "[TRANSACTIONS_SYNC] early_insights: error marker upsert failed",
-                    upsertErr,
-                  );
-                }
-              } else {
-                const { error: upsertErr } = await supabase
-                  .from("profiles")
-                  .upsert(
-                    {
-                      id: userId,
-                      early_insights: insightsJson,
-                      updated_at: new Date().toISOString(),
-                    },
-                    { onConflict: "id" },
-                  );
-
-                if (upsertErr) {
-                  console.error(
-                    "[TRANSACTIONS_SYNC] early_insights: upsert failed",
-                    upsertErr,
-                  );
-                } else {
-                  console.log("✅ Stored profiles.early_insights", {
-                    userId,
-                    hasIntro: !!insightsJson?.intro_line,
-                  });
-                }
-              }
-            }
-          }
-        }
-      }
-      } catch (err) {
-        console.error(
-          "[TRANSACTIONS_SYNC] early_insights error (non-blocking)",
-          err,
-        );
-        // Store error marker on exception too
-        try {
-          const { error: upsertErr } = await supabase.from("profiles").upsert(
+        const { error: markerErr } = await supabase
+          .from("profiles")
+          .upsert(
             {
               id: userId,
-              early_insights: { error: "LLM_FAILED" },
+              early_insights: failureMarker,
               updated_at: new Date().toISOString(),
             },
             { onConflict: "id" },
           );
-          if (upsertErr) {
-            console.error(
-              "[TRANSACTIONS_SYNC] early_insights: error marker upsert failed (exception path)",
-              upsertErr,
-            );
-          }
-        } catch (markerErr) {
-          console.error(
-            "[TRANSACTIONS_SYNC] Failed to store error marker",
-            markerErr,
+        const runId = await insertOnboardingRun(
+          buildOnboardingRunPayload({
+            userId,
+            itemId: item_id,
+            requestId,
+            apiBuild: API_BUILD,
+            runType: "early_insights",
+            status: "running",
+            attemptNo: 1,
+            maxAttempts: 1,
+            enrichmentMode: effectiveEnrichmentMode,
+            consentState,
+          }),
+        );
+        await updateOnboardingRun(runId, {
+          status: "failed",
+          completed_at: new Date().toISOString(),
+          failure_reason_code: classified.reasonCode,
+          failure_stage: classified.stage,
+          failure_message: trimFailureMessage(classified.failureMessage),
+          retryable: classified.retryable,
+          http_status: classified.httpStatus,
+          profile_write_ok: !markerErr,
+          result_payload: failureMarker,
+          model: earlyPrimaryModel,
+        });
+        aiEnrichment.early_insights = applyAiSummary(aiEnrichment.early_insights, {
+          status: "failed",
+          reason_code: classified.reasonCode,
+          attempts: 1,
+          retryable: classified.retryable,
+          http_status: classified.httpStatus,
+          model: earlyPrimaryModel,
+          run_id: runId,
+        });
+        console.error(
+          "[TRANSACTIONS_SYNC] early_insights: profile fetch failed",
+          profileErr,
+        );
+      } else {
+        const existing = profile?.early_insights;
+        const hasExistingInsights =
+          !!existing &&
+          typeof existing === "object" &&
+          !Array.isArray(existing) &&
+          typeof existing.intro_line === "string" &&
+          typeof existing.mirror === "string" &&
+          typeof existing.plan === "string" &&
+          typeof existing.hook === "string" &&
+          existing.intro_line.trim().length > 0;
+
+        if (hasExistingInsights) {
+          const runId = await insertOnboardingRun(
+            buildOnboardingRunPayload({
+              userId,
+              itemId: item_id,
+              requestId,
+              apiBuild: API_BUILD,
+              runType: "early_insights",
+              status: "running",
+              attemptNo: 1,
+              maxAttempts: 1,
+              enrichmentMode: effectiveEnrichmentMode,
+              consentState,
+            }),
           );
+          await updateOnboardingRun(runId, {
+            status: "skipped",
+            completed_at: new Date().toISOString(),
+            failure_reason_code: "SKIP_ALREADY_PRESENT",
+            failure_stage: "precheck",
+          });
+          aiEnrichment.early_insights = applyAiSummary(
+            aiEnrichment.early_insights,
+            {
+              status: "skipped",
+              reason_code: "SKIP_ALREADY_PRESENT",
+              attempts: 1,
+              retryable: false,
+              run_id: runId,
+            },
+          );
+          console.log("[TRANSACTIONS_SYNC] early_insights: already present", {
+            userId,
+          });
+        } else {
+          const openRouterApiKeyRaw =
+            process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_GROK_KEY;
+          const openRouterApiKey = String(openRouterApiKeyRaw || "").trim();
+          const keySource = process.env.OPENROUTER_API_KEY
+            ? "OPENROUTER_API_KEY"
+            : process.env.OPENROUTER_GROK_KEY
+              ? "OPENROUTER_GROK_KEY"
+              : null;
+
+          console.log("[TRANSACTIONS_SYNC] early_insights: compute", {
+            userId,
+            requestId,
+            keyPresent: !!openRouterApiKey,
+            keySource,
+          });
+
+          if (!openRouterApiKey) {
+            const runId = await insertOnboardingRun(
+              buildOnboardingRunPayload({
+                userId,
+                itemId: item_id,
+                requestId,
+                apiBuild: API_BUILD,
+                runType: "early_insights",
+                status: "running",
+                attemptNo: 1,
+                maxAttempts: 1,
+                enrichmentMode: effectiveEnrichmentMode,
+                consentState,
+              }),
+            );
+            await updateOnboardingRun(runId, {
+              status: "skipped",
+              completed_at: new Date().toISOString(),
+              failure_reason_code: "SKIP_MISSING_API_KEY",
+              failure_stage: "precheck",
+            });
+            aiEnrichment.early_insights = applyAiSummary(
+              aiEnrichment.early_insights,
+              {
+                status: "skipped",
+                reason_code: "SKIP_MISSING_API_KEY",
+                attempts: 1,
+                retryable: false,
+                run_id: runId,
+              },
+            );
+            console.warn(
+              "[TRANSACTIONS_SYNC] early_insights: missing OPENROUTER_API_KEY (skipping)",
+            );
+          } else {
+            const { startDate, endDate } = getDateRangeLast6Months();
+            const pageSize = 1000;
+            const maxRows = 5000;
+            let offset = 0;
+            const rows = [];
+            let txFetchError = null;
+
+            console.log("[TRANSACTIONS_SYNC] early_insights: tx window", {
+              userId,
+              startDate,
+              endDate,
+            });
+
+            while (offset < maxRows) {
+              const { data, error } = await supabase
+                .from("transactions")
+                .select(
+                  [
+                    "date",
+                    "authorized_date",
+                    "amount",
+                    "name",
+                    "merchant_name",
+                    "category",
+                    "top_category",
+                    "sub_category",
+                    "new_category",
+                    "transaction_type",
+                    "pending",
+                    "account_id",
+                    "plaid_transaction_id",
+                    "if_recurring",
+                    "recurring_stream_id",
+                  ].join(","),
+                )
+                .eq("user_id", userId)
+                .gte("date", startDate)
+                .lte("date", endDate)
+                .order("date", { ascending: false })
+                .range(offset, offset + pageSize - 1);
+
+              if (error) {
+                txFetchError = error;
+                break;
+              }
+              if (!data || data.length === 0) break;
+              rows.push(...data);
+              offset += pageSize;
+            }
+
+            if (txFetchError) {
+              const classified = classifyOnboardingAiFailure({
+                error: txFetchError,
+                stage: "tx_fetch",
+              });
+              const failureMarker = buildStructuredLlmFailureMarker({
+                reasonCode: classified.reasonCode,
+                stage: classified.stage,
+                httpStatus: classified.httpStatus,
+                retryable: classified.retryable,
+                attempts: 1,
+                model: earlyPrimaryModel,
+                requestId,
+                apiBuild: API_BUILD,
+                failureMessage: classified.failureMessage,
+              });
+              const { error: markerErr } = await supabase
+                .from("profiles")
+                .upsert(
+                  {
+                    id: userId,
+                    early_insights: failureMarker,
+                    updated_at: new Date().toISOString(),
+                  },
+                  { onConflict: "id" },
+                );
+              const runId = await insertOnboardingRun(
+                buildOnboardingRunPayload({
+                  userId,
+                  itemId: item_id,
+                  requestId,
+                  apiBuild: API_BUILD,
+                  runType: "early_insights",
+                  status: "running",
+                  attemptNo: 1,
+                  maxAttempts: 1,
+                  enrichmentMode: effectiveEnrichmentMode,
+                  consentState,
+                }),
+              );
+              await updateOnboardingRun(runId, {
+                status: "failed",
+                completed_at: new Date().toISOString(),
+                failure_reason_code: classified.reasonCode,
+                failure_stage: classified.stage,
+                failure_message: trimFailureMessage(classified.failureMessage),
+                retryable: classified.retryable,
+                http_status: classified.httpStatus,
+                profile_write_ok: !markerErr,
+                result_payload: failureMarker,
+                model: earlyPrimaryModel,
+              });
+              aiEnrichment.early_insights = applyAiSummary(
+                aiEnrichment.early_insights,
+                {
+                  status: "failed",
+                  reason_code: classified.reasonCode,
+                  attempts: 1,
+                  retryable: classified.retryable,
+                  http_status: classified.httpStatus,
+                  model: earlyPrimaryModel,
+                  run_id: runId,
+                },
+              );
+              console.error(
+                "[TRANSACTIONS_SYNC] early_insights: error fetching transactions",
+                txFetchError,
+              );
+            } else if (rows.length === 0) {
+              const runId = await insertOnboardingRun(
+                buildOnboardingRunPayload({
+                  userId,
+                  itemId: item_id,
+                  requestId,
+                  apiBuild: API_BUILD,
+                  runType: "early_insights",
+                  status: "running",
+                  attemptNo: 1,
+                  maxAttempts: 1,
+                  enrichmentMode: effectiveEnrichmentMode,
+                  consentState,
+                  txRows: 0,
+                }),
+              );
+              await updateOnboardingRun(runId, {
+                status: "skipped",
+                completed_at: new Date().toISOString(),
+                failure_reason_code: "SKIP_NO_TRANSACTIONS",
+                failure_stage: "tx_fetch",
+                tx_rows: 0,
+              });
+              aiEnrichment.early_insights = applyAiSummary(
+                aiEnrichment.early_insights,
+                {
+                  status: "skipped",
+                  reason_code: "SKIP_NO_TRANSACTIONS",
+                  attempts: 1,
+                  retryable: false,
+                  run_id: runId,
+                },
+              );
+              console.log(
+                "[TRANSACTIONS_SYNC] early_insights: no tx rows (skipping)",
+                { userId },
+              );
+            } else {
+              const months = getLast6MonthKeys();
+              const filtered = rows.filter((tx) => !isLikelyInternalOrPayment(tx));
+              const patternPayload = computePatterns({
+                transactions: filtered,
+                months,
+              });
+              const topPatterns = selectTopPatternsForLLM(patternPayload, 5);
+
+              console.log("[TRANSACTIONS_SYNC] early_insights: patterns", {
+                userId,
+                fetched: rows.length,
+                afterFiltering: filtered.length,
+                patternsGenerated: patternPayload?.meta?.patternsGenerated,
+                patternsReturned: patternPayload?.meta?.patternsReturned,
+                selectedForLlm: topPatterns.length,
+                topType: topPatterns[0]?.type,
+                topKey: topPatterns[0]?.key,
+              });
+
+              if (topPatterns.length === 0) {
+                const runId = await insertOnboardingRun(
+                  buildOnboardingRunPayload({
+                    userId,
+                    itemId: item_id,
+                    requestId,
+                    apiBuild: API_BUILD,
+                    runType: "early_insights",
+                    status: "running",
+                    attemptNo: 1,
+                    maxAttempts: 1,
+                    enrichmentMode: effectiveEnrichmentMode,
+                    consentState,
+                    txRows: rows.length,
+                    filteredRows: filtered.length,
+                    patternCount: 0,
+                  }),
+                );
+                await updateOnboardingRun(runId, {
+                  status: "skipped",
+                  completed_at: new Date().toISOString(),
+                  failure_reason_code: "SKIP_NO_PATTERNS",
+                  failure_stage: "pattern_compute",
+                  tx_rows: rows.length,
+                  filtered_rows: filtered.length,
+                  pattern_count: 0,
+                });
+                aiEnrichment.early_insights = applyAiSummary(
+                  aiEnrichment.early_insights,
+                  {
+                    status: "skipped",
+                    reason_code: "SKIP_NO_PATTERNS",
+                    attempts: 1,
+                    retryable: false,
+                    run_id: runId,
+                  },
+                );
+                console.log(
+                  "[TRANSACTIONS_SYNC] early_insights: no patterns (skipping)",
+                  { userId },
+                );
+              } else {
+                const sixtyDaysAgo = new Date();
+                sixtyDaysAgo.setDate(sixtyDaysAgo.getDate() - 60);
+                const sixtyDayCutoff = sixtyDaysAgo.toISOString().slice(0, 10);
+                const recentTransactions = filtered.filter(
+                  (tx) => tx.date >= sixtyDayCutoff,
+                );
+
+                const modelChain = [earlyPrimaryModel];
+                if (
+                  earlyFallbackModel &&
+                  !modelChain.includes(earlyFallbackModel)
+                ) {
+                  modelChain.push(earlyFallbackModel);
+                }
+                const maxAttempts = earlyRetryEnabled ? earlyMaxAttempts : 1;
+                let storedSuccess = false;
+                let finalFailureSummary = null;
+
+                for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+                  const modelForAttempt =
+                    modelChain[Math.min(attempt - 1, modelChain.length - 1)];
+                  const runId = await insertOnboardingRun(
+                    buildOnboardingRunPayload({
+                      userId,
+                      itemId: item_id,
+                      requestId,
+                      apiBuild: API_BUILD,
+                      runType: "early_insights",
+                      status: "running",
+                      attemptNo: attempt,
+                      maxAttempts,
+                      model: modelForAttempt,
+                      enrichmentMode: effectiveEnrichmentMode,
+                      consentState,
+                      txRows: rows.length,
+                      filteredRows: filtered.length,
+                      patternCount: topPatterns.length,
+                    }),
+                  );
+
+                  try {
+                    const llmResult = await callOnboardingLLM({
+                      openRouterApiKey,
+                      fetchFn: fetch,
+                      patterns: topPatterns,
+                      analysisWindow: "last 6 months",
+                      userProfile: profile || null,
+                      recentTransactions,
+                      model: modelForAttempt,
+                    });
+
+                    const insightsJson =
+                      llmResult?.ok && llmResult?.json
+                        ? llmResult.json
+                        : extractFirstJsonObjectFromText(llmResult?.raw);
+
+                    if (!insightsJson) {
+                      const parseClassified = classifyOnboardingAiFailure({
+                        error: new Error("No valid JSON found in LLM response"),
+                        stage: "llm_parse",
+                      });
+                      const failureMarker = buildStructuredLlmFailureMarker({
+                        reasonCode: parseClassified.reasonCode,
+                        stage: parseClassified.stage,
+                        httpStatus: llmResult?.httpStatus ?? parseClassified.httpStatus,
+                        retryable: parseClassified.retryable,
+                        attempts: attempt,
+                        model: llmResult?.model || modelForAttempt,
+                        requestId,
+                        apiBuild: API_BUILD,
+                        failureMessage: parseClassified.failureMessage,
+                      });
+                      const { error: upsertErr } = await supabase
+                        .from("profiles")
+                        .upsert(
+                          {
+                            id: userId,
+                            early_insights: failureMarker,
+                            updated_at: new Date().toISOString(),
+                          },
+                          { onConflict: "id" },
+                        );
+                      await updateOnboardingRun(runId, {
+                        status: "failed",
+                        completed_at: new Date().toISOString(),
+                        failure_reason_code: parseClassified.reasonCode,
+                        failure_stage: parseClassified.stage,
+                        failure_message: trimFailureMessage(
+                          parseClassified.failureMessage,
+                        ),
+                        retryable: parseClassified.retryable,
+                        http_status:
+                          llmResult?.httpStatus ?? parseClassified.httpStatus,
+                        latency_ms: llmResult?.latencyMs ?? null,
+                        output_valid: false,
+                        profile_write_ok: !upsertErr,
+                        llm_request_payload: llmResult?.requestPayload || null,
+                        llm_response_payload: llmResult?.responsePayload || null,
+                        llm_response_text:
+                          llmResult?.responseText || llmResult?.raw || null,
+                        result_payload: failureMarker,
+                        model: llmResult?.model || modelForAttempt,
+                      });
+                      finalFailureSummary = {
+                        reasonCode: parseClassified.reasonCode,
+                        stage: parseClassified.stage,
+                        retryable: parseClassified.retryable,
+                        httpStatus:
+                          llmResult?.httpStatus ?? parseClassified.httpStatus,
+                        attempts: attempt,
+                        model: llmResult?.model || modelForAttempt,
+                        runId,
+                        failureMessage: parseClassified.failureMessage,
+                      };
+                      aiEnrichment.early_insights = applyAiSummary(
+                        aiEnrichment.early_insights,
+                        {
+                          status: "failed",
+                          reason_code: parseClassified.reasonCode,
+                          attempts: attempt,
+                          model: llmResult?.model || modelForAttempt,
+                          http_status:
+                            llmResult?.httpStatus ?? parseClassified.httpStatus,
+                          retryable: parseClassified.retryable,
+                          run_id: runId,
+                        },
+                      );
+                      break;
+                    }
+
+                    const { error: upsertErr } = await supabase
+                      .from("profiles")
+                      .upsert(
+                        {
+                          id: userId,
+                          early_insights: insightsJson,
+                          updated_at: new Date().toISOString(),
+                        },
+                        { onConflict: "id" },
+                      );
+
+                    if (upsertErr) {
+                      const persistClassified = classifyOnboardingAiFailure({
+                        error: upsertErr,
+                        stage: "persist",
+                      });
+                      const failureMarker = buildStructuredLlmFailureMarker({
+                        reasonCode: persistClassified.reasonCode,
+                        stage: persistClassified.stage,
+                        httpStatus:
+                          llmResult?.httpStatus ?? persistClassified.httpStatus,
+                        retryable: persistClassified.retryable,
+                        attempts: attempt,
+                        model: llmResult?.model || modelForAttempt,
+                        requestId,
+                        apiBuild: API_BUILD,
+                        failureMessage: persistClassified.failureMessage,
+                      });
+                      await updateOnboardingRun(runId, {
+                        status: "failed",
+                        completed_at: new Date().toISOString(),
+                        failure_reason_code: persistClassified.reasonCode,
+                        failure_stage: persistClassified.stage,
+                        failure_message: trimFailureMessage(
+                          persistClassified.failureMessage,
+                        ),
+                        retryable: persistClassified.retryable,
+                        http_status:
+                          llmResult?.httpStatus ?? persistClassified.httpStatus,
+                        latency_ms: llmResult?.latencyMs ?? null,
+                        output_valid: true,
+                        profile_write_ok: false,
+                        llm_request_payload: llmResult?.requestPayload || null,
+                        llm_response_payload: llmResult?.responsePayload || null,
+                        llm_response_text: llmResult?.responseText || null,
+                        result_payload: failureMarker,
+                        model: llmResult?.model || modelForAttempt,
+                      });
+                      finalFailureSummary = {
+                        reasonCode: persistClassified.reasonCode,
+                        stage: persistClassified.stage,
+                        retryable: persistClassified.retryable,
+                        httpStatus:
+                          llmResult?.httpStatus ?? persistClassified.httpStatus,
+                        attempts: attempt,
+                        model: llmResult?.model || modelForAttempt,
+                        runId,
+                        failureMessage: persistClassified.failureMessage,
+                      };
+                      aiEnrichment.early_insights = applyAiSummary(
+                        aiEnrichment.early_insights,
+                        {
+                          status: "failed",
+                          reason_code: persistClassified.reasonCode,
+                          attempts: attempt,
+                          model: llmResult?.model || modelForAttempt,
+                          http_status:
+                            llmResult?.httpStatus ?? persistClassified.httpStatus,
+                          retryable: persistClassified.retryable,
+                          run_id: runId,
+                        },
+                      );
+                      break;
+                    }
+
+                    await updateOnboardingRun(runId, {
+                      status: "success",
+                      completed_at: new Date().toISOString(),
+                      output_valid: true,
+                      profile_write_ok: true,
+                      latency_ms: llmResult?.latencyMs ?? null,
+                      llm_request_payload: llmResult?.requestPayload || null,
+                      llm_response_payload: llmResult?.responsePayload || null,
+                      llm_response_text: llmResult?.responseText || null,
+                      result_payload: insightsJson,
+                      model: llmResult?.model || modelForAttempt,
+                      http_status: llmResult?.httpStatus ?? null,
+                    });
+
+                    aiEnrichment.early_insights = applyAiSummary(
+                      aiEnrichment.early_insights,
+                      {
+                        status: "success",
+                        reason_code: null,
+                        attempts: attempt,
+                        model: llmResult?.model || modelForAttempt,
+                        http_status: llmResult?.httpStatus ?? null,
+                        retryable: false,
+                        run_id: runId,
+                      },
+                    );
+                    storedSuccess = true;
+                    console.log("✅ Stored profiles.early_insights", {
+                      userId,
+                      requestId,
+                      attempt,
+                      model: llmResult?.model || modelForAttempt,
+                      hasIntro: !!insightsJson?.intro_line,
+                    });
+                    break;
+                  } catch (attemptErr) {
+                    const classified = classifyOnboardingAiFailure({
+                      error: attemptErr,
+                      stage: attemptErr?.stage || "llm_request",
+                    });
+                    await updateOnboardingRun(runId, {
+                      status: "failed",
+                      completed_at: new Date().toISOString(),
+                      failure_reason_code: classified.reasonCode,
+                      failure_stage: classified.stage,
+                      failure_message: trimFailureMessage(
+                        classified.failureMessage,
+                      ),
+                      retryable: classified.retryable,
+                      http_status:
+                        attemptErr?.httpStatus ?? classified.httpStatus ?? null,
+                      latency_ms: attemptErr?.latencyMs ?? null,
+                      output_valid: false,
+                      profile_write_ok: null,
+                      llm_request_payload: attemptErr?.requestPayload || null,
+                      llm_response_payload: attemptErr?.responsePayload || null,
+                      llm_response_text: attemptErr?.responseText || null,
+                      result_payload: null,
+                      model: attemptErr?.model || modelForAttempt,
+                    });
+
+                    finalFailureSummary = {
+                      reasonCode: classified.reasonCode,
+                      stage: classified.stage,
+                      retryable: classified.retryable,
+                      httpStatus:
+                        attemptErr?.httpStatus ?? classified.httpStatus,
+                      attempts: attempt,
+                      model: attemptErr?.model || modelForAttempt,
+                      runId,
+                      failureMessage: classified.failureMessage,
+                    };
+                    aiEnrichment.early_insights = applyAiSummary(
+                      aiEnrichment.early_insights,
+                      {
+                        status: "failed",
+                        reason_code: classified.reasonCode,
+                        attempts: attempt,
+                        model: attemptErr?.model || modelForAttempt,
+                        http_status:
+                          attemptErr?.httpStatus ?? classified.httpStatus,
+                        retryable: classified.retryable,
+                        run_id: runId,
+                      },
+                    );
+
+                    const canRetry =
+                      earlyRetryEnabled &&
+                      attempt < maxAttempts &&
+                      shouldRetryOnboardingFailure(classified.reasonCode) &&
+                      classified.retryable === true;
+
+                    console.warn(
+                      "[TRANSACTIONS_SYNC] early_insights attempt failed",
+                      {
+                        userId,
+                        requestId,
+                        attempt,
+                        maxAttempts,
+                        reason: classified.reasonCode,
+                        retryable: classified.retryable,
+                        willRetry: canRetry,
+                      },
+                    );
+
+                    if (canRetry) {
+                      const jitterMs = Math.floor(Math.random() * 250);
+                      const delayMs =
+                        earlyRetryBaseDelayMs * Math.pow(2, attempt - 1) +
+                        jitterMs;
+                      await sleep(delayMs);
+                      continue;
+                    }
+                    break;
+                  }
+                }
+
+                if (!storedSuccess && finalFailureSummary) {
+                  const failureMarker = buildStructuredLlmFailureMarker({
+                    reasonCode: finalFailureSummary.reasonCode,
+                    stage: finalFailureSummary.stage,
+                    httpStatus: finalFailureSummary.httpStatus,
+                    retryable: finalFailureSummary.retryable,
+                    attempts: finalFailureSummary.attempts,
+                    model: finalFailureSummary.model,
+                    requestId,
+                    apiBuild: API_BUILD,
+                    failureMessage: finalFailureSummary.failureMessage,
+                  });
+                  const { error: markerErr } = await supabase
+                    .from("profiles")
+                    .upsert(
+                      {
+                        id: userId,
+                        early_insights: failureMarker,
+                        updated_at: new Date().toISOString(),
+                      },
+                      { onConflict: "id" },
+                    );
+                  if (markerErr) {
+                    console.error(
+                      "[TRANSACTIONS_SYNC] early_insights: error marker upsert failed",
+                      markerErr,
+                    );
+                  }
+                }
+              }
+            }
+          }
         }
       }
     }
@@ -2805,16 +3484,61 @@ export default async function handler(req, res) {
     // Runs after transactions have been written, so it can read from DB.
     // Stores raw JSON in `profiles.base_analysis`.
     // Only runs if base_analysis doesn't already exist (first account connection).
-    if (!shouldRunBaseAnalysis) {
-      console.log(
-        "[TRANSACTIONS_SYNC] base_analysis: skipped (mode)",
-        { userId, effective_enrichment_mode: effectiveEnrichmentMode },
+    if (!shouldRunBaseAnalysis || !hasAiEnrichmentConsent) {
+      const reasonCode = !shouldRunBaseAnalysis
+        ? "SKIP_MODE_DISABLED"
+        : "SKIP_NO_CONSENT";
+      const runId = await insertOnboardingRun(
+        buildOnboardingRunPayload({
+          userId,
+          itemId: item_id,
+          requestId,
+          apiBuild: API_BUILD,
+          runType: "base_analysis",
+          status: "running",
+          attemptNo: 1,
+          maxAttempts: 1,
+          enrichmentMode: effectiveEnrichmentMode,
+          consentState,
+          failureReasonCode: reasonCode,
+          failureStage: "precheck",
+        }),
       );
-    } else if (!hasAiEnrichmentConsent) {
-      console.log("[TRANSACTIONS_SYNC] base_analysis: skipped (no consent)", {
+      await updateOnboardingRun(runId, {
+        status: "skipped",
+        completed_at: new Date().toISOString(),
+        failure_reason_code: reasonCode,
+        failure_stage: "precheck",
+      });
+      aiEnrichment.base_analysis = applyAiSummary(aiEnrichment.base_analysis, {
+        status: "skipped",
+        reason_code: reasonCode,
+        attempts: 1,
+        retryable: false,
+        run_id: runId,
+      });
+      console.log("[TRANSACTIONS_SYNC] base_analysis: skipped", {
         userId,
+        reasonCode,
+        effective_enrichment_mode: effectiveEnrichmentMode,
       });
     } else {
+      const runId = await insertOnboardingRun(
+        buildOnboardingRunPayload({
+          userId,
+          itemId: item_id,
+          requestId,
+          apiBuild: API_BUILD,
+          runType: "base_analysis",
+          status: "running",
+          attemptNo: 1,
+          maxAttempts: 1,
+          model: earlyPrimaryModel,
+          enrichmentMode: effectiveEnrichmentMode,
+          consentState,
+        }),
+      );
+
       try {
         const { data: profileForAnalysis, error: profileAnalysisErr } =
           await supabase
@@ -2823,199 +3547,502 @@ export default async function handler(req, res) {
             .eq("id", userId)
             .maybeSingle();
 
-      if (profileAnalysisErr) {
-        console.error(
-          "[TRANSACTIONS_SYNC] base_analysis: profile fetch failed",
-          profileAnalysisErr,
-        );
-      }
-
-      const existingAnalysis = profileForAnalysis?.base_analysis;
-      const hasExistingAnalysis =
-        !!existingAnalysis &&
-        typeof existingAnalysis === "object" &&
-        typeof existingAnalysis.should_ask_for_more_accounts === "boolean";
-
-      if (hasExistingAnalysis) {
-        console.log("[TRANSACTIONS_SYNC] base_analysis: already present", {
-          userId,
-        });
-      } else {
-        const openRouterApiKeyRaw =
-          process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_GROK_KEY;
-        const openRouterApiKey = String(openRouterApiKeyRaw || "").trim();
-
-        if (!openRouterApiKey) {
-          console.warn(
-            "[TRANSACTIONS_SYNC] base_analysis: missing OPENROUTER_API_KEY (skipping)",
-          );
-        } else {
-          // Fetch last 2-3 months of transactions (90 days)
-          const end = new Date();
-          const start = new Date();
-          start.setDate(end.getDate() - 90);
-
-          const startDateStr = formatDate(start);
-          const endDateStr = formatDate(end);
-
-          console.log("[TRANSACTIONS_SYNC] base_analysis: tx window", {
-            userId,
-            startDate: startDateStr,
-            endDate: endDateStr,
+        if (profileAnalysisErr) {
+          const classified = classifyOnboardingAiFailure({
+            error: profileAnalysisErr,
+            stage: "profile_fetch",
           });
-
-          const { data: transactions, error: txError } = await supabase
-            .from("transactions")
-            .select(
-              "date, amount, merchant_name, name, category, top_category, new_category",
-            )
-            .eq("user_id", userId)
-            .gte("date", startDateStr)
-            .lte("date", endDateStr)
-            .order("date", { ascending: false })
-            .limit(500);
-
-          if (txError) {
-            console.error(
-              "[TRANSACTIONS_SYNC] base_analysis: error fetching transactions",
-              txError,
+          const failureMarker = buildStructuredLlmFailureMarker({
+            reasonCode: classified.reasonCode,
+            stage: classified.stage,
+            httpStatus: classified.httpStatus,
+            retryable: classified.retryable,
+            attempts: 1,
+            model: earlyPrimaryModel,
+            requestId,
+            apiBuild: API_BUILD,
+            failureMessage: classified.failureMessage,
+          });
+          const { error: markerErr } = await supabase
+            .from("profiles")
+            .upsert(
+              {
+                id: userId,
+                base_analysis: failureMarker,
+                updated_at: new Date().toISOString(),
+              },
+              { onConflict: "id" },
             );
-          } else if (!transactions || transactions.length === 0) {
-            console.log(
-              "[TRANSACTIONS_SYNC] base_analysis: no tx rows (skipping)",
-              { userId },
+          await updateOnboardingRun(runId, {
+            status: "failed",
+            completed_at: new Date().toISOString(),
+            failure_reason_code: classified.reasonCode,
+            failure_stage: classified.stage,
+            failure_message: trimFailureMessage(classified.failureMessage),
+            retryable: classified.retryable,
+            http_status: classified.httpStatus,
+            result_payload: failureMarker,
+            model: earlyPrimaryModel,
+            profile_write_ok: !markerErr,
+          });
+          aiEnrichment.base_analysis = applyAiSummary(aiEnrichment.base_analysis, {
+            status: "failed",
+            reason_code: classified.reasonCode,
+            attempts: 1,
+            retryable: classified.retryable,
+            http_status: classified.httpStatus,
+            model: earlyPrimaryModel,
+            run_id: runId,
+          });
+        } else {
+          const existingAnalysis = profileForAnalysis?.base_analysis;
+          const hasExistingAnalysis =
+            !!existingAnalysis &&
+            typeof existingAnalysis === "object" &&
+            typeof existingAnalysis.should_ask_for_more_accounts === "boolean";
+
+          if (hasExistingAnalysis) {
+            await updateOnboardingRun(runId, {
+              status: "skipped",
+              completed_at: new Date().toISOString(),
+              failure_reason_code: "SKIP_ALREADY_PRESENT",
+              failure_stage: "precheck",
+            });
+            aiEnrichment.base_analysis = applyAiSummary(
+              aiEnrichment.base_analysis,
+              {
+                status: "skipped",
+                reason_code: "SKIP_ALREADY_PRESENT",
+                attempts: 1,
+                retryable: false,
+                run_id: runId,
+              },
             );
-            // Store result even when no transactions
-            const result = {
-              should_ask_for_more_accounts: false,
-              message: null,
-              reasoning: "No transactions found",
-            };
-            try {
-              await supabase
-                .from("profiles")
-                .update({ base_analysis: result })
-                .eq("id", userId);
-            } catch (storeError) {
-              console.error(
-                "[TRANSACTIONS_SYNC] base_analysis: error storing no-transactions result",
-                storeError,
-              );
-            }
-          } else {
-            console.log("[TRANSACTIONS_SYNC] base_analysis: tx fetched", {
+            console.log("[TRANSACTIONS_SYNC] base_analysis: already present", {
               userId,
-              count: transactions.length,
             });
+          } else {
+            const openRouterApiKeyRaw =
+              process.env.OPENROUTER_API_KEY || process.env.OPENROUTER_GROK_KEY;
+            const openRouterApiKey = String(openRouterApiKeyRaw || "").trim();
 
-            console.log(
-              "[TRANSACTIONS_SYNC] base_analysis: calling OpenRouter",
-              { userId },
-            );
-
-            const llmResult = await callAccountCompletenessLLM({
-              openRouterApiKey,
-              fetchFn: fetch,
-              transactions,
-            });
-
-            const analysisJson =
-              llmResult?.ok && llmResult?.json
-                ? llmResult.json
-                : extractFirstJsonObjectFromText(llmResult?.raw);
-
-            if (!analysisJson) {
-              console.warn(
-                "[TRANSACTIONS_SYNC] base_analysis: LLM returned no JSON",
+            if (!openRouterApiKey) {
+              await updateOnboardingRun(runId, {
+                status: "skipped",
+                completed_at: new Date().toISOString(),
+                failure_reason_code: "SKIP_MISSING_API_KEY",
+                failure_stage: "precheck",
+              });
+              aiEnrichment.base_analysis = applyAiSummary(
+                aiEnrichment.base_analysis,
                 {
-                  userId,
-                  ok: !!llmResult?.ok,
-                  rawPreview: String(
-                    llmResult?.rawStripped || llmResult?.raw || "",
-                  )
-                    .slice(0, 500)
-                    .trim(),
+                  status: "skipped",
+                  reason_code: "SKIP_MISSING_API_KEY",
+                  attempts: 1,
+                  retryable: false,
+                  run_id: runId,
                 },
               );
-              // Store error marker so frontend knows LLM failed
-              const { error: upsertErr } = await supabase
-                .from("profiles")
-                .upsert(
-                  {
-                    id: userId,
-                    base_analysis: { error: "LLM_FAILED" },
-                    updated_at: new Date().toISOString(),
-                  },
-                  { onConflict: "id" },
-                );
-              if (upsertErr) {
-                console.error(
-                  "[TRANSACTIONS_SYNC] base_analysis: error marker upsert failed",
-                  upsertErr,
-                );
-              }
+              console.warn(
+                "[TRANSACTIONS_SYNC] base_analysis: missing OPENROUTER_API_KEY (skipping)",
+              );
             } else {
-              // Validate and structure the result
-              const result = {
-                should_ask_for_more_accounts:
-                  analysisJson.should_ask_for_more_accounts === true,
-                message: analysisJson.message || null,
-                reasoning: analysisJson.reasoning || "Analysis complete",
-              };
+              const end = new Date();
+              const start = new Date();
+              start.setDate(end.getDate() - 90);
+              const startDateStr = formatDate(start);
+              const endDateStr = formatDate(end);
 
-              const { error: upsertErr } = await supabase
-                .from("profiles")
-                .upsert(
+              const { data: transactions, error: txError } = await supabase
+                .from("transactions")
+                .select(
+                  "date, amount, merchant_name, name, category, top_category, new_category",
+                )
+                .eq("user_id", userId)
+                .gte("date", startDateStr)
+                .lte("date", endDateStr)
+                .order("date", { ascending: false })
+                .limit(500);
+
+              if (txError) {
+                const classified = classifyOnboardingAiFailure({
+                  error: txError,
+                  stage: "tx_fetch",
+                });
+                const failureMarker = buildStructuredLlmFailureMarker({
+                  reasonCode: classified.reasonCode,
+                  stage: classified.stage,
+                  httpStatus: classified.httpStatus,
+                  retryable: classified.retryable,
+                  attempts: 1,
+                  model: earlyPrimaryModel,
+                  requestId,
+                  apiBuild: API_BUILD,
+                  failureMessage: classified.failureMessage,
+                });
+                const { error: markerErr } = await supabase
+                  .from("profiles")
+                  .upsert(
+                    {
+                      id: userId,
+                      base_analysis: failureMarker,
+                      updated_at: new Date().toISOString(),
+                    },
+                    { onConflict: "id" },
+                  );
+                await updateOnboardingRun(runId, {
+                  status: "failed",
+                  completed_at: new Date().toISOString(),
+                  failure_reason_code: classified.reasonCode,
+                  failure_stage: classified.stage,
+                  failure_message: trimFailureMessage(classified.failureMessage),
+                  retryable: classified.retryable,
+                  http_status: classified.httpStatus,
+                  profile_write_ok: !markerErr,
+                  result_payload: failureMarker,
+                  model: earlyPrimaryModel,
+                });
+                aiEnrichment.base_analysis = applyAiSummary(
+                  aiEnrichment.base_analysis,
                   {
-                    id: userId,
-                    base_analysis: result,
-                    updated_at: new Date().toISOString(),
+                    status: "failed",
+                    reason_code: classified.reasonCode,
+                    attempts: 1,
+                    retryable: classified.retryable,
+                    http_status: classified.httpStatus,
+                    model: earlyPrimaryModel,
+                    run_id: runId,
                   },
-                  { onConflict: "id" },
                 );
-
-              if (upsertErr) {
-                console.error(
-                  "[TRANSACTIONS_SYNC] base_analysis: upsert failed",
-                  upsertErr,
+              } else if (!transactions || transactions.length === 0) {
+                const result = {
+                  should_ask_for_more_accounts: false,
+                  message: null,
+                  reasoning: "No transactions found",
+                };
+                const { error: storeError } = await supabase
+                  .from("profiles")
+                  .update({ base_analysis: result, updated_at: new Date().toISOString() })
+                  .eq("id", userId);
+                await updateOnboardingRun(runId, {
+                  status: "skipped",
+                  completed_at: new Date().toISOString(),
+                  failure_reason_code: "SKIP_NO_TRANSACTIONS",
+                  failure_stage: "tx_fetch",
+                  tx_rows: 0,
+                  profile_write_ok: !storeError,
+                  output_valid: true,
+                  result_payload: result,
+                });
+                aiEnrichment.base_analysis = applyAiSummary(
+                  aiEnrichment.base_analysis,
+                  {
+                    status: "skipped",
+                    reason_code: "SKIP_NO_TRANSACTIONS",
+                    attempts: 1,
+                    retryable: false,
+                    model: earlyPrimaryModel,
+                    run_id: runId,
+                  },
                 );
               } else {
-                console.log("✅ Stored profiles.base_analysis", {
-                  userId,
-                  should_ask: result.should_ask_for_more_accounts,
-                });
+                try {
+                  const llmResult = await callAccountCompletenessLLM({
+                    openRouterApiKey,
+                    fetchFn: fetch,
+                    transactions,
+                    model: earlyPrimaryModel,
+                  });
+                  const analysisJson =
+                    llmResult?.ok && llmResult?.json
+                      ? llmResult.json
+                      : extractFirstJsonObjectFromText(llmResult?.raw);
+
+                  if (!analysisJson) {
+                    const parseClassified = classifyOnboardingAiFailure({
+                      error: new Error("No valid JSON found in LLM response"),
+                      stage: "llm_parse",
+                    });
+                    const failureMarker = buildStructuredLlmFailureMarker({
+                      reasonCode: parseClassified.reasonCode,
+                      stage: parseClassified.stage,
+                      httpStatus: llmResult?.httpStatus ?? parseClassified.httpStatus,
+                      retryable: parseClassified.retryable,
+                      attempts: 1,
+                      model: llmResult?.model || earlyPrimaryModel,
+                      requestId,
+                      apiBuild: API_BUILD,
+                      failureMessage: parseClassified.failureMessage,
+                    });
+                    const { error: markerErr } = await supabase
+                      .from("profiles")
+                      .upsert(
+                        {
+                          id: userId,
+                          base_analysis: failureMarker,
+                          updated_at: new Date().toISOString(),
+                        },
+                        { onConflict: "id" },
+                      );
+                    await updateOnboardingRun(runId, {
+                      status: "failed",
+                      completed_at: new Date().toISOString(),
+                      failure_reason_code: parseClassified.reasonCode,
+                      failure_stage: parseClassified.stage,
+                      failure_message: trimFailureMessage(
+                        parseClassified.failureMessage,
+                      ),
+                      retryable: parseClassified.retryable,
+                      http_status:
+                        llmResult?.httpStatus ?? parseClassified.httpStatus,
+                      latency_ms: llmResult?.latencyMs ?? null,
+                      output_valid: false,
+                      profile_write_ok: !markerErr,
+                      llm_request_payload: llmResult?.requestPayload || null,
+                      llm_response_payload: llmResult?.responsePayload || null,
+                      llm_response_text:
+                        llmResult?.responseText || llmResult?.raw || null,
+                      result_payload: failureMarker,
+                      model: llmResult?.model || earlyPrimaryModel,
+                    });
+                    aiEnrichment.base_analysis = applyAiSummary(
+                      aiEnrichment.base_analysis,
+                      {
+                        status: "failed",
+                        reason_code: parseClassified.reasonCode,
+                        attempts: 1,
+                        model: llmResult?.model || earlyPrimaryModel,
+                        http_status:
+                          llmResult?.httpStatus ?? parseClassified.httpStatus,
+                        retryable: parseClassified.retryable,
+                        run_id: runId,
+                      },
+                    );
+                  } else {
+                    const result = {
+                      should_ask_for_more_accounts:
+                        analysisJson.should_ask_for_more_accounts === true,
+                      message: analysisJson.message || null,
+                      reasoning: analysisJson.reasoning || "Analysis complete",
+                    };
+                    const { error: upsertErr } = await supabase
+                      .from("profiles")
+                      .upsert(
+                        {
+                          id: userId,
+                          base_analysis: result,
+                          updated_at: new Date().toISOString(),
+                        },
+                        { onConflict: "id" },
+                      );
+                    if (upsertErr) {
+                      const persistClassified = classifyOnboardingAiFailure({
+                        error: upsertErr,
+                        stage: "persist",
+                      });
+                      const failureMarker = buildStructuredLlmFailureMarker({
+                        reasonCode: persistClassified.reasonCode,
+                        stage: persistClassified.stage,
+                        httpStatus:
+                          llmResult?.httpStatus ?? persistClassified.httpStatus,
+                        retryable: persistClassified.retryable,
+                        attempts: 1,
+                        model: llmResult?.model || earlyPrimaryModel,
+                        requestId,
+                        apiBuild: API_BUILD,
+                        failureMessage: persistClassified.failureMessage,
+                      });
+                      const { error: markerErr } = await supabase
+                        .from("profiles")
+                        .upsert(
+                          {
+                            id: userId,
+                            base_analysis: failureMarker,
+                            updated_at: new Date().toISOString(),
+                          },
+                          { onConflict: "id" },
+                        );
+                      await updateOnboardingRun(runId, {
+                        status: "failed",
+                        completed_at: new Date().toISOString(),
+                        failure_reason_code: persistClassified.reasonCode,
+                        failure_stage: persistClassified.stage,
+                        failure_message: trimFailureMessage(
+                          persistClassified.failureMessage,
+                        ),
+                        retryable: persistClassified.retryable,
+                        http_status:
+                          llmResult?.httpStatus ??
+                          persistClassified.httpStatus,
+                        latency_ms: llmResult?.latencyMs ?? null,
+                        output_valid: true,
+                        profile_write_ok: !markerErr,
+                        llm_request_payload: llmResult?.requestPayload || null,
+                        llm_response_payload:
+                          llmResult?.responsePayload || null,
+                        llm_response_text: llmResult?.responseText || null,
+                        result_payload: failureMarker,
+                        model: llmResult?.model || earlyPrimaryModel,
+                      });
+                      aiEnrichment.base_analysis = applyAiSummary(
+                        aiEnrichment.base_analysis,
+                        {
+                          status: "failed",
+                          reason_code: persistClassified.reasonCode,
+                          attempts: 1,
+                          model: llmResult?.model || earlyPrimaryModel,
+                          http_status:
+                            llmResult?.httpStatus ??
+                            persistClassified.httpStatus,
+                          retryable: persistClassified.retryable,
+                          run_id: runId,
+                        },
+                      );
+                    } else {
+                      await updateOnboardingRun(runId, {
+                        status: "success",
+                        completed_at: new Date().toISOString(),
+                        output_valid: true,
+                        profile_write_ok: true,
+                        latency_ms: llmResult?.latencyMs ?? null,
+                        llm_request_payload: llmResult?.requestPayload || null,
+                        llm_response_payload:
+                          llmResult?.responsePayload || null,
+                        llm_response_text: llmResult?.responseText || null,
+                        result_payload: result,
+                        model: llmResult?.model || earlyPrimaryModel,
+                        http_status: llmResult?.httpStatus ?? null,
+                      });
+                      aiEnrichment.base_analysis = applyAiSummary(
+                        aiEnrichment.base_analysis,
+                        {
+                          status: "success",
+                          reason_code: null,
+                          attempts: 1,
+                          model: llmResult?.model || earlyPrimaryModel,
+                          http_status: llmResult?.httpStatus ?? null,
+                          retryable: false,
+                          run_id: runId,
+                        },
+                      );
+                      console.log("✅ Stored profiles.base_analysis", {
+                        userId,
+                        should_ask: result.should_ask_for_more_accounts,
+                      });
+                    }
+                  }
+                } catch (llmErr) {
+                  const classified = classifyOnboardingAiFailure({
+                    error: llmErr,
+                    stage: llmErr?.stage || "llm_request",
+                  });
+                  const failureMarker = buildStructuredLlmFailureMarker({
+                    reasonCode: classified.reasonCode,
+                    stage: classified.stage,
+                    httpStatus: llmErr?.httpStatus ?? classified.httpStatus,
+                    retryable: classified.retryable,
+                    attempts: 1,
+                    model: llmErr?.model || earlyPrimaryModel,
+                    requestId,
+                    apiBuild: API_BUILD,
+                    failureMessage: classified.failureMessage,
+                  });
+                  const { error: markerErr } = await supabase
+                    .from("profiles")
+                    .upsert(
+                      {
+                        id: userId,
+                        base_analysis: failureMarker,
+                        updated_at: new Date().toISOString(),
+                      },
+                      { onConflict: "id" },
+                    );
+                  await updateOnboardingRun(runId, {
+                    status: "failed",
+                    completed_at: new Date().toISOString(),
+                    failure_reason_code: classified.reasonCode,
+                    failure_stage: classified.stage,
+                    failure_message: trimFailureMessage(classified.failureMessage),
+                    retryable: classified.retryable,
+                    http_status: llmErr?.httpStatus ?? classified.httpStatus,
+                    latency_ms: llmErr?.latencyMs ?? null,
+                    output_valid: false,
+                    profile_write_ok: !markerErr,
+                    llm_request_payload: llmErr?.requestPayload || null,
+                    llm_response_payload: llmErr?.responsePayload || null,
+                    llm_response_text: llmErr?.responseText || null,
+                    result_payload: failureMarker,
+                    model: llmErr?.model || earlyPrimaryModel,
+                  });
+                  aiEnrichment.base_analysis = applyAiSummary(
+                    aiEnrichment.base_analysis,
+                    {
+                      status: "failed",
+                      reason_code: classified.reasonCode,
+                      attempts: 1,
+                      model: llmErr?.model || earlyPrimaryModel,
+                      http_status: llmErr?.httpStatus ?? classified.httpStatus,
+                      retryable: classified.retryable,
+                      run_id: runId,
+                    },
+                  );
+                }
               }
             }
           }
         }
-      }
       } catch (err) {
-        console.error(
-          "[TRANSACTIONS_SYNC] base_analysis error (non-blocking)",
-          err,
-        );
-        // Store error marker on exception too
-        try {
-          const { error: upsertErr } = await supabase.from("profiles").upsert(
+        const classified = classifyOnboardingAiFailure({
+          error: err,
+          stage: err?.stage || "llm_request",
+        });
+        const failureMarker = buildStructuredLlmFailureMarker({
+          reasonCode: classified.reasonCode,
+          stage: classified.stage,
+          httpStatus: err?.httpStatus ?? classified.httpStatus,
+          retryable: classified.retryable,
+          attempts: 1,
+          model: err?.model || earlyPrimaryModel,
+          requestId,
+          apiBuild: API_BUILD,
+          failureMessage: classified.failureMessage,
+        });
+        const { error: markerErr } = await supabase
+          .from("profiles")
+          .upsert(
             {
               id: userId,
-              base_analysis: { error: "LLM_FAILED" },
+              base_analysis: failureMarker,
               updated_at: new Date().toISOString(),
             },
             { onConflict: "id" },
           );
-          if (upsertErr) {
-            console.error(
-              "[TRANSACTIONS_SYNC] base_analysis: error marker upsert failed (exception path)",
-              upsertErr,
-            );
-          }
-        } catch (markerErr) {
-          console.error(
-            "[TRANSACTIONS_SYNC] Failed to store error marker",
-            markerErr,
-          );
-        }
+        await updateOnboardingRun(runId, {
+          status: "failed",
+          completed_at: new Date().toISOString(),
+          failure_reason_code: classified.reasonCode,
+          failure_stage: classified.stage,
+          failure_message: trimFailureMessage(classified.failureMessage),
+          retryable: classified.retryable,
+          http_status: err?.httpStatus ?? classified.httpStatus,
+          latency_ms: err?.latencyMs ?? null,
+          output_valid: false,
+          profile_write_ok: !markerErr,
+          llm_request_payload: err?.requestPayload || null,
+          llm_response_payload: err?.responsePayload || null,
+          llm_response_text: err?.responseText || null,
+          result_payload: failureMarker,
+          model: err?.model || earlyPrimaryModel,
+        });
+        aiEnrichment.base_analysis = applyAiSummary(aiEnrichment.base_analysis, {
+          status: "failed",
+          reason_code: classified.reasonCode,
+          attempts: 1,
+          model: err?.model || earlyPrimaryModel,
+          http_status: err?.httpStatus ?? classified.httpStatus,
+          retryable: classified.retryable,
+          run_id: runId,
+        });
       }
     }
 
@@ -3054,12 +4081,14 @@ export default async function handler(req, res) {
       added: added.length,
       modified: modified.length,
       removed: removed.length,
+      request_id: requestId,
       has_onboarding_ai_consent: hasOnboardingAiConsent,
       has_chat_memory_consent: hasChatMemoryConsent,
       has_ai_enrichment_consent: hasAiEnrichmentConsent,
       skip_enrichment: skipEnrichment,
       enrichment_mode: effectiveEnrichmentMode,
-      api_build: "transactions_sync+early_insights@2026-01-19",
+      ai_enrichment: aiEnrichment,
+      api_build: API_BUILD,
     });
   } catch (e) {
     console.error("transactions_sync error", e.response?.data || e);

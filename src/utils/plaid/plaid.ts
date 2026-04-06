@@ -10,6 +10,10 @@ import {
   logLinkExitEvent,
   logLinkSuccessEvent,
 } from "./linkAnalytics";
+import {
+  setLastUsedItemId,
+  getLastUsedItemId,
+} from "@/src/utils/cache/lastUsedItem";
 
 import { API_BASE_URL } from "@/src/utils/core/apiUrl";
 import {
@@ -28,10 +32,8 @@ export type SyncEnrichmentMode =
 type SyncTransactionsOptions = {
   skipEnrichment?: boolean;
   enrichmentMode?: SyncEnrichmentMode;
+  requestId?: string;
 };
-
-// === Last Used Item Management ===
-import { setLastUsedItemId, getLastUsedItemId } from "@/src/utils/cache/lastUsedItem";
 
 // === Get User Items from Supabase ===
 export async function getUserItems() {
@@ -608,6 +610,7 @@ export const syncTransactions = async (
   if (!user?.id) throw new Error("User not authenticated");
   const skipEnrichment = options?.skipEnrichment === true;
   const enrichmentMode = options?.enrichmentMode;
+  const requestId = options?.requestId;
 
   // Skip SnapTrade investment accounts
   if (item_id.startsWith('snaptrade-')) {
@@ -624,6 +627,7 @@ export const syncTransactions = async (
       body: JSON.stringify({
         item_id,
         user_id: user.id,
+        ...(requestId ? { request_id: requestId } : {}),
         skip_enrichment: skipEnrichment,
         ...(enrichmentMode ? { enrichment_mode: enrichmentMode } : {}),
       }),

@@ -279,6 +279,7 @@ export default function AccountConnectionScreen() {
       attempt <= ONBOARDING_EARLY_INSIGHTS_MAX_ATTEMPTS;
       attempt++
     ) {
+      const attemptRequestId = `${requestId}-a${attempt}`;
       writeEarlyInsightsTriggerState(userId, {
         status: "in_progress",
         updatedAt: Date.now(),
@@ -288,7 +289,10 @@ export default function AccountConnectionScreen() {
       });
 
       try {
-        await syncTransactions(itemId, { enrichmentMode: "early_only" });
+        await syncTransactions(itemId, {
+          enrichmentMode: "early_only",
+          requestId: attemptRequestId,
+        });
         writeEarlyInsightsTriggerState(userId, {
           status: "completed",
           updatedAt: Date.now(),
@@ -857,6 +861,9 @@ export default function AccountConnectionScreen() {
         {
           syncOptions: {
             enrichmentMode: "base_only",
+            requestId: `onboarding-base-${Date.now()}-${Math.random()
+              .toString(36)
+              .slice(2, 8)}`,
           },
           onProgress: (stage) => {
             setIsLoading(false);
