@@ -25,7 +25,7 @@ export default function ContactModal({ visible, onClose }: ContactModalProps) {
     try {
       // Try to open Gmail app first
       const gmailUrl = `googlegmail://co?to=${email}&subject=${encodeURIComponent(
-        subject
+        subject,
       )}`;
       const canOpenGmail = await Linking.canOpenURL(gmailUrl);
 
@@ -34,14 +34,14 @@ export default function ContactModal({ visible, onClose }: ContactModalProps) {
       } else {
         // Fallback to default mailto
         const mailtoUrl = `mailto:${email}?subject=${encodeURIComponent(
-          subject
+          subject,
         )}`;
         await Linking.openURL(mailtoUrl);
       }
     } catch (error) {
       // Final fallback
       const mailtoUrl = `mailto:${email}?subject=${encodeURIComponent(
-        subject
+        subject,
       )}`;
       Linking.openURL(mailtoUrl).catch((err) => {
         console.error("Error opening email:", err);
@@ -68,7 +68,7 @@ export default function ContactModal({ visible, onClose }: ContactModalProps) {
       <View style={styles.container}>
         <View style={styles.modalContent}>
           <View style={styles.header}>
-            <Text style={styles.title}>Contact us</Text>
+            <Text style={styles.title}>Let's talk</Text>
             <TouchableOpacity onPress={onClose} activeOpacity={0.7}>
               <IconButton onPress={onClose} icon="close" size={20} />
             </TouchableOpacity>
@@ -132,9 +132,7 @@ export default function ContactModal({ visible, onClose }: ContactModalProps) {
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.responseText}>
-            We typically respond immediately.
-          </Text>
+          <Text style={styles.responseText}>We typically respond ASAP.</Text>
         </View>
       </View>
     </Modal>

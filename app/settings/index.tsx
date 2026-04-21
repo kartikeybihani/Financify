@@ -42,10 +42,7 @@ export default function SettingsScreen() {
   const { userName } = useLocalSearchParams();
   const { clearAllCache } = useAuthNavigation();
   const { isDemoMode } = useDemoMode();
-  const {
-    isPremium,
-    isLoading: isSubscriptionLoading,
-  } = useSubscription();
+  const { isPremium, isLoading: isSubscriptionLoading } = useSubscription();
   const [userData, setUserData] = useState<any>(null);
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [darkModeEnabled, setDarkModeEnabled] = useState(true);
@@ -284,9 +281,9 @@ export default function SettingsScreen() {
       const modified = Number(result.modified || 0);
       const removed = Number(result.removed || 0);
       const missingConsentCount = Number(result.missingConsentCount || 0);
-      const failed = results.filter((entry) => entry?.error).length;
+      const failed = results.filter((entry: any) => entry?.error).length;
       const requiresUpdateCount = results.filter(
-        (entry) => entry?.requires_update_mode,
+        (entry: any) => entry?.requires_update_mode,
       ).length;
 
       logger.info("[SettingsIndex] Transaction sync results:", result);
@@ -616,7 +613,7 @@ export default function SettingsScreen() {
             )}
             {renderSettingsItem(
               <Ionicons name="call-outline" size={24} color="#4A90E2" />,
-              "Contact Us",
+              "Talk with the Founder",
               handleCallUs,
               true,
               undefined,
